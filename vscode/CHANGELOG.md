@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+Fixes found by recording the extension in a real VS Code window.
+
+- Checking a single branch no longer calls it "결과 A": the list shows `auth.ts:21`, and the hover drops the result column.
+- The hover leads with the attempt strip, so the computed behaviour is visible without scrolling; the rows of the strip now line up (Korean labels are padded with full-width spaces).
+- The status icon in the gutter appears on the first line of a multi-line condition only, and the Problems squiggle covers that line only.
+
 ## 0.4.0
 
 - **Import requirements** instead of typing them: from the current branch's GitHub PR and the issues it closes, from an issue number or URL (both through your own `gh`; only the text is read, code is not sent), or from text you copied from Jira, Linear or chat. Extraction is rule-based: a section named "Acceptance criteria" / "요구사항" first, then checklists, then "must / ~해야 한다" sentences, then the title. Existing requirements can be kept and appended to.

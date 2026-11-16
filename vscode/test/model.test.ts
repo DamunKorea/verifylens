@@ -117,7 +117,8 @@ test('lens gives a head for above the line, a note for the end of the line, and 
 test('hover shows the evidence table, the failing test and command links', () => {
   const r = demo(null);
   const md = M.hoverMarkdown(r.report, 'R2')!;
-  assert.match(md, /\*\*VerifyLens · R2 · 다름\*\*/);
+  assert.match(md, /^\*\*VerifyLens · R2 · 다름\*\* — 연속 5회 실패하면 계정을 잠근다\n/);
+  assert.ok(md.indexOf('  1  2  3  4  5 [6]') < md.indexOf('| 결과 | 근거 |'), 'the computed strip comes before the table so it is not cut off');
   assert.match(md, /\| A \| `auth\.ts:17` `user\.failures >= 5` \| 5번째 \| 통과 \|/);
   assert.match(md, /\| B \| `auth\.ts:21` `user\.failures > 5` \| 6번째 ⚠ \(요구 5회\) \| 실패 \|/);
   assert.match(md, /실패한 검사\n- B · `locks the account on the 5th consecutive failure` — Expected values to be strictly equal/);
@@ -137,6 +138,14 @@ test('diff target: A vs B with two results, base vs branch with one', () => {
   const t1 = M.diffTarget(one.report, 'R2')!;
   assert.deepEqual([t1.left.key, t1.left.ref, t1.right.key, t1.right.ref], ['base', 'main', 'A', 'feature/lockout-b']);
   assert.equal(M.contextLine(one), 'feature/lockout-b ← main');
+  // 브랜치 하나만 볼 때는 「결과 A」라고 하지 않는다
+  const row = M.treeModel(one.report).find((x) => x.id === 'R2')!;
+  assert.equal(row.children[0].label, 'auth.ts:21');
+  assert.equal(row.summary, '6번째 시도에 동작 (요구사항 5회)');
+  const h1 = M.hoverMarkdown(one.report, 'R2')!;
+  assert.match(h1, /\| 근거 \| 동작 시점 \| 검사 \|\n\|---\|---\|---\|\n\| `auth\.ts:21` `user\.failures > 5` \| 6번째 ⚠ \(요구 5회\) \|/);
+  assert.match(h1, /코드\s+1  2  3  4  5 \[6\]  ✗ 1회 늦음/);
+  assert.ok(!/결과 A/.test(h1));
 });
 
 test('signature changes on a commit and when an input file changes', async () => {
@@ -176,13 +185,13 @@ test('differentiators up front: verified ratio, reason for 미확인, attempt st
   const rows = M.treeModel(r.report);
   assert.deepEqual(rows.map((x) => x.reason), ['', '', '검사 없음']);
   assert.deepEqual(M.attemptLines(r.report, 'R2'), [
-    '요구사항   1  2  3  4 [5] 6',
-    '결과 A     1  2  3  4 [5] 6   ✓ 요구사항과 같음',
-    '결과 B     1  2  3  4  5 [6]  ✗ 1회 늦음',
+    '요구사항     1  2  3  4 [5] 6',
+    '결과 A　　   1  2  3  4 [5] 6   ✓ 요구사항과 같음',
+    '결과 B　　   1  2  3  4  5 [6]  ✗ 1회 늦음',
   ]);
   assert.deepEqual(M.attemptLines(r.report, 'R1'), [], 'nothing to compute for R1');
   const md = M.hoverMarkdown(r.report, 'R2')!;
-  assert.match(md, /결과 B     1  2  3  4  5 \[6\]  ✗ 1회 늦음/);
+  assert.match(md, /결과 B\s+1  2  3  4  5 \[6\]  ✗ 1회 늦음/);
   assert.match(md, /AI 추정 없음/);
   const html = M.webviewHtml(r.report, 'N', 'x', { demo: true });
   assert.match(html, /"line":"요구사항 3개 중 1개만 근거와 검사로 확인됨"/);

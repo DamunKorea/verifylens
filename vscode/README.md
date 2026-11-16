@@ -8,6 +8,8 @@ AI tools say "Done, all requirements implemented." VerifyLens checks that claim 
 - **Unknown stays unknown.** No test or an unresolved call means "not verified", never "looks fine".
 - **You decide.** Every mark links back to the code line or test that produced it.
 
+![VerifyLens in VS Code](https://raw.githubusercontent.com/DamunKorea/verifylens/main/docs/demo.gif)
+
 > v0 preview: analyzes **TypeScript and JavaScript**. The report text is currently **Korean**.
 
 ## Try it in 10 seconds

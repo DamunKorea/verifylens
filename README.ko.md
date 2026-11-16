@@ -6,7 +6,9 @@
 
 AI 코딩 도구는 「요구사항 전부 반영, 완료」라고 답합니다. 그 말을 그대로 믿지 않는 개발자는 결과물을 거꾸로 읽으며 다시 검증합니다. VerifyLens는 그 추적을 대신해서, 요구사항마다 **확인됨 · 다름 · 미확인**을 보여 주고 근거가 된 코드 줄과 실제로 돌린 검사로 바로 이어 줍니다.
 
-![컨셉 시연: 「다름」을 누르면 두 결과가 갈리는 코드 줄로 이동](docs/concept-different.png)
+![VS Code에서의 VerifyLens: AI는 완료라고 했지만 3개 중 1개만 확인됨, 마우스를 올리면 근거, 나란히 비교, 고치면 스스로 갱신, PR 요약](docs/demo.ko.gif)
+
+<sub>실제 VS Code 확장 화면을 찍은 것입니다 (26초).</sub>
 
 > **상태: v0 프로토타입.** TypeScript · JavaScript 저장소에서 처음부터 끝까지 돌아가지만 아직 초기 버전입니다. 이번 공개의 목적은 **의견을 듣는 것**입니다. 아래 [의견 주기](#의견-주기)를 봐 주세요.
 
@@ -47,7 +49,7 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 ```bash
 cd vscode
 npm install
-npm run package     # verifylens-0.4.0.vsix 를 만듭니다
+npm run package     # verifylens-0.4.1.vsix 를 만듭니다
 ```
 
 에디터에서 **확장 → ⋯ → VSIX에서 설치…**로 파일을 고르면 됩니다. 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.

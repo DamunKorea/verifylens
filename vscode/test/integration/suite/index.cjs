@@ -81,7 +81,7 @@ exports.run = async function run() {
   // PR 요약: 사용자의 클립보드를 건드리지 않도록 dryRun 으로 글만 받는다
   const sum = await vscode.commands.executeCommand('verifylens.copySummary', { dryRun: true });
   assert.match(sum, /^## VerifyLens 검증 요약\n\n\*\*요구사항 3개 중 1개만 근거와 검사로 확인됨\*\*/);
-  assert.match(sum, /결과 B     1  2  3  4  5 \[6\]  ✗ 1회 늦음/);
+  assert.match(sum, /결과 B\s+1  2  3  4  5 \[6\]  ✗ 1회 늦음/);
   assert.match(sum, new RegExp('<sub>VerifyLens ' + ext.packageJSON.version.replace(/\./g, '\\.')));
   log.push(`PR summary: ${sum.split('\n').length} lines, starts "${sum.split('\n')[2]}"`);
 

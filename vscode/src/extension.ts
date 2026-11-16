@@ -164,6 +164,8 @@ class Lenses implements vscode.CodeLensProvider {
 }
 
 const DECO: Record<Overall, vscode.TextEditorDecorationType> = {} as never;
+/** 줄 번호 옆 아이콘은 근거의 첫 줄에만 붙인다 (여러 줄 조건에 아이콘이 줄줄이 붙지 않게). */
+const GUTTER: Record<Overall, vscode.TextEditorDecorationType> = {} as never;
 function makeDecorations() {
   // 확인됨 · 미확인은 줄 번호 옆 아이콘만, 다름 · 실패는 줄 배경까지 칠해서 눈에 띄게 한다.
   const spec: Record<Overall, { slug: string; bg?: string; ruler: string }> = {
@@ -178,10 +180,12 @@ function makeDecorations() {
       backgroundColor: spec[k].bg,
       overviewRulerColor: spec[k].ruler,
       overviewRulerLane: vscode.OverviewRulerLane.Right,
+    });
+    GUTTER[k] = vscode.window.createTextEditorDecorationType({
       gutterIconPath: vscode.Uri.file(ctx.asAbsolutePath(path.join('media', `gutter-${spec[k].slug}.svg`))),
       gutterIconSize: '80%',
     });
-    ctx.subscriptions.push(DECO[k]);
+    ctx.subscriptions.push(DECO[k], GUTTER[k]);
   }
   noteDeco = vscode.window.createTextEditorDecorationType({ after: { margin: '0 0 0 3ch', fontStyle: 'italic' } });
   ctx.subscriptions.push(noteDeco);
@@ -204,6 +208,10 @@ function decorate(editors: readonly vscode.TextEditor[]) {
       ed.setDecorations(
         DECO[k],
         ls.filter((l) => l.overall === k).map((l) => new vscode.Range(l.line - 1, 0, l.endLine - 1, 0)),
+      );
+      ed.setDecorations(
+        GUTTER[k],
+        ls.filter((l) => l.overall === k).map((l) => new vscode.Range(l.line - 1, 0, l.line - 1, 0)),
       );
     }
     const last = ed.document.lineCount - 1;
@@ -230,7 +238,7 @@ function publishDiagnostics() {
     if (l.severity === 'ok') continue;
     const uri = locationUri(l.setKey, l.file);
     const d = new vscode.Diagnostic(
-      new vscode.Range(l.line - 1, 0, l.endLine - 1, 1000),
+      new vscode.Range(l.line - 1, 0, l.line - 1, 1000),
       `${l.head} — ${l.note} (${l.reqText})`,
       l.severity === 'warn' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information,
     );

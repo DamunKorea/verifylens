@@ -117,8 +117,17 @@ function shortReason(report: Report, s: ReqSummary): string {
   return '';
 }
 
-const dispWidth = (s: string) => [...s].reduce((n, ch) => n + (/[ᄀ-ᇿ　-鿿가-힣＀-￯]/.test(ch) ? 2 : 1), 0);
-const padDisp = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - dispWidth(s)));
+const isWide = (ch: string) => /[ᄀ-ᇿ　-鿿가-힣＀-￯]/.test(ch);
+const wideCount = (s: string) => [...s].filter(isWide).length;
+/**
+ * 이름표들의 폭을 맞춘다. 한글은 고정폭 글꼴에서도 정확히 두 칸이 아니어서, 한글이 모자란 만큼은 전각 공백(한글과 같은 폭)으로,
+ * 영문이 모자란 만큼은 보통 공백으로 채운다. 이렇게 해야 아래위 숫자가 같은 자리에 선다.
+ */
+function alignLabels(labels: string[]): string[] {
+  const wide = Math.max(...labels.map(wideCount));
+  const narrow = Math.max(...labels.map((l) => [...l].length - wideCount(l)));
+  return labels.map((l) => l + '　'.repeat(wide - wideCount(l)) + ' '.repeat(narrow - ([...l].length - wideCount(l))));
+}
 
 /**
  * 시도 횟수별 동작 시점을 글자로 그린 줄들. [n] 이 동작하는 시도다.
@@ -142,8 +151,8 @@ export function attemptLines(report: Report, reqId: string, lang: 'ko' | 'en' = 
         : lang === 'ko' ? `✗ ${d}회 ${at > req ? '늦음' : '빠름'}` : `✗ ${d} ${at > req ? 'late' : 'early'}`;
     lines.push([two ? (lang === 'ko' ? `결과 ${set.key}` : `result ${set.key}`) : lang === 'ko' ? '코드' : 'code', strip(at), note]);
   }
-  const w = Math.max(...lines.map((l) => dispWidth(l[0])));
-  return lines.map(([label, s, note]) => `${padDisp(label, w)}  ${s}${note ? '  ' + note : ''}`.trimEnd());
+  const labels = alignLabels(lines.map((l) => l[0]));
+  return lines.map(([, s, note], i) => `${labels[i]}  ${s}${note ? '  ' + note : ''}`.trimEnd());
 }
 
 /** 가장 앞에 내세울 한 줄: 요구사항 몇 개 중 몇 개가 근거와 검사로 확인됐는가 */
@@ -171,7 +180,7 @@ export function summaryLine(report: Report, s: ReqSummary): string {
   const id = s.req.id;
   if (s.overall === '다름') {
     const bad = report.sets.filter((x) => x.perReq[id].evidence.boundary?.ok === false);
-    if (bad.length) return bad.map((x) => `${x.label}: ${boundaryText(x, id)}`).join(' · ');
+    if (bad.length) return bad.map((x) => (report.sets.length > 1 ? `${x.label}: ` : '') + boundaryText(x, id)).join(' · ');
     if (s.relation.kind === '불일치') return `두 결과의 조건이 다름 (${s.relation.detail})`;
     return '결과 사이에 검사 결과가 다름';
   }
@@ -199,7 +208,8 @@ export function treeModel(report: Report): ReqRow[] {
       const who = `${set.label} (${set.ref})`;
       return {
         setKey: set.key,
-        label: u ? `${set.key}  ${u.file.split('/').pop()}:${u.startLine}` : `${set.key}  근거 없음`,
+        // 결과가 하나뿐이면 「A」를 붙이지 않는다 (브랜치 하나만 확인할 때)
+        label: (report.sets.length > 1 ? `${set.key}  ` : '') + (u ? `${u.file.split('/').pop()}:${u.startLine}` : '근거 없음'),
         file: u?.file,
         line: u?.startLine,
         detail: [when, `검사 ${rr.testStatus}`].filter(Boolean).join(' · '),
@@ -271,8 +281,11 @@ const mdCode = (s: string) => '`' + s.replace(/`/g, "'").replace(/\|/g, '\\|') +
 export function hoverMarkdown(report: Report, reqId: string, links = true): string | null {
   const s = report.summaries.find((x) => x.req.id === reqId);
   if (!s) return null;
-  const out: string[] = [`**VerifyLens · ${s.req.id} · ${s.overall}**`, '', s.req.text, '', summaryLine(report, s), ''];
-  out.push('| 결과 | 근거 | 동작 시점 | 검사 |', '|---|---|---|---|');
+  const two = report.sets.length > 1;
+  const out: string[] = [`**VerifyLens · ${s.req.id} · ${s.overall}** — ${s.req.text}`, '', summaryLine(report, s)];
+  const strip = attemptLines(report, reqId);
+  if (strip.length) out.push('', '```', ...strip, '```');
+  out.push('', two ? '| 결과 | 근거 | 동작 시점 | 검사 |' : '| 근거 | 동작 시점 | 검사 |', two ? '|---|---|---|---|' : '|---|---|---|');
   const failed: string[] = [];
   for (const set of report.sets) {
     const rr = set.perReq[reqId];
@@ -280,24 +293,22 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
     const b = rr.evidence.boundary;
     const where = u ? `${mdCode(`${u.file.split('/').pop()}:${u.startLine}`)}${u.cond?.expr ? ' ' + mdCode(u.cond.expr) : u.kind === 'function' ? ' 함수 전체' : ''}` : '찾지 못함';
     const when = b && b.attempts !== null ? `${b.attempts}번째${b.ok === false ? ` ⚠ (요구 ${b.required}회)` : ''}` : '–';
-    out.push(`| ${set.key} | ${where} | ${when} | ${rr.testStatus} |`);
+    out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${rr.testStatus} |`);
     for (const t of rr.tests) {
       if (t.status !== 'fail') continue;
       const why = t.message.split('\n').map((x) => x.trim()).filter(Boolean).join(' ').slice(0, 140);
-      failed.push(`- ${set.key} · ${mdCode(t.name)}${why ? ` — ${why.replace(/\|/g, '\\|')}` : ''}`);
+      failed.push(`- ${two ? `${set.key} · ` : ''}${mdCode(t.name)}${why ? ` — ${why.replace(/\|/g, '\\|')}` : ''}`);
     }
   }
-  const strip = attemptLines(report, reqId);
-  if (strip.length) out.push('', '```', ...strip, '```');
   if (failed.length) out.push('', '실패한 검사', ...failed);
-  out.push('', '_출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음_');
-  if (s.req.auto) out.push('', '_키워드를 적지 않아 용어집으로 코드와 이었습니다. 근거 줄이 맞는지 확인하세요._');
   if (links) {
     const acts = [cmdLink('근거 보기', 'verifylens.focusRequirement', [reqId])];
-    if (diffTarget(report, reqId)) acts.push(cmdLink(report.sets.length > 1 ? 'A ↔ B 비교' : '기준과 비교', 'verifylens.openDiff', [reqId]));
+    if (diffTarget(report, reqId)) acts.push(cmdLink(two ? 'A ↔ B 비교' : '기준과 비교', 'verifylens.openDiff', [reqId]));
     acts.push(cmdLink('판단 기록', 'verifylens.recordJudgment', [reqId]));
     out.push('', acts.join(' · '));
   }
+  out.push('', '_출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음_');
+  if (s.req.auto) out.push('', '_키워드를 적지 않아 용어집으로 코드와 이었습니다. 근거 줄이 맞는지 확인하세요._');
   return out.join('\n');
 }
 

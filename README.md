@@ -6,7 +6,9 @@
 
 AI coding tools say "Done, all requirements implemented." Developers who don't take that on faith end up reading the code backwards to re-verify it. VerifyLens does that tracing for you and shows, per requirement, what is **verified**, what is **different**, and what is **not yet verified** — with links back to the exact code lines and the tests that actually ran.
 
-![Concept demo: clicking "different" jumps to the lines where two AI results diverge](docs/concept-different.png)
+![VerifyLens in VS Code: the AI says "done", VerifyLens shows that only 1 of 3 requirements is verified, the evidence on hover, a side-by-side diff, the result updating by itself after a fix, and the PR summary](docs/demo.gif)
+
+<sub>Recorded from the real extension in VS Code (26 seconds). A Korean-captioned version is in the [Korean README](README.ko.md).</sub>
 
 > **Status: v0 prototype.** It works end to end on TypeScript/JavaScript repos, but it is early. The report UI is currently in **Korean** (English UI is planned). Feedback is the main goal of this release — see [Feedback](#feedback).
 
@@ -47,7 +49,7 @@ The same engine runs inside the editor and feels native to it: a requirements si
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.4.0.vsix
+npm run package     # builds verifylens-0.4.1.vsix
 ```
 
 Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the file. Click the VerifyLens icon in the Activity Bar and choose **Run demo**. See [vscode/README.md](vscode/README.md) for details.
