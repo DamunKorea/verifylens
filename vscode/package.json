@@ -2,7 +2,7 @@
   "name": "verifylens",
   "displayName": "VerifyLens",
   "description": "See per requirement whether an AI-generated change is verified, different, or not yet verified — linked to code lines and the tests that ran. Local, no LLM.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "damun",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -16,6 +16,17 @@
   },
   "engines": {
     "vscode": "^1.85.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode only the demo runs. Checking or comparing branches reads your repository with git and needs a trusted folder.",
+      "restrictedConfigurations": [
+        "verifylens.nodePath",
+        "verifylens.junitPath",
+        "verifylens.requirementsFile"
+      ]
+    }
   },
   "categories": [
     "Testing",
@@ -91,7 +102,13 @@
     "viewsWelcome": [
       {
         "view": "verifylens.requirements",
+        "when": "isWorkspaceTrusted",
         "contents": "AI가 만든 변경이 요구사항마다 확인됨 · 다름 · 미확인인지 보여 줍니다. 코드는 이 PC 밖으로 나가지 않습니다.\n[샘플로 해 보기](command:verifylens.runDemo)\n[지금 브랜치 확인](command:verifylens.checkBranch)\n[두 브랜치 비교](command:verifylens.compareBranches)\n요구사항 파일이 없으면 [요구사항 파일 만들기](command:verifylens.createRequirements)"
+      },
+      {
+        "view": "verifylens.requirements",
+        "when": "!isWorkspaceTrusted",
+        "contents": "AI가 만든 변경이 요구사항마다 확인됨 · 다름 · 미확인인지 보여 줍니다. 코드는 이 PC 밖으로 나가지 않습니다.\n[샘플로 해 보기](command:verifylens.runDemo)\n이 폴더는 아직 신뢰하지 않은 상태(제한 모드)라 내 브랜치 확인은 꺼져 있습니다.\n[이 폴더 신뢰하기](command:workbench.trust.manage)"
       }
     ],
     "menus": {

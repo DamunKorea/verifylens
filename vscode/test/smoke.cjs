@@ -63,6 +63,7 @@ const vscode = {
     onDidChangeVisibleTextEditors: () => disp,
   },
   workspace: {
+    isTrusted: true,
     workspaceFolders: [],
     getConfiguration: () => ({ get: (k) => config[k] }),
     registerTextDocumentContentProvider: (scheme, p) => { reg.content[scheme] = p; return disp; },
@@ -153,6 +154,21 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   // 5) 다시 분석
   await reg.commands['verifylens.rerun']();
   assert.deepEqual(log.errors, []);
+
+  // 6) 제한 모드: 브랜치 확인은 신뢰를 요청하고 멈추며, 샘플은 그대로 된다
+  vscode.workspace.isTrusted = false;
+  const before = log.exec.length;
+  answers = { warning: undefined, quickPick: [] };
+  await reg.commands['verifylens.checkBranch']();
+  await reg.commands['verifylens.compareBranches']();
+  await reg.commands['verifylens.createRequirements']();
+  assert.ok(log.warnings.filter((w) => /제한 모드/.test(w)).length >= 3, 'asks for trust');
+  answers = { warning: '이 폴더 신뢰하기', quickPick: [] };
+  await reg.commands['verifylens.checkBranch']();
+  assert.ok(log.exec.slice(before).includes('workbench.trust.manage'), 'opens trust dialog');
+  await reg.commands['verifylens.runDemo']();
+  assert.deepEqual(log.errors, [], 'demo still works in restricted mode');
+  assert.match(reg.status.text, /다름 1/);
   console.log('smoke OK —', reg.status.text);
 })().catch((e) => {
   console.error('smoke FAILED:', e);

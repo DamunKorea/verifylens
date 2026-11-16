@@ -20,7 +20,7 @@ exports.run = async function run() {
   const ext = vscode.extensions.getExtension('damun.verifylens');
   assert.ok(ext, 'extension is loaded');
   await ext.activate();
-  log.push(`activated ${ext.id} ${ext.packageJSON.version} on VS Code ${vscode.version}`);
+  log.push(`activated ${ext.id} ${ext.packageJSON.version} on VS Code ${vscode.version} · trusted=${vscode.workspace.isTrusted}`);
 
   const cmds = await vscode.commands.getCommands(true);
   for (const c of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.requirements.focus']) assert.ok(cmds.includes(c), `command ${c}`);

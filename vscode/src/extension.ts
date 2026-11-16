@@ -186,6 +186,14 @@ async function execute(title: string, job: () => M.Run, ui: { tree: ReqTree; len
   }
 }
 
+/** 제한 모드(신뢰하지 않은 폴더)에서는 저장소를 읽지 않는다. 신뢰하라고 안내하고 true 를 돌려준다. */
+async function needTrust(): Promise<boolean> {
+  if (vscode.workspace.isTrusted) return false;
+  const pick = await vscode.window.showWarningMessage('VerifyLens: 이 폴더는 아직 신뢰하지 않은 상태(제한 모드)입니다. 내 브랜치를 확인하려면 폴더를 신뢰해야 합니다. 샘플은 지금도 해 볼 수 있습니다.', '이 폴더 신뢰하기');
+  if (pick) await vscode.commands.executeCommand('workbench.trust.manage');
+  return true;
+}
+
 async function pickRepo(): Promise<string | undefined> {
   const folders = vscode.workspace.workspaceFolders ?? [];
   const roots = [...new Set(folders.map((f) => M.gitRoot(f.uri.fsPath)).filter((x): x is string => !!x))];
@@ -271,6 +279,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('verifylens.checkBranch', async () => {
+      if (await needTrust()) return;
       const repo = await pickRepo();
       if (!repo) return;
       const current = M.currentBranch(repo);
@@ -284,6 +293,7 @@ export function activate(ctx: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('verifylens.compareBranches', async () => {
+      if (await needTrust()) return;
       const repo = await pickRepo();
       if (!repo) return;
       const current = M.currentBranch(repo);
@@ -301,9 +311,15 @@ export function activate(ctx: vscode.ExtensionContext) {
       return execute(`${a} ↔ ${b} 비교 (기준 ${base})`, () => M.runRepo({ repo, base, a, b, reqFile, workingRef: current }), ui);
     }),
 
-    vscode.commands.registerCommand('verifylens.rerun', () => (again ? execute('다시 분석', again, ui) : vscode.commands.executeCommand('verifylens.checkBranch'))),
+    vscode.commands.registerCommand('verifylens.rerun', async () => {
+      if (!again || run?.kind === 'repo') if (await needTrust()) return;
+      return again ? execute('다시 분석', again, ui) : vscode.commands.executeCommand('verifylens.checkBranch');
+    }),
     vscode.commands.registerCommand('verifylens.openReport', () => (run ? showReport() : vscode.window.showInformationMessage('VerifyLens: 먼저 분석을 실행하세요.'))),
-    vscode.commands.registerCommand('verifylens.createRequirements', () => createReqs()),
+    vscode.commands.registerCommand('verifylens.createRequirements', async () => {
+      if (await needTrust()) return;
+      return createReqs();
+    }),
     vscode.commands.registerCommand('verifylens.focusRequirement', (id: string) => showReport(id)),
     vscode.commands.registerCommand('verifylens.openLocation', (setKey: string, file: string, line: number) => openLocation(setKey, file, line)),
   );
