@@ -6,28 +6,87 @@
   "publisher": "damun",
   "license": "MIT",
   "icon": "media/icon.png",
-  "repository": { "type": "git", "url": "https://github.com/DamunKorea/verifylens" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DamunKorea/verifylens"
+  },
   "homepage": "https://github.com/DamunKorea/verifylens",
-  "bugs": { "url": "https://github.com/DamunKorea/verifylens/issues" },
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Testing", "Linters", "Other"],
-  "keywords": ["ai", "verification", "code review", "requirements", "copilot", "cursor"],
+  "bugs": {
+    "url": "https://github.com/DamunKorea/verifylens/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "verification",
+    "code review",
+    "requirements",
+    "copilot",
+    "cursor"
+  ],
   "main": "./dist/extension.js",
   "activationEvents": [],
   "contributes": {
     "commands": [
-      { "command": "verifylens.runDemo", "title": "Run demo (sample login-lockout case)", "category": "VerifyLens", "icon": "$(play)" },
-      { "command": "verifylens.checkBranch", "title": "Check current branch", "category": "VerifyLens", "icon": "$(search)" },
-      { "command": "verifylens.compareBranches", "title": "Compare two branches", "category": "VerifyLens", "icon": "$(git-compare)" },
-      { "command": "verifylens.openReport", "title": "Open report", "category": "VerifyLens", "icon": "$(preview)" },
-      { "command": "verifylens.createRequirements", "title": "Create requirements file", "category": "VerifyLens", "icon": "$(new-file)" },
-      { "command": "verifylens.rerun", "title": "Run again", "category": "VerifyLens", "icon": "$(refresh)" }
+      {
+        "command": "verifylens.runDemo",
+        "title": "Run demo (sample login-lockout case)",
+        "category": "VerifyLens",
+        "icon": "$(play)"
+      },
+      {
+        "command": "verifylens.checkBranch",
+        "title": "Check current branch",
+        "category": "VerifyLens",
+        "icon": "$(search)"
+      },
+      {
+        "command": "verifylens.compareBranches",
+        "title": "Compare two branches",
+        "category": "VerifyLens",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "verifylens.openReport",
+        "title": "Open report",
+        "category": "VerifyLens",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "verifylens.createRequirements",
+        "title": "Create requirements file",
+        "category": "VerifyLens",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "verifylens.rerun",
+        "title": "Run again",
+        "category": "VerifyLens",
+        "icon": "$(refresh)"
+      }
     ],
     "viewsContainers": {
-      "activitybar": [ { "id": "verifylens", "title": "VerifyLens", "icon": "media/activity.svg" } ]
+      "activitybar": [
+        {
+          "id": "verifylens",
+          "title": "VerifyLens",
+          "icon": "media/activity.svg"
+        }
+      ]
     },
     "views": {
-      "verifylens": [ { "id": "verifylens.requirements", "name": "Requirements" } ]
+      "verifylens": [
+        {
+          "id": "verifylens.requirements",
+          "name": "Requirements"
+        }
+      ]
     },
     "viewsWelcome": [
       {
@@ -37,20 +96,56 @@
     ],
     "menus": {
       "view/title": [
-        { "command": "verifylens.rerun", "when": "view == verifylens.requirements && verifylens.hasRun", "group": "navigation@1" },
-        { "command": "verifylens.openReport", "when": "view == verifylens.requirements && verifylens.hasRun", "group": "navigation@2" },
-        { "command": "verifylens.checkBranch", "when": "view == verifylens.requirements", "group": "1_run@1" },
-        { "command": "verifylens.compareBranches", "when": "view == verifylens.requirements", "group": "1_run@2" },
-        { "command": "verifylens.runDemo", "when": "view == verifylens.requirements", "group": "1_run@3" }
+        {
+          "command": "verifylens.rerun",
+          "when": "view == verifylens.requirements && verifylens.hasRun",
+          "group": "navigation@1"
+        },
+        {
+          "command": "verifylens.openReport",
+          "when": "view == verifylens.requirements && verifylens.hasRun",
+          "group": "navigation@2"
+        },
+        {
+          "command": "verifylens.checkBranch",
+          "when": "view == verifylens.requirements",
+          "group": "1_run@1"
+        },
+        {
+          "command": "verifylens.compareBranches",
+          "when": "view == verifylens.requirements",
+          "group": "1_run@2"
+        },
+        {
+          "command": "verifylens.runDemo",
+          "when": "view == verifylens.requirements",
+          "group": "1_run@3"
+        }
       ]
     },
     "configuration": {
       "title": "VerifyLens",
       "properties": {
-        "verifylens.baseBranch": { "type": "string", "default": "", "description": "Base branch to compare against. Empty: ask (main / master first)." },
-        "verifylens.requirementsFile": { "type": "string", "default": ".verifylens/requirements.md", "description": "Requirements file, relative to the repository root." },
-        "verifylens.junitPath": { "type": "string", "default": "", "description": "Optional JUnit XML test report for the checked branch, relative to the repository root." },
-        "verifylens.nodePath": { "type": "string", "default": "node", "description": "Node.js 22.18+ used to run the demo's tests. If unavailable, the demo uses bundled test results." }
+        "verifylens.baseBranch": {
+          "type": "string",
+          "default": "",
+          "description": "Base branch to compare against. Empty: ask (main / master first)."
+        },
+        "verifylens.requirementsFile": {
+          "type": "string",
+          "default": ".verifylens/requirements.md",
+          "description": "Requirements file, relative to the repository root."
+        },
+        "verifylens.junitPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional JUnit XML test report for the checked branch, relative to the repository root."
+        },
+        "verifylens.nodePath": {
+          "type": "string",
+          "default": "node",
+          "description": "Node.js 22.18+ used to run the demo's tests. If unavailable, the demo uses bundled test results."
+        }
       }
     }
   },
@@ -58,11 +153,13 @@
     "build": "node build.mjs",
     "typecheck": "tsc -p . --noEmit",
     "test": "node --test test/model.test.ts && node test/smoke.cjs",
-    "package": "node build.mjs && vsce package --no-dependencies"
+    "package": "node build.mjs && vsce package --no-dependencies",
+    "test:vscode": "node test/integration/run.cjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/vscode": "1.85.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.3"
