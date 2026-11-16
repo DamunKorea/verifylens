@@ -14,6 +14,11 @@ AI tools say "Done, all requirements implemented." VerifyLens checks that claim 
 
 **Editors:** checked on VS Code 1.146 and on **Cursor 3.29** (the same `.vsix`; the integration tests pass there too). In Cursor, use the editor window: extensions are not loaded in Cursor's agent window. Other VS Code–based editors (Windsurf, VSCodium) should accept the same file but have not been checked.
 
+## Install
+
+- **VS Code:** open the Extensions view, search for **VerifyLens** and click **Install** ([Marketplace page](https://marketplace.visualstudio.com/items?itemName=damun.verifylens)).
+- **Cursor and other VS Code–based editors:** download the `.vsix` from the [latest release](https://github.com/DamunKorea/verifylens/releases/latest), then **Extensions → ⋯ → Install from VSIX…**. (Not on Open VSX yet.)
+
 ## Try it in 10 seconds
 
 1. Click the **VerifyLens** icon in the Activity Bar.

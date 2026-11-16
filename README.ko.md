@@ -47,13 +47,20 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 
 같은 엔진이 에디터 안에서, 원래 있던 기능처럼 돌아갑니다. 왼쪽에 요구사항 목록이 열리고, 근거가 된 줄 끝에 설명이 붙습니다(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`). 마우스를 올리면 근거 표가 나오고, A ↔ B는 VS Code 기본 비교 화면으로 나란히 봅니다. 확인이 필요한 줄은 문제(Problems) 목록에 올라가고, 커밋하면 스스로 다시 분석합니다. VS Code와 Cursor 3.29에서 확인했습니다(같은 `.vsix`). Cursor에서는 에디터 창에서 쓰세요. 에이전트 창에서는 확장이 읽히지 않습니다. 다른 VS Code 기반 에디터에도 같은 파일이 설치되는 조건이지만 직접 확인하지는 못했습니다.
 
+**설치**
+
+- **VS Code:** 확장 검색에서 **VerifyLens**를 찾아 **설치**를 누릅니다([장터 페이지](https://marketplace.visualstudio.com/items?itemName=damun.verifylens)).
+- **Cursor 등 VS Code 기반 에디터:** [최신 Release](https://github.com/DamunKorea/verifylens/releases/latest)에서 `.vsix`를 받아 **확장 → ⋯ → VSIX에서 설치…**로 넣습니다. (Open VSX에는 아직 없습니다.)
+
+왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. `.vsix`를 직접 만들려면:
+
 ```bash
 cd vscode
 npm install
 npm run package     # verifylens-0.5.1.vsix 를 만듭니다
 ```
 
-에디터에서 **확장 → ⋯ → VSIX에서 설치…**로 파일을 고르면 됩니다. 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
+자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
 
 ## 내 저장소에 쓰기
 

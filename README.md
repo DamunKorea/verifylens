@@ -47,13 +47,20 @@ Outputs are written to `out/`:
 
 The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.
 
+**Install**
+
+- **VS Code:** open the Extensions view, search for **VerifyLens** and click **Install** ([Marketplace page](https://marketplace.visualstudio.com/items?itemName=damun.verifylens)).
+- **Cursor and other VS Code–based editors:** download the `.vsix` from the [latest release](https://github.com/DamunKorea/verifylens/releases/latest), then **Extensions → ⋯ → Install from VSIX…**. (Not on Open VSX yet.)
+
+Click the VerifyLens icon in the Activity Bar and choose **Run demo**. To build the `.vsix` yourself:
+
 ```bash
 cd vscode
 npm install
 npm run package     # builds verifylens-0.5.1.vsix
 ```
 
-Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the file. Click the VerifyLens icon in the Activity Bar and choose **Run demo**. See [vscode/README.md](vscode/README.md) for details.
+See [vscode/README.md](vscode/README.md) for details.
 
 ## Use it on your own repo
 
