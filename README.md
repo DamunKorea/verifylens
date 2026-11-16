@@ -28,7 +28,7 @@ npm install
 npm run demo        # builds a sample repo, runs its tests, opens the concept demo
 ```
 
-Windows users can also double-click `demo-windows.cmd`.
+Windows users can also double-click `demo-windows.cmd`. If PowerShell says *running scripts is disabled on this system*, use `npm.cmd install` and `npm.cmd run demo` instead.
 
 The demo creates a throwaway git repo with two AI-style results for the same task ("lock the account after 5 failed logins"). Result A uses `failures >= 5`, result B uses `failures > 5`. Both claim to be done. VerifyLens runs the tests and shows that B only locks on the **6th** attempt and that its test fails.
 

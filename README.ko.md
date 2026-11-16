@@ -28,7 +28,7 @@ npm install
 npm run demo        # 샘플 저장소를 만들고 테스트를 돌린 뒤 컨셉 시연을 엽니다
 ```
 
-Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다.
+Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell에서 「이 시스템에서 스크립트를 실행할 수 없으므로」 오류가 나면 `npm.cmd install`, `npm.cmd run demo`로 실행하세요.
 
 데모는 임시 git 저장소에 같은 작업(「로그인 5회 연속 실패하면 계정 잠금」)의 AI 결과 두 개를 만듭니다. 결과 A는 `failures >= 5`, 결과 B는 `failures > 5`입니다. 둘 다 완료라고 하지만, VerifyLens는 테스트를 실제로 돌려서 B가 **6번째** 시도에서야 잠그고 검사도 실패한다는 것을 보여 줍니다.
 
