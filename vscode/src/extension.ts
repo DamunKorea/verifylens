@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import { existsSync, mkdirSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import * as M from './model.ts';
 import { showFile } from '../../src/git.ts';
@@ -497,8 +497,13 @@ function reqPath(repo: string) {
 async function ensureReqs(repo: string): Promise<string | undefined> {
   const file = reqPath(repo);
   if (existsSync(file)) return file;
-  const pick = await vscode.window.showWarningMessage(`VerifyLens: 요구사항 파일(${path.relative(repo, file)})이 없습니다. 이번 작업의 요구사항을 적어야 확인할 수 있습니다.`, '요구사항 파일 만들기');
-  if (pick) await createReqs(repo);
+  const pick = await vscode.window.showWarningMessage(
+    `VerifyLens: 요구사항 파일(${path.relative(repo, file)})이 없습니다. 이슈나 PR 글에서 가져오거나 직접 적을 수 있습니다.`,
+    '이슈 · PR에서 가져오기',
+    '요구사항 파일 만들기',
+  );
+  if (pick === '이슈 · PR에서 가져오기') await importRequirements(undefined, repo);
+  else if (pick) await createReqs(repo);
   return undefined;
 }
 
@@ -512,6 +517,75 @@ async function createReqs(repo?: string) {
   }
   await vscode.window.showTextDocument(vscode.Uri.file(file));
   void vscode.window.showInformationMessage('VerifyLens: 요구사항을 적고 저장한 뒤 「Check current branch」를 실행하세요.');
+}
+
+/**
+ * 이슈 · PR · 복사한 글에서 요구사항을 뽑아 요구사항 파일에 넣는다 (규칙 기반, AI 없음).
+ * GitHub 에서는 글만 읽어 온다. 코드는 보내지 않는다.
+ * { text, dryRun: true } 를 주면 파일을 건드리지 않고 초안 글만 돌려준다 (시험용).
+ */
+async function importRequirements(arg?: unknown, repoArg?: string): Promise<string | undefined> {
+  const a = arg as { text?: string; dryRun?: boolean } | undefined;
+  if (a?.dryRun) return M.mergeRequirementsFile(null, M.requirementsFrom([{ label: '글', url: '', title: '', body: a.text ?? '' }]).requirements, '붙여 넣은 글', 'replace').text;
+  if (await needTrust()) return undefined;
+  const repo = repoArg ?? (await pickRepo());
+  if (!repo) return undefined;
+  const src = await vscode.window.showQuickPick(
+    [
+      { label: '$(git-pull-request) 지금 브랜치의 GitHub PR', detail: 'PR 설명과 PR이 닫는 이슈의 글을 gh로 읽어 옵니다. 글만 읽고 코드는 보내지 않습니다.', id: 'pr' },
+      { label: '$(issues) GitHub 이슈 번호나 주소', detail: '예: 123 또는 https://github.com/owner/repo/issues/123', id: 'issue' },
+      { label: '$(clippy) 복사한 글 (클립보드)', detail: 'Jira · Linear · 메신저 등 어디서든 복사한 요구사항 글. 네트워크를 쓰지 않습니다.', id: 'clip' },
+    ],
+    { placeHolder: '요구사항을 어디서 가져올까요?' },
+  );
+  if (!src) return undefined;
+  let texts: M.SourceText[];
+  try {
+    if (src.id === 'clip') {
+      texts = [{ label: '복사한 글', url: '', title: '', body: await vscode.env.clipboard.readText() }];
+    } else {
+      const run = M.ghRunner(repo, cfg('ghPath', 'gh') || 'gh');
+      if (src.id === 'issue') {
+        const ref = await vscode.window.showInputBox({ prompt: '이슈 번호나 주소', placeHolder: '123' });
+        if (!ref) return undefined;
+        texts = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'VerifyLens: GitHub에서 이슈를 읽는 중' }, async () => M.fetchIssue(run, ref));
+      } else {
+        texts = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'VerifyLens: GitHub에서 PR과 이슈를 읽는 중' }, async () => M.fetchPr(run));
+      }
+    }
+  } catch (e) {
+    out.appendLine(`[가져오기 실패] ${e instanceof Error ? e.message : String(e)}`);
+    void vscode.window.showErrorMessage(`VerifyLens: ${M.ghError(e)}`);
+    return undefined;
+  }
+  const { requirements, sources } = M.requirementsFrom(texts);
+  if (!requirements.length) {
+    void vscode.window.showWarningMessage(
+      `VerifyLens: ${texts.map((t) => t.label).join(', ')}에서 요구사항으로 볼 문장을 찾지 못했습니다. 목록(- 항목)이나 「~해야 한다」 꼴 문장이 있어야 합니다.`,
+    );
+    return undefined;
+  }
+  const file = reqPath(repo);
+  const existing = existsSync(file) ? readFileSync(file, 'utf8') : null;
+  let mode: 'replace' | 'append' = 'replace';
+  if (existing && M.treeCount(existing) > 0) {
+    const pick = await vscode.window.showWarningMessage(`VerifyLens: 요구사항 파일에 이미 ${M.treeCount(existing)}개가 있습니다. 가져온 ${requirements.length}개를 어떻게 넣을까요?`, { modal: true }, '뒤에 추가', '바꾸기');
+    if (!pick) return undefined;
+    mode = pick === '바꾸기' ? 'replace' : 'append';
+  }
+  const label = sources.join(' · ');
+  const merged = M.mergeRequirementsFile(existing, requirements, label, mode);
+  if (!merged.added) {
+    void vscode.window.showInformationMessage('VerifyLens: 가져온 요구사항이 이미 모두 들어 있습니다.');
+    return merged.text;
+  }
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, merged.text, 'utf8');
+  await vscode.window.showTextDocument(vscode.Uri.file(file));
+  void vscode.window
+    .showInformationMessage(`VerifyLens: ${label}에서 요구사항 ${merged.added}개를 가져왔습니다. 읽어 보고 고친 뒤 확인을 실행하세요.`, '지금 브랜치 확인')
+    .then((pick) => (pick ? vscode.commands.executeCommand('verifylens.checkBranch') : undefined));
+  return merged.text;
 }
 
 function junitFor(repo: string): string | undefined {
@@ -626,6 +700,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('verifylens.openDiff', (arg?: unknown) => openDiff(arg)),
     vscode.commands.registerCommand('verifylens.recordJudgment', (arg?: unknown) => recordJudgment(arg)),
     vscode.commands.registerCommand('verifylens.copySummary', (arg?: unknown) => copySummary(arg)),
+    vscode.commands.registerCommand('verifylens.importRequirements', (arg?: unknown) => importRequirements(arg)),
     vscode.commands.registerCommand('verifylens.openLocation', (setKey: string, file: string, line: number) => openLocation(setKey, file, line)),
   );
 }

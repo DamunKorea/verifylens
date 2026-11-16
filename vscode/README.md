@@ -4,7 +4,7 @@
 
 AI tools say "Done, all requirements implemented." VerifyLens checks that claim against your git diff and the tests that actually ran, and shows the result in a side panel, as highlighted lines, and as a lens above the code that decides each requirement.
 
-- **No LLM, no network.** Static analysis (TypeScript compiler API) + git + your JUnit test results. Your code never leaves your machine.
+- **No LLM, and your code never leaves your machine.** Static analysis (TypeScript compiler API) + git + your JUnit test results, all local. The only optional network use is *Import requirements*, which reads a PR's or issue's text through your own `gh`.
 - **Unknown stays unknown.** No test or an unresolved call means "not verified", never "looks fine".
 - **You decide.** Every mark links back to the code line or test that produced it.
 
@@ -29,12 +29,12 @@ The demo runs its tests with Node.js 22.18+ if it finds one, and otherwise uses 
 
 ## Use it on your branch
 
-1. Run **VerifyLens: Create requirements file**. It creates `.verifylens/requirements.md`:
+1. Fill in the requirements. Run **VerifyLens: Import requirements** to pull them from the current branch's GitHub PR and its linked issues, from an issue number, or from text you copied (Jira, Linear, chat). Or run **VerifyLens: Create requirements file** and type them. Either way you get `.verifylens/requirements.md`:
    ```
-   - R1: Users can log in with the right password | keywords: login, password
-   - R2: Lock the account after 5 consecutive failures | keywords: failure, lock
+   - R1: Users can log in with the right password
+   - R2: Lock the account after 5 consecutive failures
    ```
-   `keywords` are words that appear in the code; numbers in the sentence are checked against conditions.
+   Plain sentences are enough: English is linked by its own words, Korean through a fixed glossary (no LLM), and numbers are checked against conditions. If a requirement lands on the wrong code, append `| keywords: words, in, the, code`. Read the imported list before trusting it; it is extracted by rules (sections such as "Acceptance criteria" / "요구사항", checklists, "must / ~해야 한다" sentences, or just the title).
 2. Commit your change, then run **VerifyLens: Check current branch** and pick the base branch (e.g. `main`).
    After that it **keeps itself up to date**: commit a fix, edit the requirements, or produce a new test report, and the result refreshes on its own.
 3. To compare two AI attempts, run **VerifyLens: Compare two branches**.
@@ -53,6 +53,7 @@ Optional: set `verifylens.junitPath` to a JUnit XML report (for example from `no
 | `verifylens.inlineNotes` | `true` | Show the note at the end of evidence lines |
 | `verifylens.problems` | `true` | List lines that need attention in the Problems panel |
 | `verifylens.summaryLanguage` | `ko` | Language of the copied PR summary (`ko` or `en`) |
+| `verifylens.ghPath` | `gh` | GitHub CLI used by *Import requirements* |
 
 ## Limitations
 
@@ -69,7 +70,7 @@ Source, issues and feedback: https://github.com/DamunKorea/verifylens
 AI가 「완료」라고 한 변경이 요구사항마다 **확인됨 · 다름 · 미확인**인지 에디터 옆에서 보여 줍니다. LLM과 네트워크를 쓰지 않고, 코드는 PC 밖으로 나가지 않습니다.
 
 - **처음 써 보기:** 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요.
-- **내 브랜치 확인:** **요구사항 파일 만들기**로 요구사항을 적고, 변경을 커밋한 뒤 **지금 브랜치 확인**을 누르세요. 그 뒤로는 커밋하거나 테스트를 돌리면 스스로 다시 분석합니다.
+- **내 브랜치 확인:** **이슈 · PR에서 가져오기**(GitHub PR · 이슈 · 복사한 글)나 **요구사항 파일 만들기**로 요구사항을 채우고, 변경을 커밋한 뒤 **지금 브랜치 확인**을 누르세요. 그 뒤로는 커밋하거나 테스트를 돌리면 스스로 다시 분석합니다.
 - **AI 결과 두 개 비교:** **두 브랜치 비교**를 쓰세요.
 
 근거가 된 줄에는 아이콘과 줄 끝 설명이 붙고, 마우스를 올리면 근거 표가 나옵니다. 줄 위 **A ↔ B 비교**를 누르면 VS Code 기본 비교 화면으로 두 결과를 나란히 봅니다. 확인이 필요한 줄은 문제(Problems) 목록에도 올라가서 `F8`로 넘겨 볼 수 있고, 판단(사용 · 수정 · 추가 검증 · 보류)은 목록에서 바로 기록합니다. 목록 위 클립보드 아이콘을 누르면 PR에 붙일 **검증 요약**(상태 · 근거 줄 · 동작 시점 · 검사 · 판단 · 아직 확인 안 된 것)이 복사됩니다.

@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { analyzeResult, evaluate } from '../../src/engine.ts';
-import { parseRequirements } from '../../src/requirements.ts';
+import { draftRequirements, extractRequirements, parseRequirements } from '../../src/requirements.ts';
 import { buildSampleRepo } from '../../src/demo.ts';
 import { renderHtml } from '../../src/output.ts';
 import { counts, renderSummaryMd } from '../../src/summary.ts';
@@ -95,11 +95,13 @@ export function nodeSupportsTs(node: string): boolean {
 }
 
 export const REQ_TEMPLATE = `# 요구사항 — VerifyLens 가 이 파일을 읽습니다.
-# 형식: - R번호: 요구사항 문장 | keywords: 코드에 나오는 영어 단어(쉼표로)
+# 형식: - R번호: 요구사항 문장
 # 숫자(5회, 30분 등)를 쓰면 코드의 조건과 비교해 몇 번째에 동작하는지 계산합니다.
+# 코드와 잘못 이어지면 뒤에 「| keywords: 코드에 나오는 영어 단어」를 붙여 직접 정할 수 있습니다.
+# 이슈나 PR 글에서 가져오려면 명령 팔레트에서 「VerifyLens: Import requirements」를 실행하세요.
 # 아래 두 줄은 예시입니다. 이번 작업의 요구사항으로 바꿔 쓰세요.
-- R1: 올바른 비밀번호로 로그인할 수 있다 | keywords: login, password
-- R2: 연속 5회 실패하면 계정을 잠근다 | keywords: failure, lock
+- R1: 올바른 비밀번호로 로그인할 수 있다
+- R2: 연속 5회 실패하면 계정을 잠근다
 `;
 
 // ---------------------------------------------------------------- 화면에 보여 줄 모양
@@ -289,6 +291,7 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
   if (strip.length) out.push('', '```', ...strip, '```');
   if (failed.length) out.push('', '실패한 검사', ...failed);
   out.push('', '_출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음_');
+  if (s.req.auto) out.push('', '_키워드를 적지 않아 용어집으로 코드와 이었습니다. 근거 줄이 맞는지 확인하세요._');
   if (links) {
     const acts = [cmdLink('근거 보기', 'verifylens.focusRequirement', [reqId])];
     if (diffTarget(report, reqId)) acts.push(cmdLink(report.sets.length > 1 ? 'A ↔ B 비교' : '기준과 비교', 'verifylens.openDiff', [reqId]));
@@ -488,6 +491,7 @@ const TXT = {
     notRun: '연결된 검사가 실행되지 않음',
     noImpl: '구현 근거를 찾지 못함',
     dyn: '해석하지 못한 호출',
+    autoLink: (ids: string) => `${ids}: 키워드 없이 용어집으로 코드와 연결함 — 근거 줄은 작성자가 확인`,
     footer: (v: string) => `VerifyLens${v ? ' ' + v : ''} · 정적 분석과 실행된 검사 결과만 사용 (AI 추정 없음) · 판단은 작성자가 직접 기록`,
   },
   en: {
@@ -509,6 +513,7 @@ const TXT = {
     notRun: 'no linked test was run',
     noImpl: 'no implementation evidence found',
     dyn: 'Unresolved call',
+    autoLink: (ids: string) => `${ids}: linked to code by a fixed glossary (no keywords given) — evidence lines checked by the author`,
     footer: (v: string) => `VerifyLens${v ? ' ' + v : ''} · static analysis and executed test results only (no AI inference) · decisions recorded by the author`,
   },
 };
@@ -580,6 +585,90 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   if (strips.length) out.push('', `**${t.when}**`, '```', ...strips.slice(0, -1), '```');
   if (failed.length) out.push('', `**${t.failed}**`, ...failed);
   if (open.length) out.push('', `**${t.open}**`, ...open);
-  out.push('', `<sub>${t.footer(opts.version ?? '')}</sub>`, '');
+  const autoIds = report.summaries.filter((x) => x.req.auto).map((x) => x.req.id);
+  out.push('', `<sub>${autoIds.length ? t.autoLink(autoIds.join(', ')) + '<br>' : ''}${t.footer(opts.version ?? '')}</sub>`, '');
   return out.join('\n');
+}
+
+// ---------------------------------------------------------------- 요구사항 가져오기 (GitHub PR · 이슈 · 복사한 글)
+/** gh 명령을 실행해 표준 출력을 돌려주는 함수. 시험에서는 가짜로 바꿔 끼운다. */
+export type GhRun = (args: string[]) => string;
+export function ghRunner(cwd: string, gh = 'gh'): GhRun {
+  return (args) => execFileSync(gh, args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 30000, maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+/** gh 가 실패한 이유를 사람이 바로 고칠 수 있는 말로 바꾼다. */
+export function ghError(e: unknown): string {
+  const err = e as { code?: string; stderr?: string | Buffer; message?: string };
+  if (err?.code === 'ENOENT') return 'GitHub CLI(gh)를 찾지 못했습니다. gh를 설치하거나 「복사한 글에서 가져오기」를 쓰세요.';
+  const text = String(err?.stderr ?? err?.message ?? e);
+  if (/no pull requests found/i.test(text)) return '이 브랜치로 올린 PR을 찾지 못했습니다. PR을 먼저 올리거나 이슈 번호로 가져오세요.';
+  if (/gh auth login|not logged in|authentication/i.test(text)) return 'gh에 로그인되어 있지 않습니다. 터미널에서 gh auth login 을 실행한 뒤 다시 해 보세요.';
+  if (/could not resolve|not found|404/i.test(text)) return '그 이슈나 PR을 찾지 못했습니다. 번호나 주소, 그리고 gh로 로그인한 계정의 권한을 확인하세요.';
+  if (/ETIMEDOUT|timed out/i.test(text)) return 'GitHub 응답이 늦어 중단했습니다. 잠시 뒤 다시 해 보세요.';
+  return text.split('\n').map((x) => x.trim()).filter(Boolean)[0] ?? 'gh 실행에 실패했습니다.';
+}
+
+export type SourceText = { label: string; url: string; title: string; body: string };
+type GhItem = { number?: number; title?: string; body?: string; url?: string };
+
+/** 지금 브랜치(또는 ref)의 PR 글과, PR 이 닫는다고 연결한 이슈들의 글. 요구사항은 보통 이슈에 있어서 이슈를 앞에 둔다. */
+export function fetchPr(run: GhRun, ref?: string): SourceText[] {
+  const pr = JSON.parse(run(['pr', 'view', ...(ref ? [ref] : []), '--json', 'number,title,body,url,closingIssuesReferences'])) as GhItem & { closingIssuesReferences?: GhItem[] };
+  const out: SourceText[] = [];
+  for (const ref of pr.closingIssuesReferences ?? []) {
+    if (!ref.url) continue;
+    try {
+      out.push(...fetchIssue(run, ref.url));
+    } catch {
+      /* 권한이 없는 이슈는 건너뛴다 */
+    }
+  }
+  out.push({ label: `PR #${pr.number}`, url: pr.url ?? '', title: pr.title ?? '', body: pr.body ?? '' });
+  return out;
+}
+
+export function fetchIssue(run: GhRun, ref: string): SourceText[] {
+  const it = JSON.parse(run(['issue', 'view', ref.trim().replace(/^#/, ''), '--json', 'number,title,body,url'])) as GhItem;
+  return [{ label: `이슈 #${it.number}`, url: it.url ?? '', title: it.title ?? '', body: it.body ?? '' }];
+}
+
+/** 요구사항 파일에 들어 있는 요구사항 수 */
+export const treeCount = (md: string) => parseRequirements(md).length;
+
+/** 여러 글에서 요구사항 후보를 모은다. 같은 문장은 한 번만. */
+export function requirementsFrom(texts: SourceText[]): { requirements: string[]; sources: string[] } {
+  const seen = new Set<string>();
+  const requirements: string[] = [];
+  const sources: string[] = [];
+  for (const t of texts) {
+    let found = extractRequirements(t.body).filter((x) => !seen.has(x.toLowerCase()));
+    let label = t.label;
+    if (!found.length) {
+      // 본문이 줄글뿐이면 제목 한 줄이라도 요구사항 후보로 쓴다 ("fix:" 같은 머리말과 "(#123)" 꼬리는 뗀다).
+      const title = t.title.replace(/^\s*(feat|fix|chore|refactor|docs|test|perf)(\([^)]*\))?!?:\s*/i, '').replace(/\s*\((?:fix(?:es)?|close[sd]?|resolve[sd]?)?\s*#\d+\)\s*$/i, '').trim();
+      if (title.length < 6 || seen.has(title.toLowerCase())) continue;
+      found = [title];
+      label = `${t.label} 제목`;
+    }
+    found.forEach((x) => seen.add(x.toLowerCase()));
+    requirements.push(...found);
+    sources.push(label);
+  }
+  return { requirements: requirements.slice(0, 12), sources };
+}
+
+/**
+ * 요구사항 파일 내용을 만든다. replace 는 새로 쓰고, append 는 있던 요구사항 뒤에 번호를 이어 붙인다(같은 문장은 빼고).
+ * added 는 실제로 들어간 개수.
+ */
+export function mergeRequirementsFile(existing: string | null, cands: string[], source: string, mode: 'replace' | 'append'): { text: string; added: number } {
+  const old = existing ? parseRequirements(existing) : [];
+  if (mode === 'replace' || !old.length) return { text: draftRequirements(cands, source), added: cands.length };
+  const have = new Set(old.map((r) => r.text.toLowerCase()));
+  const fresh = cands.filter((c) => !have.has(c.toLowerCase()));
+  if (!fresh.length) return { text: existing!, added: 0 };
+  const start = Math.max(...old.map((r) => Number(r.id.slice(1)))) + 1;
+  const lines = [`# ↓ ${source}에서 추가`, ...fresh.map((c, i) => `- R${start + i}: ${c}`)];
+  return { text: existing!.replace(/\n*$/, '\n') + lines.join('\n') + '\n', added: fresh.length };
 }

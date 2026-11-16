@@ -73,7 +73,7 @@ export async function main(argv: string[]) {
       pr = env.prFile;
     }
     const reqs = parseRequirements(readFileSync(reqFile, 'utf8'));
-    if (!reqs.length) throw new Error('요구사항을 읽지 못했습니다. "- R1: 문장 | keywords: ..." 형식인지 확인하세요.');
+    if (!reqs.length) throw new Error('요구사항을 읽지 못했습니다. "- R1: 문장" 형식인지 확인하세요.');
     const sets = [analyzeResult({ key: 'A', repo, base, ref: a, junit: ja })];
     if (b) sets.push(analyzeResult({ key: 'B', repo, base, ref: b, junit: jb }));
     const report = evaluate(sets, reqs, repo, base);

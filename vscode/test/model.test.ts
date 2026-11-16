@@ -223,3 +223,107 @@ test('PR summary: one table a reviewer can trust without redoing the check', () 
   assert.match(en, /- R3: no linked test was run\n/);
   assert.ok(!/[가-힣]/.test(en.replace(/\| \*\*R\d\*\* [^|]+\|/g, '')), 'English summary has no Korean outside the requirement text');
 });
+
+// ---------------------------------------------------------------- 0.4.0: 키워드 없이 연결 · 요구사항 가져오기
+import { mkdtempSync, writeFileSync as writeFile } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { extractRequirements } from '../../src/requirements.ts';
+
+function verdicts(r: M.Run, md: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'vl-req-'));
+  const reqFile = join(dir, 'requirements.md');
+  writeFile(reqFile, md);
+  const a = join(ext, 'samples', 'junit', 'junit-a.xml');
+  const b = join(ext, 'samples', 'junit', 'junit-b.xml');
+  const run = M.runRepo({ repo: r.repo, base: 'main', a: 'feature/lockout-a', b: 'feature/lockout-b', reqFile, junitA: a, junitB: b });
+  return run;
+}
+
+test('no keywords needed: Korean and English requirements link to code by the glossary', () => {
+  const r = demo(null);
+  for (const md of [
+    '- R1: 올바른 비밀번호로 로그인할 수 있다\n- R2: 연속 5회 실패하면 계정을 잠근다\n- R3: 잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다\n',
+    '- R1: Users can log in with the right password\n- R2: Lock the account after 5 consecutive failures\n- R3: A locked account cannot log in even with the right password\n',
+    '- R1: 비밀번호가 맞으면 로그인에 성공해야 한다\n- R2: 로그인을 5번 연속으로 틀리면 계정이 잠겨야 한다\n- R3: 잠긴 계정의 로그인 시도는 거부해야 한다\n',
+  ]) {
+    const run = verdicts(r, md);
+    assert.deepEqual(status(run), { R1: '확인됨', R2: '다름', R3: '미확인' }, md);
+    const b = run.report.sets[1];
+    assert.equal(b.perReq.R2.evidence.unit!.cond!.expr, 'user.failures > 5', 'the deciding condition, not its enclosing block');
+    assert.equal(b.perReq.R2.evidence.boundary!.attempts, 6);
+    assert.ok(run.report.reqs.every((q) => q.auto));
+  }
+});
+
+test('automatic linking never turns a missing test into "verified"', () => {
+  const r = demo(null);
+  // R3 은 R1(로그인 · 비밀번호)과 R2(계정 · 잠금)의 낱말을 모두 담고 있어, 느슨하게 이으면 남의 검사가 붙는다.
+  const run = verdicts(r, '- R1: 잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다\n- R2: 계정을 삭제할 수 있다\n');
+  for (const set of run.report.sets) {
+    assert.deepEqual(set.perReq.R1.tests, [], `${set.key}: no test claims to cover the locked-login rule`);
+    assert.equal(set.perReq.R1.testStatus, '미실행');
+  }
+  assert.equal(status(run).R1, '미확인');
+  assert.equal(status(run).R2, '미확인', 'a requirement with no code at all stays unverified');
+  assert.match(M.hoverMarkdown(run.report, 'R1')!, /용어집으로 코드와 이었습니다\. 근거 줄이 맞는지 확인하세요/);
+  assert.match(M.prSummary(run), /<sub>R1, R2: 키워드 없이 용어집으로 코드와 연결함 — 근거 줄은 작성자가 확인<br>VerifyLens/);
+});
+
+test('requirements are extracted from issue and PR text by rules', () => {
+  assert.deepEqual(
+    extractRequirements('## 배경\n무차별 대입을 막아야 합니다.\n\n## 요구사항\n- [ ] 연속 5회 실패하면 계정을 잠근다\n- [x] 잠긴 계정은 **로그인되지 않는다**.\n\n## 참고\n- 디자인: https://example.com/x\n- 스키마 변경 없음\n'),
+    ['연속 5회 실패하면 계정을 잠근다', '잠긴 계정은 로그인되지 않는다'],
+    'the section named 요구사항 wins over other lists',
+  );
+  assert.deepEqual(
+    extractRequirements('<!-- template -->\n### Acceptance criteria\n1. Lock the account after 5 consecutive failures.\n2. A locked account cannot [log in](https://x.y).\n\n### Tasks\n- [ ] add tests\n```\n- not a requirement\n```\n'),
+    ['Lock the account after 5 consecutive failures', 'A locked account cannot log in'],
+  );
+  assert.deepEqual(extractRequirements('로그인에 연속으로 5회 실패하면 계정을 잠가야 한다. 잠긴 계정은 로그인되지 않게 한다. 배경 설명입니다.'), ['로그인에 연속으로 5회 실패하면 계정을 잠가야 한다', '잠긴 계정은 로그인되지 않게 한다']);
+  assert.deepEqual(extractRequirements('그냥 메모입니다.\nhttps://example.com'), []);
+});
+
+test('import from GitHub: linked issues first, then the PR, with readable errors', () => {
+  const calls: string[][] = [];
+  const run: M.GhRun = (args) => {
+    calls.push(args);
+    if (args[0] === 'pr') return JSON.stringify({ number: 7, title: 'Add lockout', url: 'https://github.com/o/r/pull/7', body: '- [ ] 연속 5회 실패하면 계정을 잠근다\n- [ ] 감사 로그를 남긴다\n', closingIssuesReferences: [{ number: 3, url: 'https://github.com/o/r/issues/3' }, { number: 4, url: 'https://github.com/o/r/issues/4' }] });
+    if (args[2].endsWith('/4')) throw Object.assign(new Error('gh'), { stderr: 'GraphQL: Could not resolve to an Issue' });
+    return JSON.stringify({ number: 3, title: 'Lockout', url: 'https://github.com/o/r/issues/3', body: '## Acceptance criteria\n- 연속 5회 실패하면 계정을 잠근다\n- 잠긴 계정은 로그인되지 않는다\n' });
+  };
+  const texts = M.fetchPr(run);
+  assert.deepEqual(texts.map((t) => t.label), ['이슈 #3', 'PR #7'], 'the unreadable issue #4 is skipped');
+  assert.deepEqual(calls[0], ['pr', 'view', '--json', 'number,title,body,url,closingIssuesReferences']);
+  assert.deepEqual(calls[1], ['issue', 'view', 'https://github.com/o/r/issues/3', '--json', 'number,title,body,url']);
+  const got = M.requirementsFrom(texts);
+  assert.deepEqual(got.requirements, ['연속 5회 실패하면 계정을 잠근다', '잠긴 계정은 로그인되지 않는다', '감사 로그를 남긴다'], 'the duplicate from the PR body is dropped');
+  assert.deepEqual(got.sources, ['이슈 #3', 'PR #7']);
+  M.fetchIssue((args) => (assert.equal(args[2], '12'), JSON.stringify({ number: 12, body: '' })), ' #12 ');
+  // 본문이 줄글뿐이면 제목을 후보로 쓴다
+  const prose = M.requirementsFrom([
+    { label: '이슈 #9', url: '', title: 'fix(auth): Lock the account after 5 failed logins (fixes #7771)', body: 'Fetches things. Background only.' },
+    { label: '복사한 글', url: '', title: '', body: '회의록입니다.' },
+  ]);
+  assert.deepEqual(prose, { requirements: ['Lock the account after 5 failed logins'], sources: ['이슈 #9 제목'] });
+
+  assert.match(M.ghError(Object.assign(new Error('x'), { code: 'ENOENT' })), /gh\)를 찾지 못했습니다/);
+  assert.match(M.ghError({ stderr: 'no pull requests found for branch "feature/x"' }), /PR을 찾지 못했습니다/);
+  assert.match(M.ghError({ stderr: 'To get started with GitHub CLI, please run:  gh auth login' }), /gh auth login/);
+  assert.match(M.ghError({ stderr: 'GraphQL: Could not resolve to an Issue with the number of 99.' }), /찾지 못했습니다/);
+  assert.equal(M.ghError({ stderr: '\nsomething odd\nmore' }), 'something odd');
+});
+
+test('requirements file: replace writes a draft, append continues the numbering and skips duplicates', () => {
+  const fresh = M.mergeRequirementsFile(null, ['가', '나'], '이슈 #3', 'replace');
+  assert.equal(fresh.added, 2);
+  assert.match(fresh.text, /^# 요구사항 초안 — 이슈 #3에서 가져옴\./);
+  assert.deepEqual(parseRequirements(fresh.text).map((q) => `${q.id}:${q.text}`), ['R1:가', 'R2:나']);
+  const old = '# mine\n- R1: 가\n- R4: 라 | keywords: x\n';
+  const more = M.mergeRequirementsFile(old, ['가', '다'], 'PR #7', 'append');
+  assert.equal(more.added, 1);
+  assert.ok(more.text.startsWith(old), 'existing lines are kept as they are');
+  assert.match(more.text, /# ↓ PR #7에서 추가\n- R5: 다\n$/);
+  assert.equal(M.mergeRequirementsFile(old, ['가'], 'x', 'append').added, 0);
+  assert.equal(M.mergeRequirementsFile(old, ['마'], 'x', 'replace').added, 1);
+  assert.equal(M.treeCount(old), 2);
+});

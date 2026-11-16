@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- **Import requirements** instead of typing them: from the current branch's GitHub PR and the issues it closes, from an issue number or URL (both through your own `gh`; only the text is read, code is not sent), or from text you copied from Jira, Linear or chat. Extraction is rule-based: a section named "Acceptance criteria" / "요구사항" first, then checklists, then "must / ~해야 한다" sentences, then the title. Existing requirements can be kept and appended to.
+- **No keywords needed.** A requirement written as a plain sentence is linked to code automatically: English by its own words, Korean through a fixed glossary of common terms. `| keywords:` still pins a link by hand.
+- **Automatic links cannot create false reassurance.** For them a test counts only when its name covers at least two thirds of the requirement's concepts, and a "must not / 않는다" requirement needs a test that talks about rejection or failure. Otherwise the requirement stays "not verified". Hover and PR summary say when a link was automatic.
+- When scores tie, the evidence is now the inner condition with the matching number rather than its enclosing block.
+
 ## 0.3.0
 
 - **What makes it different is now up front:** the list, the status bar and the report lead with "N of M requirements verified by evidence and tests"; the demo says what the AI claimed next to what was actually verified; the hover and the PR summary draw when the code acts, attempt by attempt (`1 2 3 4 5 [6]  ✗ 1회 늦음`); every fact is labelled with where it came from (code analysis, computed, executed test) and "no AI inference"; a requirement that is not verified says why (`미확인 · 검사 없음`).

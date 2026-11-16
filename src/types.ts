@@ -46,6 +46,10 @@ export type Requirement = {
   id: string;
   text: string;
   keywords: string[];
+  /** keywords 를 적지 않아 용어집·문장의 낱말로 자동 연결한 요구사항인가 */
+  auto: boolean;
+  /** 자동 연결일 때의 개념 묶음 (묶음 하나 = 같은 뜻의 영어 낱말들) */
+  concepts: string[][];
   tokens: string[];
   numbers: number[];
   guardCue: boolean;

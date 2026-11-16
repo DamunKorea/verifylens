@@ -85,6 +85,11 @@ exports.run = async function run() {
   assert.match(sum, new RegExp('<sub>VerifyLens ' + ext.packageJSON.version.replace(/\./g, '\\.')));
   log.push(`PR summary: ${sum.split('\n').length} lines, starts "${sum.split('\n')[2]}"`);
 
+  // 요구사항 가져오기: 파일 · 클립보드 · 네트워크를 건드리지 않도록 dryRun 으로 초안만 받는다
+  const draft = await vscode.commands.executeCommand('verifylens.importRequirements', { dryRun: true, text: '## Acceptance criteria\n- Lock the account after 5 consecutive failures\n- A locked account cannot log in\n' });
+  assert.match(draft, /- R1: Lock the account after 5 consecutive failures\n- R2: A locked account cannot log in\n$/);
+  log.push(`import draft: ${draft.trim().split('\n').slice(-2).join(' / ')}`);
+
   await vscode.commands.executeCommand('verifylens.focusRequirement', 'R3');
   await vscode.commands.executeCommand('verifylens.requirements.focus');
   log.push('focused requirements view and R3 in report');

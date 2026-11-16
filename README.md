@@ -14,7 +14,7 @@ AI coding tools say "Done, all requirements implemented." Developers who don't t
 
 - **Evidence, not another AI opinion.** v0 uses **no LLM**. It combines static analysis (TypeScript compiler API), your git diff, and the test results you actually ran (JUnit XML). Every mark links back to code or a test run.
 - **Unknown stays unknown.** If there's no test or a call can't be resolved, it says "not verified" instead of "looks fine."
-- **Your code stays on your machine.** No network calls, no account, no API key. The report is a single local HTML file with no external resources.
+- **Your code stays on your machine.** The analysis makes no network calls and needs no account or API key. The report is a single local HTML file with no external resources. (The editor extension can optionally read a PR's or issue's *text* through your own `gh` to fill in requirements; code is never sent.)
 - **You make the call.** The report records your decision (use / fix / verify more) next to the evidence.
 
 ## Quick start
@@ -47,7 +47,7 @@ The same engine runs inside the editor and feels native to it: a requirements si
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.3.0.vsix
+npm run package     # builds verifylens-0.4.0.vsix
 ```
 
 Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the file. Click the VerifyLens icon in the Activity Bar and choose **Run demo**. See [vscode/README.md](vscode/README.md) for details.
@@ -57,14 +57,14 @@ Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the
 ```bash
 # 1) Draft requirements from a PR description, then edit them by hand
 node src/cli.ts extract --pr-body pr.md > requirements.md
-#    Format: - R2: Lock the account after 5 consecutive failures | keywords: failure, lock
+#    Format: - R2: Lock the account after 5 consecutive failures
 
 # 2) Build a report for one branch, or compare two results
 node src/cli.ts report --repo ../your-repo --base main --a feature/x [--b feature/y] \
      --requirements requirements.md [--junit-a a.xml --junit-b b.xml] --out out --open
 ```
 
-- Requirements can be written in any language, but `keywords` (English words or numbers that appear in the code) are what link a requirement to code.
+- Requirements written in English or Korean are linked to code automatically (English by their own words, Korean through a fixed glossary of common terms, no LLM). If a requirement lands on the wrong code, append `| keywords: words, in, the, code` to pin it. Automatic links are deliberately strict about tests: a test only counts when its name covers most of the requirement, so a missing test stays "not verified".
 - Test results are read from JUnit XML, e.g. `node --test --test-reporter=junit --test-reporter-destination=a.xml`. Without test results, tests show as "not run".
 
 ## Reading the report

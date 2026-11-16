@@ -1,5 +1,6 @@
 import type { Requirement } from './types.ts';
 import { tokenize, clip } from './tokens.ts';
+import { conceptsFor } from './glossary.ts';
 
 const GUARD_CUE = /(않|차단|거부|막|금지|불가|reject|deny|block|forbid|refuse|must not|cannot)/i;
 
@@ -13,37 +14,76 @@ export function parseRequirements(md: string): Requirement[] {
     const text = body.trim().replace(/\s*\|\s*$/, '');
     const keywords = (kw ?? '').split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
     const numbers = [...text.matchAll(/(\d+)\s*(?:회|번째|번|개|초|분|건|times?|th|st|nd|rd)?/g)].map((x) => Number(x[1]));
-    const auto = tokenize(text).filter((t) => !/[가-힣]/.test(t) && !/^\d+$/.test(t));
-    const tokens = keywords.length ? tokenize(keywords.join(' ')) : auto;
-    reqs.push({ id: m[1].toUpperCase(), text, keywords, tokens: [...new Set(tokens)], numbers: [...new Set(numbers)], guardCue: GUARD_CUE.test(text) });
+    const auto = !keywords.length;
+    const concepts = auto ? conceptsFor(text) : [];
+    const tokens = auto ? concepts.flat() : tokenize(keywords.join(' '));
+    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers: [...new Set(numbers)], guardCue: GUARD_CUE.test(text) });
   }
   return reqs;
 }
 
-/** PR 설명에서 요구사항 후보를 뽑아 requirements.md 초안으로 만든다. 사람이 고치고 확정한다. */
-export function extractFromPrBody(md: string): string {
+const SECTION = /(acceptance\s*criteria|requirements?|definition\s*of\s*done|expected\s*behaviou?r|요구\s*사항|인수\s*조건|완료\s*조건|수용\s*기준|기대\s*동작|해야\s*할\s*일|체크\s*리스트)/i;
+const MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|된다|must|should|shall|when |if |needs? to|able to|cannot|can't)/i;
+
+/**
+ * 이슈 · PR · 메신저에서 복사한 글에서 요구사항 후보 문장을 뽑는다 (규칙 기반, AI 없음).
+ * 「요구사항 / Acceptance criteria」 같은 제목 아래의 목록 > 글 전체의 목록 > 「~해야 한다」 꼴 문장 순으로 고른다.
+ */
+export function extractRequirements(md: string, max = 12): string[] {
+  const clean = (t: string) =>
+    t
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/(\*\*|__|~~)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[.。]+$/, '');
+  const text = md.replace(/\r/g, '').replace(/<!--[\s\S]*?-->/g, '').replace(/```[\s\S]*?```/g, '');
+  const inSection: string[] = [];
   const bullets: string[] = [];
   const sentences: string[] = [];
-  const clean = (s: string) => s.replace(/\s+/g, ' ').trim().replace(/[.。]+$/, '');
-  const MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|must|should|shall|when|if |needs? to|able to)/i;
-  for (const raw of md.split('\n')) {
+  let section = false;
+  for (const raw of text.split('\n')) {
     const line = raw.trim();
-    if (!line || line.startsWith('#') || /^notes?\s*:/i.test(line)) continue;
-    const item = line.match(/^[-*]\s*(?:\[[ xX]\]\s*)?(.+)$/);
+    if (!line || line.startsWith('>') || /^notes?\s*:/i.test(line)) continue;
+    const head = line.match(/^(#{1,6})\s+(.*)$/) ?? line.match(/^\*\*(.+?)\*\*:?$/) ?? line.match(/^([^-*\d].{0,40}):$/);
+    if (head) {
+      section = SECTION.test(head[2] ?? head[1]);
+      continue;
+    }
+    const item = line.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/);
     if (item) {
-      bullets.push(clean(item[1]));
+      const t = clean(item[1]);
+      (section ? inSection : bullets).push(t);
     } else if (MODAL.test(line)) {
-      for (const part of line.split(/(?<=[.。])\s+/)) if (MODAL.test(part)) sentences.push(clean(part));
+      for (const part of line.split(/(?<=[.。!?])\s+/)) if (MODAL.test(part)) (section ? inSection : sentences).push(clean(part));
     }
   }
-  // 체크리스트가 있으면 그것을 요구사항으로 보고, 없을 때만 본문 문장에서 뽑는다.
+  const pool = inSection.length ? inSection : bullets.length >= 2 ? bullets : [...bullets, ...sentences];
   const seen = new Set<string>();
-  const cands = (bullets.length >= 2 ? bullets : [...bullets, ...sentences]).filter((t) => {
-    if (t.length < 6 || seen.has(t) || /^https?:/.test(t)) return false;
-    seen.add(t);
-    return true;
-  });
-  const out = ['# 요구사항 초안 — 사람이 읽고 고친 뒤 확정하세요', '# 형식: - R번호: 요구사항 문장 | keywords: 코드에서 찾을 영어 단어(선택)'];
-  cands.forEach((c, i) => out.push(`- R${i + 1}: ${clip(c, 120)} | keywords: `));
+  return pool
+    .filter((t) => {
+      const key = t.toLowerCase();
+      if (t.length < 6 || seen.has(key) || /^https?:\S+$/.test(t)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, max)
+    .map((t) => clip(t, 140));
+}
+
+/** 요구사항 후보를 requirements.md 글로 만든다. start 는 첫 번호. */
+export function draftRequirements(cands: string[], source = '', start = 1): string {
+  const out = [
+    `# 요구사항 초안${source ? ` — ${source}에서 가져옴` : ''}. 읽어 보고 고친 뒤 저장하세요.`,
+    '# 형식: - R번호: 요구사항 문장',
+    '# 코드와 잘못 이어지면 뒤에 「| keywords: 코드에 나오는 영어 단어」를 붙여 직접 정할 수 있습니다.',
+  ];
+  cands.forEach((c, i) => out.push(`- R${start + i}: ${c}`));
   return out.join('\n') + '\n';
+}
+
+/** PR 설명에서 요구사항 후보를 뽑아 requirements.md 초안으로 만든다. 사람이 고치고 확정한다. */
+export function extractFromPrBody(md: string): string {
+  return draftRequirements(extractRequirements(md));
 }

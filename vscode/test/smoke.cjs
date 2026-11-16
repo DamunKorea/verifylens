@@ -79,7 +79,7 @@ const vscode = {
       return { uri, getText: () => text, lineCount: lines.length, lineAt: (i) => ({ range: { end: new Position(i, lines[i].length) } }) };
     },
   },
-  env: { clipboard: { writeText: async (t) => { log.clipboard.push(t); } } },
+  env: { clipboard: { writeText: async (t) => { log.clipboard.push(t); }, readText: async () => answers.clipboard || '' } },
   languages: {
     registerCodeLensProvider: (_s, p) => { reg.lens = p; return disp; },
     registerHoverProvider: (_s, p) => { reg.hover = p; return disp; },
@@ -100,7 +100,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   const ctx = { subscriptions: [], asAbsolutePath: (p) => path.join(ext, p), workspaceState: { get: (k, d) => (store.has(k) ? store.get(k) : d), update: async (k, v) => { store.set(k, v); } } };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   mod.activate(ctx);
-  for (const id of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.openReport', 'verifylens.createRequirements', 'verifylens.rerun', 'verifylens.focusRequirement', 'verifylens.openLocation', 'verifylens.openDiff', 'verifylens.recordJudgment', 'verifylens.copySummary'])
+  for (const id of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.openReport', 'verifylens.createRequirements', 'verifylens.rerun', 'verifylens.focusRequirement', 'verifylens.openLocation', 'verifylens.openDiff', 'verifylens.recordJudgment', 'verifylens.copySummary', 'verifylens.importRequirements'])
     assert.ok(reg.commands[id], `registered ${id}`);
   assert.deepEqual(reg.tree.getChildren(), [], 'empty tree before a run (welcome view shows)');
 
@@ -251,6 +251,23 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.equal(reg.status.backgroundColor, undefined, 'warning color cleared');
   assert.deepEqual(log.errors, []);
 
+  // 5-2) 복사한 이슈 글에서 요구사항 가져오기: 있던 것 뒤에 붙고, 파일이 바뀌면 스스로 다시 분석한다
+  answers = { warning: '뒤에 추가', quickPick: ['$(clippy) 복사한 글 (클립보드)'], input: '', clipboard: '## 요구사항\n- 연속 5회 실패하면 계정을 잠근다\n- 잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다\n\n## 참고\n- 스키마 변경 없음\n' };
+  const imported = await reg.commands['verifylens.importRequirements']();
+  assert.deepEqual(log.errors, []);
+  assert.match(imported, /# ↓ 복사한 글에서 추가\n- R3: 잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다\n$/, 'the one that was already there is not added twice');
+  assert.equal(fs.readFileSync(reqFile, 'utf8'), imported);
+  assert.equal(log.opened.at(-1).fsPath, path.resolve(reqFile), 'the file is opened for the author to read');
+  assert.match(log.infos.at(-1), /복사한 글에서 요구사항 1개를 가져왔습니다/);
+  let n3 = 0;
+  for (let i = 0; i < 60 && n3 !== 3; i++) { await sleep(150); n3 = reg.tree.getChildren().length; }
+  assert.equal(n3, 3, 'the list picked up R3 by itself');
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[2]).description, '미확인 · 검사 없음');
+  answers = { warning: undefined, quickPick: ['$(clippy) 복사한 글 (클립보드)'], input: '', clipboard: '회의록: 다음 주에 다시 봅니다' };
+  assert.equal(await reg.commands['verifylens.importRequirements'](), undefined);
+  assert.match(log.warnings.at(-1), /요구사항으로 볼 문장을 찾지 못했습니다/);
+  assert.match(await reg.commands['verifylens.importRequirements']({ dryRun: true, text: '- 가나다라마바\n- 사아자차카타\n' }), /- R1: 가나다라마바\n- R2: 사아자차카타\n$/);
+
   // 6) 제한 모드: 브랜치 확인은 신뢰를 요청하고 멈추며, 샘플은 그대로 된다
   vscode.workspace.isTrusted = false;
   const before = log.exec.length;
@@ -258,7 +275,8 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   await reg.commands['verifylens.checkBranch']();
   await reg.commands['verifylens.compareBranches']();
   await reg.commands['verifylens.createRequirements']();
-  assert.ok(log.warnings.filter((w) => /제한 모드/.test(w)).length >= 3, 'asks for trust');
+  await reg.commands['verifylens.importRequirements']();
+  assert.ok(log.warnings.filter((w) => /제한 모드/.test(w)).length >= 4, 'asks for trust');
   answers = { warning: '이 폴더 신뢰하기', quickPick: [] };
   await reg.commands['verifylens.checkBranch']();
   assert.ok(log.exec.slice(before).includes('workbench.trust.manage'), 'opens trust dialog');

@@ -4,6 +4,7 @@ import { analyzeFile } from './analyze.ts';
 import { changedFiles, changedLines, shortSha, showFile } from './git.ts';
 import { parseJunit } from './tests.ts';
 import { tokenize } from './tokens.ts';
+import { normalizePhrases } from './glossary.ts';
 
 const CODE_EXT = /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
 const TEST_FILE = /(\.test\.|\.spec\.|__tests__\/|\/tests?\/)/;
@@ -40,7 +41,9 @@ function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[] } 
   const why: string[] = [];
   const set = new Set(req.tokens);
   const shared = [...new Set(u.tokens.filter((t) => set.has(t)))];
-  let s = u.kind === 'function' ? Math.min(shared.length, 1.5) : shared.length;
+  // 자동 연결(키워드 없음)은 같은 뜻의 낱말을 한 개념으로 센다. 한 개념의 동의어가 여러 번 겹쳐도 한 번이다.
+  const hits = req.auto ? req.concepts.filter((c) => c.some((t) => u.tokens.includes(t))).length : shared.length;
+  let s = u.kind === 'function' ? Math.min(hits, 1.5) : hits;
   if (shared.length) why.push(`겹치는 단어: ${shared.join(', ')}`);
   if (u.cond && u.cond.lit !== undefined && req.numbers.some((n) => Math.abs(n - u.cond!.lit!) <= 1)) {
     s += 2;
@@ -54,11 +57,19 @@ function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[] } 
   return { score: s, why };
 }
 
+/** 점수가 같을 때: 함수보다 조건, 숫자가 맞는 조건, 더 좁은 범위(안쪽 조건)를 고른다. */
+function moreSpecific(u: Unit, why: string[], best: { u: Unit; why: string[] }): boolean {
+  if (u.kind !== best.u.kind) return u.kind === 'condition';
+  const num = (w: string[]) => w.some((x) => x.startsWith('숫자 '));
+  if (num(why) !== num(best.why)) return num(why);
+  return u.endLine - u.startLine < best.u.endLine - best.u.startLine;
+}
+
 function findEvidence(req: Requirement, units: Unit[]): Evidence {
   let best: { u: Unit; score: number; why: string[] } | null = null;
   for (const u of units) {
     const { score, why } = scoreUnit(req, u);
-    if (!best || score > best.score || (score === best.score && u.kind === 'condition' && best.u.kind === 'function')) best = { u, score, why };
+    if (!best || score > best.score || (score === best.score && moreSpecific(u, why, best))) best = { u, score, why };
   }
   if (!best || best.score < 1) return { unit: null, score: best?.score ?? 0, status: '미발견', why: [] };
   const status = best.score >= 2 ? '발견' : '일부 발견';
@@ -79,9 +90,23 @@ function findEvidence(req: Requirement, units: Unit[]): Evidence {
   return ev;
 }
 
+const NEGATIVE_TEST = /(reject|den(y|ies|ied)|block|refus|forbid|fail|error|throw|invalid|cannot|can't|does not|doesn't|should not|must not|unauthori|locked out|거부|차단|실패|막|않)/i;
+
 function mapTests(req: Requirement, tests: TestCase[]): TestCase[] {
-  const set = new Set([...req.tokens, ...req.numbers.map(String)]);
-  return tests.filter((t) => new Set(tokenize(t.name).filter((x) => set.has(x))).size >= 2);
+  if (!req.auto) {
+    const set = new Set([...req.tokens, ...req.numbers.map(String)]);
+    return tests.filter((t) => new Set(tokenize(t.name).filter((x) => set.has(x))).size >= 2);
+  }
+  // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
+  // 조건: 요구사항의 개념(숫자 포함) 가운데 3분의 2 이상을 검사 이름이 담고, 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
+  const groups = [...req.concepts, ...req.numbers.map((n) => [String(n)])];
+  if (groups.length < 2) return [];
+  return tests.filter((t) => {
+    if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
+    const names = new Set(tokenize(normalizePhrases(t.name)));
+    const covered = groups.filter((g) => g.some((x) => names.has(x))).length;
+    return covered >= 2 && covered / groups.length >= 2 / 3;
+  });
 }
 
 function testStatus(ts: TestCase[]): TestStatus {

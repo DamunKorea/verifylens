@@ -14,7 +14,7 @@ AI 코딩 도구는 「요구사항 전부 반영, 완료」라고 답합니다.
 
 - **AI 의견을 하나 더 얹지 않고 근거를 묶습니다.** v0는 **LLM을 쓰지 않습니다.** 정적 분석(TypeScript 컴파일러 API), git 변경 내용, 실제로 돌린 테스트 결과(JUnit XML)만 씁니다. 모든 표시는 코드나 검사 기록으로 이어집니다.
 - **모르는 것은 「미확인」으로 남깁니다.** 검사가 없거나 해석할 수 없는 호출이 있으면 「문제없음」이라고 하지 않습니다.
-- **코드는 내 PC 밖으로 나가지 않습니다.** 네트워크 호출, 계정, API 키가 없습니다. 리포트는 외부 자원을 불러오지 않는 HTML 파일 하나입니다.
+- **코드는 내 PC 밖으로 나가지 않습니다.** 분석은 네트워크를 쓰지 않고, 계정이나 API 키도 필요 없습니다. 리포트는 외부 자원을 불러오지 않는 HTML 파일 하나입니다. (에디터 확장에서 요구사항을 채울 때 원하면 내 `gh`로 PR · 이슈의 *글*만 읽어 올 수 있습니다. 코드는 보내지 않습니다.)
 - **판단은 사람이 합니다.** 사용 · 수정 · 추가 검증 판단을 근거 옆에 기록합니다.
 
 ## 빠르게 해 보기
@@ -47,7 +47,7 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 ```bash
 cd vscode
 npm install
-npm run package     # verifylens-0.3.0.vsix 를 만듭니다
+npm run package     # verifylens-0.4.0.vsix 를 만듭니다
 ```
 
 에디터에서 **확장 → ⋯ → VSIX에서 설치…**로 파일을 고르면 됩니다. 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
@@ -57,14 +57,14 @@ npm run package     # verifylens-0.3.0.vsix 를 만듭니다
 ```bash
 # 1) PR 설명에서 요구사항 초안을 뽑고 직접 고칩니다
 node src/cli.ts extract --pr-body pr.md > requirements.md
-#    형식: - R2: 연속 5회 실패하면 계정을 잠근다 | keywords: failure, lock
+#    형식: - R2: 연속 5회 실패하면 계정을 잠근다
 
 # 2) 브랜치 하나, 또는 두 결과를 비교하는 리포트를 만듭니다
 node src/cli.ts report --repo ../내저장소 --base main --a feature/x [--b feature/y] \
      --requirements requirements.md [--junit-a a.xml --junit-b b.xml] --out out --open
 ```
 
-- 요구사항은 한국어로 써도 됩니다. 다만 코드와 연결하려면 코드에 나오는 영어 단어나 숫자를 `keywords`에 적어 주세요.
+- 요구사항은 한국어나 영어 문장만 적으면 코드와 자동으로 이어집니다(영어는 문장의 낱말로, 한국어는 자주 쓰는 말의 고정 용어집으로, LLM 없음). 엉뚱한 코드에 이어지면 뒤에 `| keywords: 코드에, 나오는, 단어`를 붙여 직접 정하세요. 자동 연결은 검사를 일부러 좁게 잇습니다. 검사 이름이 요구사항의 대부분을 담아야만 인정해서, 검사가 없으면 「미확인」으로 남습니다.
 - 검사 결과는 JUnit XML을 읽습니다. 예: `node --test --test-reporter=junit --test-reporter-destination=a.xml`. 검사 결과가 없으면 「미실행」으로 표시합니다.
 
 ## 리포트 읽는 법
