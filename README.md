@@ -45,7 +45,7 @@ Outputs are written to `out/`:
 
 ## VS Code and Cursor extension (preview)
 
-The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Works in VS Code and in VS Code–based editors such as Cursor.
+The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.
 
 ```bash
 cd vscode

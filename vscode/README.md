@@ -12,6 +12,8 @@ AI tools say "Done, all requirements implemented." VerifyLens checks that claim 
 
 > v0 preview: analyzes **TypeScript and JavaScript**. The report text is currently **Korean**.
 
+**Editors:** checked on VS Code 1.146 and on **Cursor 3.29** (the same `.vsix`; the integration tests pass there too). In Cursor, use the editor window: extensions are not loaded in Cursor's agent window. Other VS Code–based editors (Windsurf, VSCodium) should accept the same file but have not been checked.
+
 ## Try it in 10 seconds
 
 1. Click the **VerifyLens** icon in the Activity Bar.
