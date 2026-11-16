@@ -33,6 +33,8 @@ const runTests = () => {
   try { execFileSync(process.execPath, testCmd.split(' ').slice(1), { cwd: target, stdio: 'pipe', env: e }); } catch {}
 };
 runTests();
+// --uncommitted: AI 가 방금 고친 상태를 흉내 낸다. 브랜치의 커밋을 풀어 변경을 작업 폴더에만 남긴다.
+if (flag === '--uncommitted') g('reset', '-q', 'main');
 console.log('created', target, '| branch', g('rev-parse', '--abbrev-ref', 'HEAD').trim(), '| junit', existsSync(join(target, '.verifylens', 'junit.xml')));
 
 if (flag === '--rehearse') {

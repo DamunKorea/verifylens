@@ -2,7 +2,7 @@
   "name": "verifylens",
   "displayName": "VerifyLens",
   "description": "See per requirement whether an AI-generated change is verified, different, or not yet verified — linked to code lines and the tests that ran. Local, no LLM.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "publisher": "damun",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -25,7 +25,8 @@
         "verifylens.nodePath",
         "verifylens.junitPath",
         "verifylens.requirementsFile",
-        "verifylens.ghPath"
+        "verifylens.ghPath",
+        "verifylens.testCommand"
       ]
     }
   },
@@ -54,7 +55,7 @@
       },
       {
         "command": "verifylens.checkBranch",
-        "title": "Check current branch",
+        "title": "Check my changes (current branch, including uncommitted)",
         "category": "VerifyLens",
         "icon": "$(search)"
       },
@@ -115,6 +116,12 @@
         "title": "Import requirements (GitHub PR, issue, or copied text)",
         "category": "VerifyLens",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "verifylens.runTests",
+        "title": "Run tests and re-check",
+        "category": "VerifyLens",
+        "icon": "$(beaker)"
       }
     ],
     "viewsContainers": {
@@ -150,6 +157,11 @@
       "view/title": [
         {
           "command": "verifylens.copySummary",
+          "when": "view == verifylens.requirements && verifylens.hasRun",
+          "group": "navigation@0"
+        },
+        {
+          "command": "verifylens.runTests",
           "when": "view == verifylens.requirements && verifylens.hasRun",
           "group": "navigation@0"
         },
@@ -228,7 +240,7 @@
         "verifylens.junitPath": {
           "type": "string",
           "default": "",
-          "description": "Optional JUnit XML test report for the checked branch, relative to the repository root."
+          "description": "Test report to read and write (JUnit XML, or Jest/Vitest JSON), relative to the repository root. Empty: .verifylens/test-report.xml (or .json)."
         },
         "verifylens.nodePath": {
           "type": "string",
@@ -263,6 +275,16 @@
           "type": "string",
           "default": "gh",
           "description": "GitHub CLI used by \"Import requirements\" to read a PR or issue. Only the text is read; your code is not sent."
+        },
+        "verifylens.includeUncommitted": {
+          "type": "boolean",
+          "default": true,
+          "description": "When checking the current branch, also look at changes you have not committed yet (and re-check when a file is saved). Turn off to look at committed changes only."
+        },
+        "verifylens.testCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Command that runs your tests and writes a JUnit XML (or Jest/Vitest JSON) report to ${report}. Empty: detected from package.json (Vitest, Jest, node:test). Example: npx mocha --reporter xunit --reporter-option output=${report}"
         }
       }
     }

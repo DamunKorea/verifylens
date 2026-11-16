@@ -16,6 +16,7 @@ AI coding tools say "Done, all requirements implemented." Developers who don't t
 
 - **Evidence, not another AI opinion.** v0 uses **no LLM**. It combines static analysis (TypeScript compiler API), your git diff, and the test results you actually ran (JUnit XML). Every mark links back to code or a test run.
 - **Unknown stays unknown.** If there's no test or a call can't be resolved, it says "not verified" instead of "looks fine."
+- **Before the PR, in the editor.** It checks the working tree, including changes you have not committed, and re-checks when a file is saved. AI review bots judge a pull request after the fact; this tells you while the AI's change is still in front of you.
 - **Your code stays on your machine.** The analysis makes no network calls and needs no account or API key. The report is a single local HTML file with no external resources. (The editor extension can optionally read a PR's or issue's *text* through your own `gh` to fill in requirements; code is never sent.)
 - **You make the call.** The report records your decision (use / fix / verify more) next to the evidence.
 
@@ -49,7 +50,7 @@ The same engine runs inside the editor and feels native to it: a requirements si
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.4.1.vsix
+npm run package     # builds verifylens-0.5.0.vsix
 ```
 
 Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the file. Click the VerifyLens icon in the Activity Bar and choose **Run demo**. See [vscode/README.md](vscode/README.md) for details.
@@ -83,6 +84,7 @@ node src/cli.ts report --repo ../your-repo --base main --a feature/x [--b featur
 - Analyzes **TypeScript and JavaScript only**.
 - Requirement ↔ code linking is **rule-based** (shared words and numbers, rejection sentences ↔ `throw`/`return`). It can be wrong; the report shows why each line was picked so you can check.
 - Boundaries are computed only for `variable >= number` style conditions with a matching `+= 1` counter; otherwise it says it can't tell.
+- In the editor, test results older than the code are ignored rather than trusted; run the tests again to refresh them.
 - Flow maps simplify to `if` branches inside a function; loops, `switch` and `try` collapse to one step.
 - Dynamic calls such as `hooks[event]()` are flagged as "unresolved" rather than followed.
 - The editor extension is a preview; PR integration and accounts are not built yet.

@@ -37,11 +37,12 @@ The demo runs its tests with Node.js 22.18+ if it finds one, and otherwise uses 
    - R2: Lock the account after 5 consecutive failures
    ```
    Plain sentences are enough: English is linked by its own words, Korean through a fixed glossary (no LLM), and numbers are checked against conditions. If a requirement lands on the wrong code, append `| keywords: words, in, the, code`. Read the imported list before trusting it; it is extracted by rules (sections such as "Acceptance criteria" / "요구사항", checklists, "must / ~해야 한다" sentences, or just the title).
-2. Commit your change, then run **VerifyLens: Check current branch** and pick the base branch (e.g. `main`).
-   After that it **keeps itself up to date**: commit a fix, edit the requirements, or produce a new test report, and the result refreshes on its own.
-3. To compare two AI attempts, run **VerifyLens: Compare two branches**.
+2. Run **VerifyLens: Check my changes**. No commit needed: it looks at your working tree, including uncommitted edits and new files, against the base branch (`main` / `master` / the remote default is picked for you).
+   After that it **keeps itself up to date**: save a file, let an AI agent write one, commit, or edit the requirements, and the result refreshes on its own.
+3. Click the beaker icon (**VerifyLens: Run tests and re-check**). It detects Vitest, Jest or `node --test` from `package.json`, runs them, reads the report and re-checks. For another runner set `verifylens.testCommand`. Test results that are older than the code are not used: a pass from before your edit proves nothing about the code as it is now.
+4. To compare two AI attempts, run **VerifyLens: Compare two branches** (committed changes).
 
-Optional: set `verifylens.junitPath` to a JUnit XML report (for example from `node --test --test-reporter=junit --test-reporter-destination=junit.xml`) so linked tests show as passed or failed instead of "not run".
+If your CI already writes a report, point `verifylens.junitPath` at it (JUnit XML, or Jest/Vitest JSON).
 
 ## Settings
 
@@ -49,7 +50,9 @@ Optional: set `verifylens.junitPath` to a JUnit XML report (for example from `no
 |---|---|---|
 | `verifylens.baseBranch` | (ask) | Branch to compare against |
 | `verifylens.requirementsFile` | `.verifylens/requirements.md` | Requirements file, relative to the repo root |
-| `verifylens.junitPath` | (none) | JUnit XML test report, relative to the repo root |
+| `verifylens.junitPath` | `.verifylens/test-report.xml` | Test report to read and write (JUnit XML or Jest/Vitest JSON) |
+| `verifylens.testCommand` | (detect) | Command that runs the tests and writes the report to `${report}` |
+| `verifylens.includeUncommitted` | `true` | Check uncommitted changes too, and re-check on save |
 | `verifylens.nodePath` | `node` | Node.js used to run the demo's tests |
 | `verifylens.autoRerun` | `true` | Re-run on commit, branch switch, or when the requirements file or JUnit report changes |
 | `verifylens.inlineNotes` | `true` | Show the note at the end of evidence lines |
@@ -59,7 +62,8 @@ Optional: set `verifylens.junitPath` to a JUnit XML report (for example from `no
 
 ## Limitations
 
-- Only committed changes are analyzed (`base...branch`).
+- Comparing two branches looks at committed changes only.
+- The flagship check is numeric: "after 5 failures" against `failures > 5`. Other logic errors are caught only if a linked test fails.
 - Requirement ↔ code linking is rule-based and can be wrong; the report shows why each line was picked.
 - TypeScript and JavaScript only.
 
@@ -72,7 +76,8 @@ Source, issues and feedback: https://github.com/DamunKorea/verifylens
 AI가 「완료」라고 한 변경이 요구사항마다 **확인됨 · 다름 · 미확인**인지 에디터 옆에서 보여 줍니다. LLM과 네트워크를 쓰지 않고, 코드는 PC 밖으로 나가지 않습니다.
 
 - **처음 써 보기:** 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요.
-- **내 브랜치 확인:** **이슈 · PR에서 가져오기**(GitHub PR · 이슈 · 복사한 글)나 **요구사항 파일 만들기**로 요구사항을 채우고, 변경을 커밋한 뒤 **지금 브랜치 확인**을 누르세요. 그 뒤로는 커밋하거나 테스트를 돌리면 스스로 다시 분석합니다.
+- **내 변경 확인:** **이슈 · PR에서 가져오기**(GitHub PR · 이슈 · 복사한 글)나 **요구사항 파일 만들기**로 요구사항을 채우고 **지금 브랜치 확인**을 누르세요. 커밋하지 않아도 됩니다. 그 뒤로는 저장할 때마다 스스로 다시 확인합니다.
+- **테스트 실행:** 목록 위 비커 아이콘을 누르면 Vitest · Jest · node:test 를 알아서 돌리고 결과를 반영합니다. 코드보다 오래된 테스트 결과는 쓰지 않습니다.
 - **AI 결과 두 개 비교:** **두 브랜치 비교**를 쓰세요.
 
 근거가 된 줄에는 아이콘과 줄 끝 설명이 붙고, 마우스를 올리면 근거 표가 나옵니다. 줄 위 **A ↔ B 비교**를 누르면 VS Code 기본 비교 화면으로 두 결과를 나란히 봅니다. 확인이 필요한 줄은 문제(Problems) 목록에도 올라가서 `F8`로 넘겨 볼 수 있고, 판단(사용 · 수정 · 추가 검증 · 보류)은 목록에서 바로 기록합니다. 목록 위 클립보드 아이콘을 누르면 PR에 붙일 **검증 요약**(상태 · 근거 줄 · 동작 시점 · 검사 · 판단 · 아직 확인 안 된 것)이 복사됩니다.

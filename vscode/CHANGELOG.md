@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+Check the change while it is still in front of you: before the commit, before the PR.
+
+- **Uncommitted changes are checked.** "Check my changes" reads your working tree (committed + uncommitted + new files) and re-checks when you save a file or when something outside the editor, such as an AI agent, writes one. `verifylens.includeUncommitted` turns this off.
+- **Run tests from the editor.** The beaker icon detects Vitest, Jest or `node --test` from `package.json`, runs them, reads the report (JUnit XML or Jest/Vitest JSON) and re-checks. `verifylens.testCommand` covers other runners.
+- **Outdated test results are not trusted.** If the report is older than the code, its passes and failures are ignored and the requirements show `미확인 · 검사 오래됨` until the tests are run again.
+- **A numeric condition far from the requirement is still caught.** "after 5 failures" against `failures > 3` used to be linked to the surrounding block; it is now linked to the condition and reported as acting on the 4th attempt.
+- **Fewer questions.** The base branch is taken from the remote default, or `main` / `master` / `develop`, without asking.
+- Decisions are tied to the exact content: editing an uncommitted file drops a decision recorded before the edit.
+
 ## 0.4.1
 
 Fixes found by recording the extension in a real VS Code window.

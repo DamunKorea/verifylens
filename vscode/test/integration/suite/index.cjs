@@ -23,7 +23,7 @@ exports.run = async function run() {
   log.push(`activated ${ext.id} ${ext.packageJSON.version} on VS Code ${vscode.version} · trusted=${vscode.workspace.isTrusted}`);
 
   const cmds = await vscode.commands.getCommands(true);
-  for (const c of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.requirements.focus']) assert.ok(cmds.includes(c), `command ${c}`);
+  for (const c of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.runTests', 'verifylens.importRequirements', 'verifylens.requirements.focus']) assert.ok(cmds.includes(c), `command ${c}`);
 
   await vscode.commands.executeCommand('verifylens.runDemo');
   const tab = await waitFor(

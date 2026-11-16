@@ -336,3 +336,126 @@ test('requirements file: replace writes a draft, append continues the numbering 
   assert.equal(M.mergeRequirementsFile(old, ['마'], 'x', 'replace').added, 1);
   assert.equal(M.treeCount(old), 2);
 });
+
+// ---------------------------------------------------------------- 0.5.0: 커밋 전 변경 · 테스트 실행 · 오래된 결과
+import { readFileSync as readText, mkdirSync as mkdir, utimesSync, rmSync } from 'node:fs';
+import { parseTestReport } from '../../src/tests.ts';
+
+/** feature/lockout-b 를 체크아웃한 저장소와, 그 브랜치의 테스트 결과 파일 */
+function workRepo() {
+  const r = demo(null);
+  execFileSync('git', ['-C', r.repo, 'checkout', '-q', 'feature/lockout-b']);
+  const dir = join(r.repo, '.verifylens');
+  mkdir(dir, { recursive: true });
+  const reqFile = join(dir, 'requirements.md');
+  writeFile(reqFile, '- R1: 올바른 비밀번호로 로그인할 수 있다\n- R2: 연속 5회 실패하면 계정을 잠근다\n- R3: 잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다\n');
+  const junit = join(dir, 'test-report.xml');
+  writeFile(junit, readText(join(ext, 'samples', 'junit', 'junit-b.xml'), 'utf8'));
+  const check = () => M.runRepo({ repo: r.repo, base: 'main', a: 'feature/lockout-b', reqFile, junitA: M.findReport(r.repo), workingRef: 'feature/lockout-b', worktree: true });
+  const auth = join(r.repo, 'src', 'auth.ts');
+  const touch = (f: string, secondsFromNow: number) => { const t = new Date(Date.now() + secondsFromNow * 1000); utimesSync(f, t, t); };
+  return { repo: r.repo, reqFile, junit, check, auth, touch };
+}
+
+test('uncommitted changes are checked: an edit that is only saved changes the verdict', () => {
+  const w = workRepo();
+  w.touch(w.junit, 5);
+  let run = w.check();
+  assert.deepEqual(status(run), { R1: '확인됨', R2: '다름', R3: '미확인' });
+  assert.equal(run.report.sets[0].wip, undefined, 'nothing uncommitted yet');
+  const sig = M.reportSig(run.report);
+  const spec = { repo: w.repo, refs: ['main', 'HEAD'], files: [w.reqFile], worktree: true };
+  const s0 = M.signature(spec);
+
+  writeFile(w.auth, readText(w.auth, 'utf8').replace('user.failures > 5', 'user.failures > 3'));
+  w.touch(w.auth, -60);
+  assert.notEqual(M.signature(spec), s0, 'a saved file changes the watch signature');
+  run = w.check();
+  const ev = run.report.sets[0].perReq.R2.evidence;
+  assert.equal(ev.unit!.cond!.expr, 'user.failures > 3', 'reads the file on disk, not the commit');
+  assert.equal(ev.boundary!.attempts, 4);
+  assert.match(run.report.sets[0].wip!, /^[0-9a-f]{7}$/);
+  assert.notEqual(M.reportSig(run.report), sig, 'a decision recorded before the edit no longer applies');
+  assert.equal(M.contextLine(run), 'feature/lockout-b + 커밋 전 변경 ← main');
+  assert.match(M.prSummary(run), /`feature\/lockout-b` \(`[0-9a-f]{7}`, 커밋 안 된 변경 포함\) ← `main`/);
+
+  // 아직 git 이 모르는 새 파일도 본다
+  writeFile(join(w.repo, 'src', 'extra.ts'), 'export function lockAccount(user: { failures: number; locked: boolean }) {\n  if (user.failures >= 5) user.locked = true;\n}\n');
+  run = w.check();
+  assert.ok(run.report.sets[0].files['src/extra.ts'], 'untracked file is analysed');
+
+  // 커밋된 것만 보는 예전 방식은 그대로다
+  const committed = M.runRepo({ repo: w.repo, base: 'main', a: 'feature/lockout-b', reqFile: w.reqFile });
+  assert.equal(committed.report.sets[0].perReq.R2.evidence.unit!.cond!.expr, 'user.failures > 5');
+});
+
+test('test results older than the code are not used', () => {
+  const w = workRepo();
+  w.touch(w.junit, -120);
+  writeFile(w.auth, readText(w.auth, 'utf8').replace('user.failures > 5', 'user.failures >= 5'));
+  let run = w.check();
+  assert.equal(run.report.testsStale, true);
+  assert.deepEqual(status(run), { R1: '미확인', R2: '미확인', R3: '미확인' }, 'a pass or fail from before the edit proves nothing about this code');
+  assert.deepEqual(M.treeModel(run.report).map((x) => x.reason), ['검사 오래됨', '검사 오래됨', '검사 오래됨']);
+  assert.match(run.notes.join(' '), /테스트 결과가 코드보다 오래되어 쓰지 않았습니다/);
+  assert.match(M.prSummary(run), /- 테스트 결과가 코드보다 오래되어 쓰지 않음 — 다시 실행 필요/);
+  assert.equal(run.report.sets[0].perReq.R2.evidence.boundary!.attempts, 5, 'the code itself is still analysed');
+
+  // 테스트를 다시 돌린 것처럼 통과한 결과를 새로 쓰면 반영된다
+  writeFile(w.junit, readText(join(ext, 'samples', 'junit', 'junit-a.xml'), 'utf8'));
+  w.touch(w.junit, 5);
+  run = w.check();
+  assert.equal(run.report.testsStale, false);
+  assert.deepEqual(status(run), { R1: '확인됨', R2: '확인됨', R3: '미확인' });
+
+  rmSync(w.junit);
+  run = w.check();
+  assert.match(run.notes.join(' '), /테스트 결과가 없어 검사는 모두 「미실행」/);
+});
+
+test('test reports from Vitest (JUnit) and Jest (JSON) are read', () => {
+  const vt = parseTestReport(readText(join(ext, 'test', 'fixtures', 'vitest-junit.xml'), 'utf8'));
+  assert.deepEqual(vt.map((t) => `${t.status}:${t.name}`), ['pass:login succeeds with the right password', 'fail:locks the account on the 5th consecutive failure']);
+  assert.match(vt[1].message, /expected false to be true/);
+  const jt = parseTestReport(readText(join(ext, 'test', 'fixtures', 'jest.json'), 'utf8'));
+  assert.deepEqual(jt.map((t) => `${t.status}:${t.name}`), ['pass:lockout login succeeds with the right password', 'fail:lockout locks the account on the 5th consecutive failure']);
+  assert.match(jt[1].message, /Expected: 5 · Received: 6/);
+  assert.ok(!/\u001b\[/.test(jt[1].message), 'colour codes are stripped');
+  assert.deepEqual(parseTestReport('{"testResults":[{"assertionResults":[{"ancestorTitles":["a"],"title":"b","status":"pending"}]}]}'), [{ name: 'a b', status: 'skip', message: '' }]);
+});
+
+test('the test command is detected from package.json, or taken from the setting', () => {
+  const mk = (pkg: unknown, files: Record<string, string> = {}) => {
+    const dir = mkdtempSync(join(tmpdir(), 'vl-plan-'));
+    execFileSync('git', ['-C', dir, 'init', '-q']);
+    if (pkg) writeFile(join(dir, 'package.json'), JSON.stringify(pkg));
+    for (const [f, c] of Object.entries(files)) { mkdir(join(dir, f, '..'), { recursive: true }); writeFile(join(dir, f), c); }
+    return dir;
+  };
+  let d = mk({ devDependencies: { vitest: '^3' } });
+  assert.deepEqual(M.detectTestPlan(d), { framework: 'Vitest', command: 'npx vitest run --reporter=junit --outputFile=.verifylens/test-report.xml', report: join(d, '.verifylens/test-report.xml') });
+  d = mk({ scripts: { test: 'jest --coverage' } });
+  assert.equal(M.detectTestPlan(d)!.command, 'npx jest --json --outputFile=.verifylens/test-report.json');
+  d = mk({ scripts: { test: 'node --experimental-strip-types --test' } });
+  assert.equal(M.detectTestPlan(d, '', '', 'C:\\Program Files\\nodejs\\node.exe')!.command, '"C:\\Program Files\\nodejs\\node.exe" --test --test-reporter=junit --test-reporter-destination=.verifylens/test-report.xml');
+  d = mk(null, { 'test/a.test.ts': '' });
+  assert.equal(M.detectTestPlan(d)!.framework, 'node:test', 'no package.json but test files exist');
+  d = mk({ devDependencies: { mocha: '^10' } }, { 'test/a.test.js': '' });
+  assert.equal(M.detectTestPlan(d), null, 'unknown runner: ask for the command instead of guessing');
+  assert.deepEqual(M.detectTestPlan(d, 'npx mocha --reporter xunit --reporter-option output=${report}', 'out/r.xml'), {
+    framework: '직접 지정',
+    command: 'npx mocha --reporter xunit --reporter-option output=out/r.xml',
+    report: join(d, 'out/r.xml'),
+  });
+  assert.equal(M.detectTestPlan(mk({})), null);
+  assert.deepEqual(M.reportCandidates(d, 'out/r.xml'), [join(d, 'out/r.xml')]);
+  assert.equal(M.reportCandidates(d).length, 3);
+});
+
+test('the base branch is chosen without asking when it is obvious', () => {
+  const w = workRepo();
+  assert.equal(M.defaultBase(w.repo, 'feature/lockout-b'), 'main');
+  assert.equal(M.defaultBase(w.repo, 'main'), null, 'on main itself there is nothing obvious to compare with');
+  execFileSync('git', ['-C', w.repo, 'branch', 'develop', 'main']);
+  assert.equal(M.defaultBase(w.repo, 'main'), 'develop');
+});

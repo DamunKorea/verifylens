@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const ext = path.join(__dirname, '..');
 const log = { errors: [], warnings: [], infos: [], opened: [], shown: [], posted: [], exec: [], diffs: [], clipboard: [], decorations: 0 };
 let answers = { warning: undefined, quickPick: [], input: '' };
-const reg = { commands: {}, tree: null, view: null, lens: null, content: {}, panel: null, status: null, diags: null };
+const reg = { commands: {}, tree: null, view: null, lens: null, content: {}, panel: null, status: null, diags: null, saveListeners: [] };
 const config = { nodePath: process.execPath, requirementsFile: '.verifylens/requirements.md', baseBranch: '', junitPath: '' };
 const disp = { dispose() {} };
 
@@ -33,6 +33,7 @@ const vscode = {
   ThemeIcon: class { constructor(id, color) { this.id = id; this.color = color; } },
   ThemeColor: class { constructor(id) { this.id = id; } },
   MarkdownString: class { constructor(v) { this.value = v; } appendMarkdown(t) { this.value += t; return this; } },
+  RelativePattern: class { constructor(base, pattern) { this.base = base; this.pattern = pattern; } },
   Hover: class { constructor(contents) { this.contents = contents; } },
   Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } },
   DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
@@ -71,6 +72,8 @@ const vscode = {
     workspaceFolders: [],
     getConfiguration: () => ({ get: (k) => config[k] }),
     onDidChangeConfiguration: () => disp,
+    onDidSaveTextDocument: (f) => { reg.saveListeners.push(f); return { dispose() { reg.saveListeners = reg.saveListeners.filter((x) => x !== f); } }; },
+    createFileSystemWatcher: () => ({ onDidChange: () => disp, onDidCreate: () => disp, onDidDelete: () => disp, dispose() {} }),
     registerTextDocumentContentProvider: (scheme, p) => { reg.content[scheme] = p; return disp; },
     openTextDocument: async (uri) => {
       log.opened.push(uri);
@@ -100,7 +103,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   const ctx = { subscriptions: [], asAbsolutePath: (p) => path.join(ext, p), workspaceState: { get: (k, d) => (store.has(k) ? store.get(k) : d), update: async (k, v) => { store.set(k, v); } } };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   mod.activate(ctx);
-  for (const id of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.openReport', 'verifylens.createRequirements', 'verifylens.rerun', 'verifylens.focusRequirement', 'verifylens.openLocation', 'verifylens.openDiff', 'verifylens.recordJudgment', 'verifylens.copySummary', 'verifylens.importRequirements'])
+  for (const id of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.openReport', 'verifylens.createRequirements', 'verifylens.rerun', 'verifylens.focusRequirement', 'verifylens.openLocation', 'verifylens.openDiff', 'verifylens.recordJudgment', 'verifylens.copySummary', 'verifylens.importRequirements', 'verifylens.runTests'])
     assert.ok(reg.commands[id], `registered ${id}`);
   assert.deepEqual(reg.tree.getChildren(), [], 'empty tree before a run (welcome view shows)');
 
@@ -227,7 +230,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.equal(log.opened.at(-1).scheme, 'file');
   assert.ok(log.warnings.some((w) => /미실행/.test(w)), 'warns that tests were not given');
 
-  assert.equal(reg.view.message, '요구사항 2개 중 0개만 근거와 검사로 확인됨 · feature/lockout-b ← main · 판단 0/2');
+  assert.equal(reg.view.message, '요구사항 2개 중 근거와 검사로 확인된 것이 아직 없음 · feature/lockout-b ← main · 판단 0/2');
   config.summaryLanguage = 'en';
   const en = await reg.commands['verifylens.copySummary']();
   assert.match(en, /^## VerifyLens verification summary/);
@@ -268,6 +271,26 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.match(log.warnings.at(-1), /요구사항으로 볼 문장을 찾지 못했습니다/);
   assert.match(await reg.commands['verifylens.importRequirements']({ dryRun: true, text: '- 가나다라마바\n- 사아자차카타\n' }), /- R1: 가나다라마바\n- R2: 사아자차카타\n$/);
 
+  // 5-3) 커밋하지 않고 저장만 해도 다시 본다 (AI 가 방금 고친 코드를 커밋 전에 확인)
+  assert.ok(reg.saveListeners.length >= 1, 'listens for saves while a branch check is active');
+  fs.writeFileSync(authFile, fs.readFileSync(authFile, 'utf8').replace('user.failures >= 5', 'user.failures > 3'));
+  for (const f of reg.saveListeners) f({ uri: Uri.file(authFile) });
+  let live = '';
+  for (let i = 0; i < 60 && !/^다름/.test(live); i++) { await sleep(150); live = reg.tree.getTreeItem(reg.tree.getChildren()[1]).description; }
+  assert.equal(live, '다름', 'the saved, uncommitted edit (> 3 locks on the 4th attempt) is caught');
+  assert.match(reg.view.message, /feature\/lockout-b \+ 커밋 전 변경 ← main/);
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren(reg.tree.getChildren()[1])[0]).description, '4번째 동작 · 검사 미실행');
+
+  // 5-4) 테스트 실행: 명령을 알아내 실제로 돌리고(node:test), 결과를 읽어 다시 분석한다
+  await reg.commands['verifylens.runTests']();
+  assert.deepEqual(log.errors, []);
+  assert.match(log.infos.at(-1), /테스트 결과를 반영했습니다 \(node:test\)/);
+  assert.ok(fs.existsSync(path.join(repo, '.verifylens', 'test-report.xml')));
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[0]).description, '확인됨', 'R1 now has a passing test');
+  const r2row = reg.tree.getTreeItem(reg.tree.getChildren(reg.tree.getChildren()[1])[0]).description;
+  assert.equal(r2row, '4번째 동작 · 검사 통과', 'the test passes, yet the computed attempt still shows the requirement is not met');
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[1]).description, '다름');
+
   // 6) 제한 모드: 브랜치 확인은 신뢰를 요청하고 멈추며, 샘플은 그대로 된다
   vscode.workspace.isTrusted = false;
   const before = log.exec.length;
@@ -276,7 +299,8 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   await reg.commands['verifylens.compareBranches']();
   await reg.commands['verifylens.createRequirements']();
   await reg.commands['verifylens.importRequirements']();
-  assert.ok(log.warnings.filter((w) => /제한 모드/.test(w)).length >= 4, 'asks for trust');
+  await reg.commands['verifylens.runTests']();
+  assert.ok(log.warnings.filter((w) => /제한 모드/.test(w)).length >= 5, 'asks for trust');
   answers = { warning: '이 폴더 신뢰하기', quickPick: [] };
   await reg.commands['verifylens.checkBranch']();
   assert.ok(log.exec.slice(before).includes('workbench.trust.manage'), 'opens trust dialog');

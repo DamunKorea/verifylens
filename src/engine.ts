@@ -1,33 +1,57 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import type { Boundary, Evidence, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, TestCase, TestStatus, Unit } from './types.ts';
 import { analyzeFile } from './analyze.ts';
-import { changedFiles, changedLines, shortSha, showFile } from './git.ts';
-import { parseJunit } from './tests.ts';
+import { changedFiles, changedLines, mergeBase, shortSha, showFile, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
+import { parseTestReport } from './tests.ts';
 import { tokenize } from './tokens.ts';
 import { normalizePhrases } from './glossary.ts';
 
 const CODE_EXT = /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
 const TEST_FILE = /(\.test\.|\.spec\.|__tests__\/|\/tests?\/)/;
 
-export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string; ref: string; junit?: string }): ResultSet {
+/**
+ * 한 결과(브랜치)를 분석한다.
+ * worktree 가 true 면 ref 의 커밋이 아니라 지금 작업 폴더를 본다: 커밋한 것 + 커밋 전 수정 + 새 파일.
+ * AI 가 방금 고친, 아직 커밋하지 않은 코드를 확인하려면 이쪽이어야 한다.
+ */
+export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string; ref: string; junit?: string; worktree?: boolean }): ResultSet {
   const { key, repo, base, ref } = opts;
-  const lines = changedLines(repo, base, ref);
+  const from = opts.worktree ? mergeBase(repo, base) : '';
+  const lines = opts.worktree ? worktreeChangedLines(repo, from) : changedLines(repo, base, ref);
+  const read = (f: string) => {
+    if (!opts.worktree) return showFile(repo, ref, f);
+    const p = join(repo, f);
+    return existsSync(p) ? readFileSync(p, 'utf8').replace(/\r\n/g, '\n') : null;
+  };
   const files: Record<string, string> = {};
   const analyses = [];
-  for (const f of changedFiles(repo, base, ref)) {
+  for (const f of opts.worktree ? worktreeChangedFiles(repo, from) : changedFiles(repo, base, ref)) {
     if (!CODE_EXT.test(f)) continue;
-    const text = showFile(repo, ref, f);
+    const text = read(f);
     if (text === null) continue;
     files[f] = text;
     if (TEST_FILE.test(f)) continue;
     analyses.push(analyzeFile(f, text, lines.get(f) ?? null));
   }
-  const tests: TestCase[] = opts.junit ? parseJunit(readFileSync(opts.junit, 'utf8')) : [];
+  const tests: TestCase[] = opts.junit ? parseTestReport(readFileSync(opts.junit, 'utf8')) : [];
+  // 커밋 전 변경이 있으면 그 내용의 지문을 남긴다 (같은 커밋이어도 내용이 다르면 다른 결과다).
+  let wip: string | undefined;
+  if (opts.worktree) {
+    const dirty = uncommittedFiles(repo).filter((f) => CODE_EXT.test(f)).sort();
+    if (dirty.length) {
+      const h = createHash('sha1');
+      for (const f of dirty) h.update(f).update('\0').update(read(f) ?? '').update('\0');
+      wip = h.digest('hex').slice(0, 7);
+    }
+  }
   return {
     key,
     label: `결과 ${key}`,
     ref,
-    sha: shortSha(repo, ref),
+    sha: shortSha(repo, opts.worktree ? 'HEAD' : ref),
+    wip,
     files,
     analyses,
     units: analyses.flatMap((a) => a.units),
@@ -35,6 +59,18 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
     tests,
     perReq: {},
   };
+}
+
+/**
+ * 요구사항이 세는 바로 그것을 숫자와 비교하는 조건인가.
+ * 예: 요구사항 「5회 실패하면…」 과 조건 `user.failures > 3`. 숫자가 요구사항과 멀어도, 비교하는 변수 이름이 요구사항의 낱말이면 이 조건이 근거다.
+ * (숫자가 한 칸 안일 때만 잇던 것으로는 `> 3` 같은 큰 어긋남을 놓쳤다.)
+ */
+function countsOnRequirement(req: Requirement, u: Unit): boolean {
+  const c = u.cond;
+  if (!c || c.lit === undefined || !c.left || !req.numbers.length) return false;
+  const set = new Set(req.tokens);
+  return tokenize(c.left).some((t) => set.has(t));
 }
 
 function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[] } {
@@ -48,6 +84,9 @@ function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[] } 
   if (u.cond && u.cond.lit !== undefined && req.numbers.some((n) => Math.abs(n - u.cond!.lit!) <= 1)) {
     s += 2;
     why.push(`숫자 ${u.cond.lit} (요구사항 ${req.numbers.join('·')})`);
+  } else if (countsOnRequirement(req, u)) {
+    s += 2;
+    why.push(`숫자 조건 ${u.cond!.left} ↔ ${u.cond!.lit} (요구사항 ${req.numbers.join('·')})`);
   }
   if (req.guardCue && u.guard) {
     s += 1;
@@ -77,7 +116,7 @@ function findEvidence(req: Requirement, units: Unit[]): Evidence {
   const c = best.u.cond;
   if (c && c.lit !== undefined && req.numbers.length) {
     const required = req.numbers.reduce((a, b) => (Math.abs(b - c.lit!) < Math.abs(a - c.lit!) ? b : a));
-    if (Math.abs(required - c.lit) <= 1) {
+    if (Math.abs(required - c.lit) <= 1 || countsOnRequirement(req, best.u)) {
       ev.boundary = {
         required,
         firstTrue: c.firstTrue,

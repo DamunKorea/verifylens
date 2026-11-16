@@ -20,3 +20,26 @@ export function parseJunit(xml: string): TestCase[] {
   }
   return out;
 }
+
+const ANSI = /\u001b\[[0-9;]*m/g;
+
+/** Jest · Vitest 의 JSON 보고서 (--json / --reporter=json) */
+function parseJestJson(text: string): TestCase[] {
+  const j = JSON.parse(text) as { testResults?: { assertionResults?: { fullName?: string; title?: string; ancestorTitles?: string[]; status?: string; failureMessages?: string[] }[] }[] };
+  const out: TestCase[] = [];
+  for (const f of j.testResults ?? []) {
+    for (const a of f.assertionResults ?? []) {
+      const name = a.fullName || [...(a.ancestorTitles ?? []), a.title ?? ''].join(' ').trim();
+      const message = (a.failureMessages ?? []).join('\n').replace(ANSI, '').split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 3).join(' · ');
+      out.push({ name, status: a.status === 'passed' ? 'pass' : a.status === 'failed' ? 'fail' : 'skip', message });
+    }
+  }
+  return out;
+}
+
+/** 테스트 보고서를 읽는다: JUnit XML (node:test · Vitest · jest-junit · Mocha xunit) 또는 Jest · Vitest JSON. */
+export function parseTestReport(text: string): TestCase[] {
+  const t = text.replace(/^﻿/, '').trimStart();
+  if (t.startsWith('{')) return parseJestJson(t);
+  return parseJunit(t).map((c) => ({ ...c, name: c.name.replace(ANSI, ''), message: c.message.replace(ANSI, '') }));
+}

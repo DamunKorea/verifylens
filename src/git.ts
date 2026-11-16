@@ -18,7 +18,34 @@ export function changedFiles(repo: string, base: string, head: string): string[]
 }
 
 export function changedLines(repo: string, base: string, head: string): Map<string, Set<number>> {
-  const out = git(repo, ['diff', '-U0', '--no-color', '--diff-filter=AMR', `${base}...${head}`]);
+  return parseDiffLines(git(repo, ['diff', '-U0', '--no-color', '--diff-filter=AMR', `${base}...${head}`]));
+}
+
+const list = (out: string) => out.split('\n').map((s) => s.trim()).filter(Boolean);
+
+/** base 와 갈라진 지점. 작업 폴더(커밋 전 변경 포함)를 이 커밋과 비교한다. */
+export function mergeBase(repo: string, base: string, head = 'HEAD'): string {
+  return git(repo, ['merge-base', base, head]).trim();
+}
+/** 아직 git 이 모르는 새 파일 (.gitignore 에 걸린 것은 뺀다) */
+export function untrackedFiles(repo: string): string[] {
+  // .gitignore 에 없더라도 node_modules 는 사용자의 변경이 아니다.
+  return list(git(repo, ['ls-files', '--others', '--exclude-standard'])).filter((f) => !/(^|\/)node_modules\//.test(f));
+}
+/** 작업 폴더가 from 커밋과 다른 파일: 커밋한 것 + 커밋 전 수정 + 새 파일 */
+export function worktreeChangedFiles(repo: string, from: string): string[] {
+  return [...new Set([...list(git(repo, ['diff', '--name-only', '--diff-filter=AMR', from])), ...untrackedFiles(repo)])];
+}
+/** 작업 폴더에서 from 커밋 이후 바뀐 줄. 새 파일은 여기 없다(전체가 바뀐 것으로 본다). */
+export function worktreeChangedLines(repo: string, from: string): Map<string, Set<number>> {
+  return parseDiffLines(git(repo, ['diff', '-U0', '--no-color', '--diff-filter=AMR', from]));
+}
+/** 마지막 커밋 뒤로 손댄 파일 (커밋 전 수정 + 새 파일) */
+export function uncommittedFiles(repo: string): string[] {
+  return [...new Set([...list(git(repo, ['diff', '--name-only', 'HEAD'])), ...untrackedFiles(repo)])];
+}
+
+function parseDiffLines(out: string): Map<string, Set<number>> {
   const map = new Map<string, Set<number>>();
   let file = '';
   for (const line of out.split('\n')) {

@@ -73,6 +73,8 @@ export type ResultSet = {
   label: string;
   ref: string;
   sha: string;
+  /** 커밋 전 변경이 들어 있으면 그 내용의 지문. 같은 커밋이어도 내용이 바뀌면 달라진다. */
+  wip?: string;
   files: Record<string, string>;
   analyses: FileAnalysis[];
   units: Unit[];
@@ -85,4 +87,13 @@ export type Relation = { kind: '일치' | '불일치' | '비교 조건 다름' |
 export type Overall = '확인됨' | '다름' | '미확인' | '실패';
 export type ReqSummary = { req: Requirement; relation: Relation; overall: Overall; notes: string[] };
 
-export type Report = { generatedAt: string; repo: string; base: string; sets: ResultSet[]; reqs: Requirement[]; summaries: ReqSummary[] };
+export type Report = {
+  generatedAt: string;
+  repo: string;
+  base: string;
+  sets: ResultSet[];
+  reqs: Requirement[];
+  summaries: ReqSummary[];
+  /** 테스트 결과가 코드보다 오래되어 쓰지 않았는가 */
+  testsStale?: boolean;
+};

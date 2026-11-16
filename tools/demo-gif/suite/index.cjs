@@ -58,7 +58,7 @@ exports.run = async function run() {
     await closeTabs((t) => t.input && t.input.original && t.input.modified);
 
     if (only !== 'short') {
-      // 고쳐서 커밋하고 테스트를 다시 돌리면 스스로 갱신된다
+      // 고치고 저장만 한다(커밋 없음). 스스로 다시 보고, 고치기 전의 테스트 결과는 더 믿지 않는다.
       ed = await showAuth(ws, 21);
       const line = ed.document.lineAt(20);
       const at = line.text.indexOf('> 5');
@@ -68,18 +68,14 @@ exports.run = async function run() {
       await sleep(900);
       await vscode.workspace.applyEdit(edit);
       await ed.document.save();
-      await sleep(1800);
-      cp.execFileSync('git', ['-C', ws, 'commit', '-q', '-am', 'fix lockout'], { stdio: 'ignore' });
-      const env = { ...process.env };
-      delete env.NODE_TEST_CONTEXT;
-      delete env.ELECTRON_RUN_AS_NODE;
-      try {
-        cp.execFileSync(process.env.VL_NODE, ['--test', '--test-reporter=junit', '--test-reporter-destination=.verifylens/junit.xml', 'test/lockout.test.ts'], { cwd: ws, stdio: 'ignore', env });
-      } catch {
-        /* 실패한 테스트가 있으면 종료 코드 1 */
-      }
+      await sleep(4200);
+
+      // 에디터에서 테스트를 돌리면 결과를 읽어 다시 판정한다
       stage('6-verified');
-      await sleep(6000);
+      await cmd('verifylens.runTests');
+      await sleep(900);
+      await cmd('notifications.clearAll').then(undefined, () => undefined);
+      await sleep(4500);
     }
 
     // PR 요약 미리 보기 (클립보드는 건드리지 않는다)

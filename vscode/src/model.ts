@@ -1,15 +1,35 @@
 // VerifyLens 확장의 순수 로직. vscode 모듈을 쓰지 않아서 Node 에서 바로 시험할 수 있다.
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { analyzeResult, evaluate } from '../../src/engine.ts';
 import { draftRequirements, extractRequirements, parseRequirements } from '../../src/requirements.ts';
 import { buildSampleRepo } from '../../src/demo.ts';
 import { renderHtml } from '../../src/output.ts';
 import { counts, renderSummaryMd } from '../../src/summary.ts';
-import { git } from '../../src/git.ts';
+import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
 import type { Overall, Report, ReqSummary, ResultSet } from '../../src/types.ts';
 
-export type RepoParams = { repo: string; base: string; a: string; b?: string; reqFile: string; junitA?: string; junitB?: string; workingRef?: string };
+export type RepoParams = {
+  repo: string;
+  base: string;
+  a: string;
+  b?: string;
+  reqFile: string;
+  junitA?: string;
+  junitB?: string;
+  workingRef?: string;
+  /** a 를 커밋이 아니라 지금 작업 폴더로 본다 (커밋 전 변경 · 새 파일 포함). a 는 체크아웃된 브랜치여야 한다. */
+  worktree?: boolean;
+};
+const CODE_FILE = /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
+const mtime = (f: string) => {
+  try {
+    return statSync(f).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
 export type DemoParams = { sampleDir: string; node: string | null; fallbackJunit: { a: string; b: string } };
 
 export type Run = {
@@ -52,14 +72,33 @@ export function runRepo(p: RepoParams): Run {
   for (const [j, label] of [[p.junitA, 'A'], [p.junitB, 'B']] as [string | undefined, string][]) {
     if (j && !existsSync(j)) throw new Error(`결과 ${label}의 테스트 보고서가 없습니다: ${j}`);
   }
-  const sets = [analyzeResult({ key: 'A', repo: p.repo, base: p.base, ref: p.a, junit: p.junitA })];
+  // 테스트 결과가 코드보다 오래됐으면 쓰지 않는다. 고치기 전의 「통과」나 「실패」는 지금 코드에 대한 근거가 아니다.
+  let junitA = p.junitA;
+  let stale = false;
+  if (p.worktree && junitA) {
+    const from = mergeBase(p.repo, p.base);
+    const newest = Math.max(0, ...worktreeChangedFiles(p.repo, from).filter((f) => CODE_FILE.test(f)).map((f) => mtime(join(p.repo, f))));
+    if (mtime(junitA) + 1500 < newest) {
+      stale = true;
+      junitA = undefined;
+    }
+  }
+  const sets = [analyzeResult({ key: 'A', repo: p.repo, base: p.base, ref: p.a, junit: junitA, worktree: p.worktree })];
   if (p.b) sets.push(analyzeResult({ key: 'B', repo: p.repo, base: p.base, ref: p.b, junit: p.junitB }));
   const notes: string[] = [];
   for (const s of sets) {
-    if (!s.analyses.length) notes.push(`${s.label}(${s.ref})에는 ${p.base}와 비교해 바뀐 TypeScript · JavaScript 파일이 없습니다. 커밋된 변경만 봅니다.`);
+    if (s.analyses.length) continue;
+    notes.push(
+      p.worktree && s.key === 'A'
+        ? `${p.base}와 비교해 바뀐 TypeScript · JavaScript 파일이 없습니다.`
+        : `${s.label}(${s.ref})에는 ${p.base}와 비교해 바뀐 TypeScript · JavaScript 파일이 없습니다. 커밋된 변경만 봅니다.`,
+    );
   }
-  if (!p.junitA && !p.junitB) notes.push('테스트 보고서(JUnit)를 주지 않아 검사는 모두 「미실행」으로 표시됩니다.');
-  return { kind: 'repo', repo: p.repo, report: evaluate(sets, reqs, p.repo, p.base), workingRef: p.workingRef, notes };
+  if (stale) notes.push('테스트 결과가 코드보다 오래되어 쓰지 않았습니다. 테스트를 다시 실행하면 반영됩니다.');
+  else if (!junitA && !p.junitB) notes.push('테스트 결과가 없어 검사는 모두 「미실행」으로 표시됩니다. 테스트를 실행하면 채워집니다.');
+  const report = evaluate(sets, reqs, p.repo, p.base);
+  report.testsStale = stale;
+  return { kind: 'repo', repo: p.repo, report, workingRef: p.workingRef, notes };
 }
 
 // ---------------------------------------------------------------- git 도우미
@@ -112,7 +151,10 @@ export type ReqRow = { id: string; text: string; overall: Overall; reason: strin
 /** 상태 옆에 붙일 짧은 이유. 「미확인」이 왜 미확인인지 한눈에 보이게 한다. */
 function shortReason(report: Report, s: ReqSummary): string {
   const id = s.req.id;
-  if (s.overall === '미확인') return report.sets.some((x) => x.perReq[id].evidence.status === '미발견') ? '근거 없음' : '검사 없음';
+  if (s.overall === '미확인') {
+    if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return '근거 없음';
+    return report.testsStale ? '검사 오래됨' : '검사 없음';
+  }
   if (s.overall === '실패') return '검사 실패';
   return '';
 }
@@ -159,7 +201,11 @@ export function attemptLines(report: Report, reqId: string, lang: 'ko' | 'en' = 
 export function verifiedLine(report: Report, lang: 'ko' | 'en' = 'ko'): string {
   const n = report.summaries.length;
   const v = report.summaries.filter((s) => s.overall === '확인됨').length;
-  if (lang === 'en') return v === n ? `All ${n} requirements verified by evidence and tests` : `${v} of ${n} requirements verified by evidence and tests`;
+  if (lang === 'en') {
+    if (v === 0) return `None of the ${n} requirements is verified by evidence and tests yet`;
+    return v === n ? `All ${n} requirements verified by evidence and tests` : `${v} of ${n} requirements verified by evidence and tests`;
+  }
+  if (v === 0) return `요구사항 ${n}개 중 근거와 검사로 확인된 것이 아직 없음`;
   return v === n ? `요구사항 ${n}개 모두 근거와 검사로 확인됨` : `요구사항 ${n}개 중 ${v}개만 근거와 검사로 확인됨`;
 }
 
@@ -187,6 +233,7 @@ export function summaryLine(report: Report, s: ReqSummary): string {
   if (s.overall === '실패') return '연결된 검사가 실패';
   if (s.overall === '미확인') {
     if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return '구현 근거를 찾지 못함';
+    if (report.testsStale) return '테스트 결과가 코드보다 오래되어 쓰지 않음 — 테스트를 다시 실행해야 함';
     return '연결된 검사가 없어 동작을 확인하지 못함';
   }
   return '근거를 찾았고 검사가 통과';
@@ -357,14 +404,14 @@ export function statusIcons(report: Report): string {
 export function contextLine(r: Run): string {
   const [a, b] = r.report.sets;
   if (r.kind === 'demo') return `샘플 · 결과 A ↔ 결과 B (기준 ${r.report.base})`;
-  return b ? `${a.ref} ↔ ${b.ref} (기준 ${r.report.base})` : `${a.ref} ← ${r.report.base}`;
+  return b ? `${a.ref} ↔ ${b.ref} (기준 ${r.report.base})` : `${a.ref}${a.wip ? ' + 커밋 전 변경' : ''} ← ${r.report.base}`;
 }
 
 /** 판단이 어느 코드에 대한 것인지 구분하는 값. 코드가 바뀌면(커밋) 이전 판단은 쓰지 않는다. */
-export const reportSig = (report: Report) => report.sets.map((s) => s.sha).join('+');
+export const reportSig = (report: Report) => report.sets.map((s) => s.sha + (s.wip ? `~${s.wip}` : '')).join('+');
 
 // ---------------------------------------------------------------- 바뀌면 다시 분석
-export type WatchSpec = { repo: string; refs: string[]; files: string[] };
+export type WatchSpec = { repo: string; refs: string[]; files: string[]; worktree?: boolean };
 export function gitDir(repo: string): string {
   return git(repo, ['rev-parse', '--absolute-git-dir']).trim();
 }
@@ -385,7 +432,89 @@ export function signature(spec: WatchSpec): string {
       return '-';
     }
   });
-  return [...shas, ...times].join('|');
+  // 작업 폴더를 볼 때는 커밋 전에 손댄 코드 파일의 상태도 넣는다 (저장하면 값이 바뀐다).
+  let dirty: string[] = [];
+  if (spec.worktree) {
+    try {
+      dirty = uncommittedFiles(spec.repo).filter((f) => CODE_FILE.test(f)).sort().map((f) => {
+        const p = join(spec.repo, f);
+        return `${f}:${mtime(p)}:${existsSync(p) ? statSync(p).size : -1}`;
+      });
+    } catch {
+      dirty = ['?'];
+    }
+  }
+  return [...shas, ...times, ...dirty].join('|');
+}
+
+/**
+ * 묻지 않고 고를 수 있는 기준 브랜치: 원격의 기본 브랜치, 없으면 main → master → develop → dev 순으로 있는 것.
+ * 정할 수 없으면 null (그때는 사용자에게 묻는다).
+ */
+export function defaultBase(repo: string, current: string): string | null {
+  const branches = localBranches(repo);
+  try {
+    const head = git(repo, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']).trim().replace(/^origin\//, '');
+    if (head && head !== current && branches.includes(head)) return head;
+  } catch {
+    /* 원격이 없거나 기본 브랜치를 모른다 */
+  }
+  return ['main', 'master', 'develop', 'dev'].find((b) => b !== current && branches.includes(b)) ?? null;
+}
+
+// ---------------------------------------------------------------- 테스트 실행
+export type TestPlan = { framework: string; command: string; report: string };
+const DEFAULT_REPORTS = ['.verifylens/test-report.xml', '.verifylens/test-report.json', '.verifylens/junit.xml'];
+
+/** 분석이 읽을 수 있는 테스트 결과 파일 후보 (설정한 경로가 있으면 그것만) */
+export function reportCandidates(repo: string, setting = ''): string[] {
+  return (setting.trim() ? [setting.trim()] : DEFAULT_REPORTS).map((r) => join(repo, r));
+}
+/** 지금 있는 테스트 결과 파일 가운데 가장 새것 */
+export function findReport(repo: string, setting = ''): string | undefined {
+  return reportCandidates(repo, setting).filter((f) => existsSync(f)).sort((a, b) => mtime(b) - mtime(a))[0];
+}
+
+/**
+ * 테스트를 돌려 결과 파일을 남길 명령을 정한다. override(설정 verifylens.testCommand)가 있으면 그것을 쓰고(${report} 는 결과 파일 경로로 바꾼다),
+ * 없으면 package.json 을 보고 Vitest · Jest · node:test 를 알아낸다. 알 수 없으면 null.
+ */
+export function detectTestPlan(repo: string, override = '', reportSetting = '', node = 'node'): TestPlan | null {
+  const rel = (def: string) => reportSetting.trim() || def;
+  if (override.trim()) {
+    const r = rel('.verifylens/test-report.xml');
+    return { framework: '직접 지정', command: override.trim().split('${report}').join(r), report: join(repo, r) };
+  }
+  let pkg: { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } = {};
+  try {
+    pkg = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'));
+  } catch {
+    /* package.json 이 없거나 읽을 수 없다 */
+  }
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  const script = pkg.scripts?.test ?? '';
+  if (deps.vitest || /\bvitest\b/.test(script)) {
+    const r = rel('.verifylens/test-report.xml');
+    return { framework: 'Vitest', command: `npx vitest run --reporter=junit --outputFile=${r}`, report: join(repo, r) };
+  }
+  if (deps.jest || /\bjest\b/.test(script)) {
+    const r = rel('.verifylens/test-report.json');
+    return { framework: 'Jest', command: `npx jest --json --outputFile=${r}`, report: join(repo, r) };
+  }
+  let hasTests = /\bnode(\.exe)?\b.*\s--test\b/.test(script);
+  if (!hasTests && !deps.mocha && !deps.ava && !deps.jasmine) {
+    try {
+      hasTests = git(repo, ['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').some((f) => /(\.test\.|\.spec\.)(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/.test(f.trim()));
+    } catch {
+      hasTests = false;
+    }
+  }
+  if (hasTests) {
+    const r = rel('.verifylens/test-report.xml');
+    const exe = /\s/.test(node) ? `"${node}"` : node;
+    return { framework: 'node:test', command: `${exe} --test --test-reporter=junit --test-reporter-destination=${r}`, report: join(repo, r) };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- 리포트 웹뷰
@@ -487,6 +616,8 @@ const TXT = {
     title: 'VerifyLens 검증 요약',
     sample: '샘플(가상 사례)',
     base: '기준',
+    wip: '커밋 안 된 변경 포함',
+    stale: '테스트 결과가 코드보다 오래되어 쓰지 않음 — 다시 실행 필요',
     status: { 확인됨: '✅ 확인됨', 다름: '⚠️ 다름', 실패: '❌ 실패', 미확인: '❔ 미확인' } as Record<Overall, string>,
     count: { 확인됨: '확인됨', 다름: '다름', 실패: '실패', 미확인: '미확인' } as Record<Overall, string>,
     test: { 통과: '통과', 실패: '실패', 미실행: '미실행' } as Record<string, string>,
@@ -509,6 +640,8 @@ const TXT = {
     title: 'VerifyLens verification summary',
     sample: 'Sample (fictional case)',
     base: 'base',
+    wip: 'includes uncommitted changes',
+    stale: 'test results are older than the code and were not used — re-run the tests',
     status: { 확인됨: '✅ Verified', 다름: '⚠️ Different', 실패: '❌ Failed', 미확인: '❔ Not verified' } as Record<Overall, string>,
     count: { 확인됨: 'Verified', 다름: 'Different', 실패: 'Failed', 미확인: 'Not verified' } as Record<Overall, string>,
     test: { 통과: 'Passed', 실패: 'Failed', 미실행: 'Not run' } as Record<string, string>,
@@ -549,7 +682,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   const lang = opts.lang ?? 'ko';
   const out: string[] = [`## ${t.title}`, '', `**${verifiedLine(report, lang)}**`, '', `_${t.notOpinion}_`, ''];
   const strips: string[] = [];
-  const ref = (s: ResultSet) => `\`${s.ref}\` (\`${s.sha}\`)`;
+  const ref = (s: ResultSet) => `\`${s.ref}\` (\`${s.sha}\`${s.wip ? `, ${t.wip}` : ''})`;
   const scope = two ? `A ${ref(report.sets[0])} ↔ B ${ref(report.sets[1])} · ${t.base} \`${report.base}\`` : `${ref(report.sets[0])} ← \`${report.base}\``;
   out.push(`${r.kind === 'demo' ? `${t.sample} · ` : ''}${scope}`, '');
   out.push((['확인됨', '다름', '실패', '미확인'] as Overall[]).map((k) => `${t.count[k]} ${c[k]}`).join(' · '), '');
@@ -593,6 +726,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
       if (!open.includes(line)) open.push(line);
     }
   }
+  if (report.testsStale) open.unshift(`- ${t.stale}`);
   if (strips.length) out.push('', `**${t.when}**`, '```', ...strips.slice(0, -1), '```');
   if (failed.length) out.push('', `**${t.failed}**`, ...failed);
   if (open.length) out.push('', `**${t.open}**`, ...open);

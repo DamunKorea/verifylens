@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
-import { existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import * as cp from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as M from './model.ts';
 import { showFile } from '../../src/git.ts';
@@ -405,7 +406,10 @@ async function execute(job: Job, opts: RunOpts = {}) {
     arm(job.watch);
     showReport();
     void vscode.commands.executeCommand('verifylens.requirements.focus');
-    for (const n of r.notes) void vscode.window.showWarningMessage(`VerifyLens: ${n}`);
+    for (const n of r.notes) {
+      const offer = r.kind === 'repo' && /테스트/.test(n) ? ['테스트 실행'] : [];
+      void vscode.window.showWarningMessage(`VerifyLens: ${n}`, ...offer).then((pick) => (pick === '테스트 실행' ? vscode.commands.executeCommand('verifylens.runTests') : undefined));
+    }
     if (r.kind === 'demo') void vscode.window.showInformationMessage(`VerifyLens: ${M.demoHeadline(r.report)}`);
   } catch (e) {
     if (!opts.silent) return fail(e);
@@ -441,6 +445,17 @@ function arm(spec?: M.WatchSpec) {
       void execute(again, { silent: true });
     }, 800);
   };
+  const subs: vscode.Disposable[] = [];
+  if (spec.worktree) {
+    // 커밋 전 변경을 보고 있을 때: 저장하거나, 에디터 밖에서(AI 에이전트 등) 파일이 바뀌면 다시 본다.
+    const inRepo = (f: string) => !path.relative(spec.repo, f).startsWith('..');
+    subs.push(vscode.workspace.onDidSaveTextDocument((d) => (d.uri.scheme === 'file' && inRepo(d.uri.fsPath) ? kick() : undefined)));
+    const fw = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(spec.repo, '**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}'));
+    fw.onDidChange(kick);
+    fw.onDidCreate(kick);
+    fw.onDidDelete(kick);
+    subs.push(fw);
+  }
   const ws: FSWatcher[] = [];
   const dirs = new Set<string>();
   try {
@@ -464,6 +479,7 @@ function arm(spec?: M.WatchSpec) {
     dispose() {
       if (timer) clearTimeout(timer);
       for (const w of ws) w.close();
+      for (const s of subs) s.dispose();
     },
   };
 }
@@ -490,6 +506,8 @@ async function pickRepo(): Promise<string | undefined> {
 async function pickBase(repo: string, current: string): Promise<string | undefined> {
   const fixed = cfg('baseBranch', '').trim();
   if (fixed) return fixed;
+  const auto = M.defaultBase(repo, current);
+  if (auto) return auto;
   const items = M.orderBases(M.localBranches(repo), current);
   if (!items.length) {
     void vscode.window.showWarningMessage('VerifyLens: 비교할 기준 브랜치가 없습니다. main 같은 브랜치가 있어야 합니다.');
@@ -596,9 +614,53 @@ async function importRequirements(arg?: unknown, repoArg?: string): Promise<stri
   return merged.text;
 }
 
-function junitFor(repo: string): string | undefined {
-  const rel = cfg('junitPath', '').trim();
-  return rel ? path.join(repo, rel) : undefined;
+/**
+ * 테스트를 돌려 결과 파일을 만들고 다시 분석한다. 명령은 설정(verifylens.testCommand)이나 package.json 에서 정한다.
+ * 테스트가 실패해 종료 코드가 0 이 아닌 것은 정상이다. 결과 파일이 새로 생겼는지만 본다.
+ */
+async function runTests(): Promise<void> {
+  if (await needTrust()) return;
+  const repo = run?.kind === 'repo' ? run.repo : await pickRepo();
+  if (!repo) return;
+  const plan = M.detectTestPlan(repo, cfg('testCommand', ''), cfg('junitPath', ''), cfg('nodePath', 'node') || 'node');
+  if (!plan) {
+    const pick = await vscode.window.showWarningMessage(
+      'VerifyLens: 테스트 실행 방법을 알아내지 못했습니다 (Vitest · Jest · node:test 를 찾습니다). 설정에 명령을 적어 주세요. 예: npx mocha --reporter xunit --reporter-option output=${report}',
+      '설정 열기',
+    );
+    if (pick) await vscode.commands.executeCommand('workbench.action.openSettings', 'verifylens.testCommand');
+    return;
+  }
+  mkdirSync(path.dirname(plan.report), { recursive: true });
+  const started = Date.now();
+  out.appendLine(`[테스트 · ${plan.framework}] ${plan.command}`);
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  delete env.ELECTRON_RUN_AS_NODE;
+  const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `VerifyLens: 테스트 실행 중 (${plan.framework})`, cancellable: true }, (_p, token) => {
+    return new Promise<{ code: number | null; text: string; cancelled: boolean }>((resolve) => {
+      let cancelled = false;
+      const child = cp.exec(plan.command, { cwd: repo, windowsHide: true, timeout: 10 * 60 * 1000, maxBuffer: 32 * 1024 * 1024, env }, (err, stdout, stderr) => {
+        resolve({ code: err ? ((err as { code?: number }).code ?? 1) : 0, text: `${stdout}\n${stderr}`, cancelled });
+      });
+      token?.onCancellationRequested(() => {
+        cancelled = true;
+        if (process.platform === 'win32' && child.pid) cp.spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+        else child.kill();
+      });
+    });
+  });
+  out.appendLine(res.text.split('\n').slice(-40).join('\n'));
+  if (res.cancelled) return;
+  const fresh = existsSync(plan.report) && statSync(plan.report).mtimeMs >= started - 2000;
+  if (!fresh) {
+    out.show(true);
+    void vscode.window.showErrorMessage(`VerifyLens: 테스트를 실행했지만 결과 파일(${path.relative(repo, plan.report)})이 만들어지지 않았습니다. 출력 창의 내용을 확인하세요. 명령: ${plan.command}`);
+    return;
+  }
+  if (again && run?.kind === 'repo') await execute(again, { silent: true });
+  else await vscode.commands.executeCommand('verifylens.checkBranch');
+  if (run) void vscode.window.showInformationMessage(`VerifyLens: 테스트 결과를 반영했습니다 (${plan.framework}) · ${M.statusText(run.report)}`);
 }
 
 // ---------------------------------------------------------------- 시작
@@ -661,11 +723,16 @@ export function activate(context: vscode.ExtensionContext) {
       if (!base) return;
       const reqFile = await ensureReqs(repo);
       if (!reqFile) return;
-      const junitA = junitFor(repo);
+      // 커밋 전 변경까지 본다 (AI 가 방금 고친 코드를 커밋하기 전에 확인하려는 것이므로). 체크아웃을 바꾸면 그 브랜치를 따라간다.
+      const worktree = cfg('includeUncommitted', true);
+      const setting = cfg('junitPath', '');
       return execute({
         title: `${current} 확인 (기준 ${base})`,
-        fn: () => M.runRepo({ repo, base, a: current, reqFile, junitA: junitA && existsSync(junitA) ? junitA : undefined, workingRef: M.currentBranch(repo) }),
-        watch: { repo, refs: [base, current, 'HEAD'], files: [reqFile, ...(junitA ? [junitA] : [])] },
+        fn: () => {
+          const now = worktree ? M.currentBranch(repo) : current;
+          return M.runRepo({ repo, base, a: now, reqFile, junitA: M.findReport(repo, setting), workingRef: M.currentBranch(repo), worktree });
+        },
+        watch: { repo, refs: [base, current, 'HEAD'], files: [reqFile, ...M.reportCandidates(repo, setting)], worktree },
       });
     }),
 
@@ -709,6 +776,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('verifylens.recordJudgment', (arg?: unknown) => recordJudgment(arg)),
     vscode.commands.registerCommand('verifylens.copySummary', (arg?: unknown) => copySummary(arg)),
     vscode.commands.registerCommand('verifylens.importRequirements', (arg?: unknown) => importRequirements(arg)),
+    vscode.commands.registerCommand('verifylens.runTests', () => runTests()),
     vscode.commands.registerCommand('verifylens.openLocation', (setKey: string, file: string, line: number) => openLocation(setKey, file, line)),
   );
 }
