@@ -68,7 +68,7 @@ IntelliJ IDEA · WebStorm 같은 JetBrains IDE용입니다. VS Code 확장과 �
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC의 **Node.js 18 이상**(엔진을 Node로 돌립니다. 없으면 무엇을 설치할지 알려 줍니다), git.
 - **설치:** 아직 Marketplace에는 없습니다. 아래처럼 zip을 만든 뒤 IDE의 **Settings → Plugins → ⚙ → Install Plugin from Disk…**에서 고릅니다.
-- **한계:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교는 아직 없습니다. Android Studio 2026.1(같은 IntelliJ 플랫폼)에서 자동 시험과 실제 창으로 확인했고, IntelliJ IDEA와 WebStorm에서는 아직 직접 돌려 보지 못했습니다.
+- **한계:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교는 아직 없습니다. IntelliJ IDEA 2026.3과 Android Studio 2026.1(같은 IntelliJ 플랫폼)에서 자동 시험과 실제 창으로 확인했고, WebStorm에서는 아직 직접 돌려 보지 못했습니다.
 
 ```bash
 cd jetbrains

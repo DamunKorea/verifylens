@@ -7,7 +7,7 @@ This is the JetBrains counterpart of the [VS Code extension](../vscode/README.md
 - **No LLM, and your code never leaves your machine.** Static analysis (TypeScript compiler API) + local git + your JUnit test results. No network use, no telemetry.
 - **Unknown stays unknown.** No test or an unresolved call means "not verified", never "looks fine".
 
-> Preview 0.1.0. Analyzes **TypeScript and JavaScript**. The UI text is **Korean**. See [what was checked](#what-was-checked-and-what-was-not) before relying on it.
+> Preview 0.1.0. Analyzes **TypeScript and JavaScript**. The UI text is **Korean**. Run in IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried yet. See [what was checked](#what-was-checked-and-what-was-not).
 
 ## What it does
 
@@ -84,25 +84,31 @@ cd jetbrains
 ./gradlew test                         # starts a headless IDE and drives the plugin
 ```
 
-- `./gradlew buildPlugin` downloads IntelliJ IDEA 2026.1 (more than 1 GB) to build against. To use an IDE that is already installed (IntelliJ IDEA, WebStorm, Android Studio 2026.1 …) add `-PlocalIde="C:/path/to/the/IDE"`.
+- `./gradlew buildPlugin` downloads IntelliJ IDEA 2026.1 (more than 1 GB) to build against. To use an IDE that is already installed (IntelliJ IDEA, WebStorm, Android Studio 2026.1 …) add `-PlocalIde="C:/path/to/the/IDE"`. To build and test against another IntelliJ IDEA version add `-PplatformVersion=2026.3`.
 - `./gradlew test -PpracticeRepo=<folder>` runs the same test against a copy of your own repository layout. The original folder is not modified.
 - `./gradlew runIde --args="<project folder>" -PautoRun=check` opens a real IDE window with the plugin and runs the check once.
 - **Non-ASCII checkout path on Windows:** `test` and `runIde` fail to load classes when the path contains characters such as Korean, because Gradle hands the classpath to the JVM in a file that the JVM reads in the system code page. Add `-PoutDir=C:/some/ascii/folder` to move the build output. `buildPlugin` works without it.
 
 ## What was checked, and what was not
 
-Checked on Windows 11 with Node 24, against **Android Studio 2026.1.3** (IntelliJ platform 261.26222, used as the local IDE because it was already installed):
+Checked on Windows 11 with Node 24:
 
-- `./gradlew test`: 7 tests pass in a headless IDE. They open a repository as a project, press **내 변경 확인** and assert the tool window rows, the gutter icon, the line-end note `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`, navigation to line 21, the re-check after saving a file (the old test result is dropped: `미확인 · 검사 오래됨`), the demo, the missing-requirements and missing-Node messages, and that the engine is found inside the installed plugin folder.
-- `./gradlew runIde`: the plugin was loaded in a real IDE window on a copy of a practice repository and showed the same result.
+| | IntelliJ IDEA 2026.3 (build 263.7307) | Android Studio 2026.1.3 (platform 261.26222) |
+|---|---|---|
+| `./gradlew test` (7 tests in a headless IDE) | pass | pass |
+| `./gradlew runIde` (real window, check run on a copy of a practice repository) | shows the result below | shows the result below |
+
+- The tests open a repository as a project, press **내 변경 확인** and assert the tool window rows, the gutter icon, the line-end note `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`, navigation to line 21, the re-check after saving a file (the old test result is dropped: `미확인 · 검사 오래됨`), the demo, the missing-requirements and missing-Node messages, and that the engine is found inside the installed plugin folder.
+- In the real window the tool window showed `요구사항 3개 중 1개만 근거와 검사로 확인됨` with R2 as `다름`, and line 21 of `auth.ts` carried the icon, the background and the note. The check was started by `-PautoRun=check`, not by a mouse click.
+- IntelliJ IDEA was run without a licence (free mode). The plugin is compiled against platform 261 and also builds against 263.
 
 Not checked yet:
 
-- **IntelliJ IDEA and WebStorm themselves.** The plugin uses only platform APIs (`com.intellij.modules.platform`), so it is expected to load there, but it has not been run in them.
-- The default build path that downloads IntelliJ IDEA, and the JetBrains Plugin Verifier.
-- Reading the IDE's Node interpreter setting (it needs WebStorm or IntelliJ IDEA Ultimate). Finding Node on `PATH` was checked.
+- **WebStorm** and the other JetBrains IDEs. The plugin uses only platform APIs (`com.intellij.modules.platform`), so it is expected to load there, but it has not been run in them.
+- IntelliJ IDEA 2026.1 and 2026.2 (only 2026.3 was downloaded), and the JetBrains Plugin Verifier.
+- Reading the IDE's Node interpreter setting. Finding Node on `PATH` was checked.
 - IDE versions older than 2026.1, macOS and Linux.
-- Installing the zip by hand through **Install Plugin from Disk…** (the test and `runIde` load the same plugin folder layout that the zip contains).
+- Installing the zip by hand through **Install Plugin from Disk…** (the tests and `runIde` load the same plugin folder layout that the zip contains), and clicking the buttons and rows by hand in a real window.
 
 Source, issues and feedback: https://github.com/DamunKorea/verifylens
 
@@ -118,4 +124,4 @@ VS Code 확장과 **같은 분석 엔진**을 IntelliJ IDEA · WebStorm 같은 J
 - **내 변경 확인:** `.verifylens/requirements.md` 에 요구사항을 한 줄씩 적고 **내 변경 확인**을 누르세요. 커밋하지 않아도 됩니다. 그 뒤로는 파일이 저장될 때마다 스스로 다시 확인합니다.
 - **보이는 것:** 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄(누르면 그 줄로 이동), 근거 줄의 아이콘과 줄 끝 설명(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`).
 - **아직 없는 것:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교, 판단 기록.
-- **확인한 범위:** Android Studio 2026.1.3(같은 IntelliJ 플랫폼)에서 자동 시험 7개와 실제 창으로 확인했습니다. IntelliJ IDEA 와 WebStorm 에서는 아직 직접 돌려 보지 못했습니다.
+- **확인한 범위:** IntelliJ IDEA 2026.3 과 Android Studio 2026.1.3(같은 IntelliJ 플랫폼)에서 자동 시험 7개와 실제 창으로 확인했습니다. WebStorm 에서는 아직 직접 돌려 보지 못했습니다.

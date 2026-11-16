@@ -5,7 +5,6 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
@@ -165,7 +164,7 @@ class VerifyLensService(private val project: Project) : Disposable {
             val file = r.requirements?.takeIf { r.ok }?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(it)) }
             ApplicationManager.getApplication().invokeLater({
                 if (file != null) {
-                    FileEditorManager.getInstance(project).openFile(file, true)
+                    OpenFileDescriptor(project, file).navigate(true)
                     Notify.info(project, "요구사항을 한 줄씩 적은 뒤 「내 변경 확인」을 누르세요. 적혀 있는 두 줄은 예시입니다.")
                 } else {
                     Notify.error(project, r.error ?: "요구사항 파일을 만들지 못했습니다.")
