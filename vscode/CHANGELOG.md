@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Checked on **Cursor 3.29** with the same `.vsix` (use the editor window; extensions are not loaded in Cursor's agent window).
+- Listing details for the VS Code Marketplace and Open VSX (preview flag, banner, keywords). No change in behaviour.
+
 ## 0.5.0
 
 Check the change while it is still in front of you: before the commit, before the PR.

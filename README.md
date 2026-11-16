@@ -50,7 +50,7 @@ The same engine runs inside the editor and feels native to it: a requirements si
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.5.0.vsix
+npm run package     # builds verifylens-0.5.1.vsix
 ```
 
 Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the file. Click the VerifyLens icon in the Activity Bar and choose **Run demo**. See [vscode/README.md](vscode/README.md) for details.

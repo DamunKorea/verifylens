@@ -2,10 +2,16 @@
   "name": "verifylens",
   "displayName": "VerifyLens",
   "description": "See per requirement whether an AI-generated change is verified, different, or not yet verified — linked to code lines and the tests that ran. Local, no LLM.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "damun",
   "license": "MIT",
   "icon": "media/icon.png",
+  "preview": true,
+  "galleryBanner": {
+    "color": "#0F1B30",
+    "theme": "dark"
+  },
+  "qna": "https://github.com/DamunKorea/verifylens/issues",
   "repository": {
     "type": "git",
     "url": "https://github.com/DamunKorea/verifylens"
@@ -40,8 +46,15 @@
     "verification",
     "code review",
     "requirements",
+    "acceptance criteria",
     "copilot",
-    "cursor"
+    "cursor",
+    "claude",
+    "ai coding",
+    "test",
+    "typescript",
+    "javascript",
+    "pull request"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [],
