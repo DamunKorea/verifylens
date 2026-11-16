@@ -30,7 +30,7 @@ Node is looked up in this order: the path you picked with **Tools | VerifyLens |
 
 ## Install
 
-There is no Marketplace listing yet. Build the zip (below) and install it with **Settings | Plugins | ⚙ | Install Plugin from Disk…**, choosing `build/distributions/verifylens-jetbrains-0.1.0.zip`.
+There is no Marketplace listing yet. Download `verifylens-jetbrains-0.1.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.1.0) (do not unzip it) and install it with **Settings | Plugins | ⚙ | Install Plugin from Disk…**. You can also build the zip yourself (below); it lands in `build/distributions/`.
 
 ## Use it on your branch
 
@@ -119,7 +119,7 @@ Source, issues and feedback: https://github.com/DamunKorea/verifylens
 VS Code 확장과 **같은 분석 엔진**을 IntelliJ IDEA · WebStorm 같은 JetBrains IDE 안에서 돌리는 첫 미리 보기입니다. AI 판정 없이 코드 분석 · git · 실제로 돌린 테스트 결과만 쓰고, 코드는 PC 밖으로 나가지 않습니다.
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC 의 **Node.js 18 이상**, git. Node 를 찾지 못하면 무엇을 설치해야 하는지 알림으로 알려 줍니다.
-- **설치:** 위의 방법으로 zip 을 만든 뒤 **Settings | Plugins | ⚙ | Install Plugin from Disk…** 에서 고릅니다.
+- **설치:** [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.1.0)에서 `verifylens-jetbrains-0.1.0.zip` 을 받아(압축을 풀지 말고) **Settings | Plugins | ⚙ | Install Plugin from Disk…** 에서 고릅니다.
 - **처음 써 보기:** 왼쪽 VerifyLens 도구 창에서 **샘플로 해 보기**를 누르세요.
 - **내 변경 확인:** `.verifylens/requirements.md` 에 요구사항을 한 줄씩 적고 **내 변경 확인**을 누르세요. 커밋하지 않아도 됩니다. 그 뒤로는 파일이 저장될 때마다 스스로 다시 확인합니다.
 - **보이는 것:** 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄(누르면 그 줄로 이동), 근거 줄의 아이콘과 줄 끝 설명(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`).
