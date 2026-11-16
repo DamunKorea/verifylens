@@ -42,12 +42,12 @@ Outputs are written to `out/`:
 
 ## VS Code and Cursor extension (preview)
 
-The same engine runs inside the editor: a requirements side panel, the report in a panel next to your code, and highlighted evidence lines with a lens above them (for example `VerifyLens R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`). Works in VS Code and in VS Code–based editors such as Cursor.
+The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Works in VS Code and in VS Code–based editors such as Cursor.
 
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.1.0.vsix
+npm run package     # builds verifylens-0.2.0.vsix
 ```
 
 Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the file. Click the VerifyLens icon in the Activity Bar and choose **Run demo**. See [vscode/README.md](vscode/README.md) for details.

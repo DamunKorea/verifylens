@@ -42,12 +42,12 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 
 ## VS Code · Cursor 확장 (미리 보기)
 
-같은 엔진이 에디터 안에서 돌아갑니다. 왼쪽에 요구사항 목록, 코드 옆에 리포트가 열리고, 근거가 된 줄은 색으로 표시되며 줄 위에 판정이 붙습니다(예: `VerifyLens R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`). VS Code와 Cursor처럼 VS Code 기반 에디터에서 씁니다.
+같은 엔진이 에디터 안에서, 원래 있던 기능처럼 돌아갑니다. 왼쪽에 요구사항 목록이 열리고, 근거가 된 줄 끝에 설명이 붙습니다(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`). 마우스를 올리면 근거 표가 나오고, A ↔ B는 VS Code 기본 비교 화면으로 나란히 봅니다. 확인이 필요한 줄은 문제(Problems) 목록에 올라가고, 커밋하면 스스로 다시 분석합니다. VS Code와 Cursor처럼 VS Code 기반 에디터에서 씁니다.
 
 ```bash
 cd vscode
 npm install
-npm run package     # verifylens-0.1.0.vsix 를 만듭니다
+npm run package     # verifylens-0.2.0.vsix 를 만듭니다
 ```
 
 에디터에서 **확장 → ⋯ → VSIX에서 설치…**로 파일을 고르면 됩니다. 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.

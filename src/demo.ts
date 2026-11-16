@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 export const SAMPLE = join(here, '..', 'samples', 'login-lockout');
 
+/** 샘플 커밋의 날짜를 고정해 실행할 때마다 같은 커밋 번호가 나오게 한다 (다시 실행해도 기록한 판단이 유지된다). */
+const DEMO_DATE = '2026-01-01T00:00:00Z';
+
 export type DemoEnv = { root: string; repo: string; junitA: string; junitB: string; reqFile: string; prFile: string; testsFromFallback: boolean };
 
 /**
@@ -23,7 +26,7 @@ export function buildSampleRepo(o: DemoOptions = {}): DemoEnv {
   const repo = join(root, 'repo');
   mkdirSync(repo);
   const g = (...a: string[]) =>
-    execFileSync('git', ['-c', 'user.name=VerifyLens Demo', '-c', 'user.email=demo@example.invalid', '-C', repo, ...a], { stdio: 'pipe', encoding: 'utf8' });
+    execFileSync('git', ['-c', 'user.name=VerifyLens Demo', '-c', 'user.email=demo@example.invalid', '-c', 'core.autocrlf=false', '-C', repo, ...a], { stdio: 'pipe', encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: DEMO_DATE, GIT_COMMITTER_DATE: DEMO_DATE } });
   g('init', '-q', '-b', 'main');
   cpSync(join(sample, 'base'), repo, { recursive: true });
   g('add', '-A');

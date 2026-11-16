@@ -45,8 +45,38 @@ exports.run = async function run() {
     return ls && ls.length ? ls : null;
   }, 'code lenses');
   const titles = lenses.map((l) => l.command && l.command.title).filter(Boolean);
-  assert.ok(titles.some((t) => /R2 · 다름 · 6번째 시도에 동작 \(요구사항 5회\) · 검사 실패/.test(t)), titles.join(' | '));
-  log.push(...titles.map((t) => `lens: ${t}`));
+  assert.ok(titles.includes('VerifyLens R2 · 다름'), titles.join(' | '));
+  assert.ok(titles.includes('A ↔ B 비교') && titles.includes('판단 기록'), titles.join(' | '));
+  log.push(`lenses: ${[...new Set(titles)].join(' | ')}`);
+
+  // 문제(Problems) 목록: B 의 21번째 줄은 경고, A 의 17번째 줄은 정보
+  const diags = vscode.languages.getDiagnostics().filter(([u]) => u.scheme === 'verifylens');
+  const find = (key, code) => (diags.find(([u]) => u.path === `/${key}/src/auth.ts`) || [null, []])[1].find((d) => d.code === code);
+  const dB = find('B', 'R2');
+  assert.ok(dB, 'diagnostic on B');
+  assert.equal(dB.severity, vscode.DiagnosticSeverity.Warning);
+  assert.equal(dB.range.start.line, 20);
+  assert.equal(dB.source, 'VerifyLens');
+  assert.equal(find('A', 'R2').severity, vscode.DiagnosticSeverity.Information);
+  log.push(`problem: [${dB.source}] ${dB.message}`);
+
+  // 마우스를 올리면 근거 표가 나온다 (표시의 hoverMessage 를 VS Code 가 hover 로 돌려준다)
+  const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', ed.document.uri, new vscode.Position(20, 8));
+  const hoverText = (hovers || []).flatMap((h) => h.contents).map((c) => (typeof c === 'string' ? c : c.value)).join('\n');
+  assert.match(hoverText, /VerifyLens · R2 · 다름/);
+  assert.match(hoverText, /`auth\.ts:21` `user\.failures > 5`/);
+  log.push('hover: evidence table with `auth.ts:21` `user.failures > 5` and command links');
+
+  // 나란히 비교: VS Code 기본 비교 화면이 A | B 로 열린다
+  await vscode.commands.executeCommand('verifylens.openDiff', 'R2');
+  const diffTab = await waitFor(
+    () => vscode.window.tabGroups.all.flatMap((g) => g.tabs).find((t) => t.input && t.input.original && t.input.modified),
+    'diff tab',
+  );
+  assert.equal(diffTab.input.original.path, '/A/src/auth.ts');
+  assert.equal(diffTab.input.modified.path, '/B/src/auth.ts');
+  assert.equal(diffTab.label, 'R2 · A ↔ B · auth.ts');
+  log.push(`diff tab: "${diffTab.label}" (${diffTab.input.original.path} | ${diffTab.input.modified.path})`);
 
   await vscode.commands.executeCommand('verifylens.focusRequirement', 'R3');
   await vscode.commands.executeCommand('verifylens.requirements.focus');
