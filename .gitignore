@@ -4,3 +4,7 @@ verifylens-out/
 *.log
 .DS_Store
 Thumbs.db
+vscode/node_modules/
+vscode/dist/
+vscode/samples/
+*.vsix

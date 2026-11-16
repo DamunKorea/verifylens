@@ -40,6 +40,18 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 | `out/report.html` | 전체 리포트: 요구사항별 상태, 근거 사슬, 코드 비교, 시도 횟수별 동작 시점, 흐름 지도 |
 | `out/summary.md` | 같은 내용을 글로만 정리한 요약 |
 
+## VS Code · Cursor 확장 (미리 보기)
+
+같은 엔진이 에디터 안에서 돌아갑니다. 왼쪽에 요구사항 목록, 코드 옆에 리포트가 열리고, 근거가 된 줄은 색으로 표시되며 줄 위에 판정이 붙습니다(예: `VerifyLens R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`). VS Code와 Cursor처럼 VS Code 기반 에디터에서 씁니다.
+
+```bash
+cd vscode
+npm install
+npm run package     # verifylens-0.1.0.vsix 를 만듭니다
+```
+
+에디터에서 **확장 → ⋯ → VSIX에서 설치…**로 파일을 고르면 됩니다. 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
+
 ## 내 저장소에 쓰기
 
 ```bash
@@ -73,7 +85,7 @@ node src/cli.ts report --repo ../내저장소 --base main --a feature/x [--b fea
 - 경계값은 `변수 >= 숫자` 꼴 조건과 같은 변수를 1씩 올리는 문장이 있을 때만 계산합니다. 못 찾으면 「확정할 수 없음」으로 표시합니다.
 - 흐름 지도는 함수 안의 `if` 중심으로 단순화했고, 반복문 · `switch` · `try`는 한 단계로 묶습니다.
 - `hooks[event]()` 같은 동적 호출은 따라가지 않고 「해석하지 못한 호출」로 알려 줍니다.
-- 에디터 확장, PR 연동, 계정은 아직 없습니다. 의견을 듣고 정합니다.
+- 에디터 확장은 미리 보기이고, PR 연동과 계정은 아직 없습니다.
 
 ## 구성
 

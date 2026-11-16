@@ -40,6 +40,18 @@ Outputs are written to `out/`:
 | `out/report.html` | Full report: per-requirement status, evidence chain, code diff, attempt timeline, flow map |
 | `out/summary.md` | The same findings as plain text |
 
+## VS Code and Cursor extension (preview)
+
+The same engine runs inside the editor: a requirements side panel, the report in a panel next to your code, and highlighted evidence lines with a lens above them (for example `VerifyLens R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`). Works in VS Code and in VS Code–based editors such as Cursor.
+
+```bash
+cd vscode
+npm install
+npm run package     # builds verifylens-0.1.0.vsix
+```
+
+Then in the editor: **Extensions → ⋯ → Install from VSIX…** and pick the file. Click the VerifyLens icon in the Activity Bar and choose **Run demo**. See [vscode/README.md](vscode/README.md) for details.
+
 ## Use it on your own repo
 
 ```bash
@@ -71,7 +83,7 @@ node src/cli.ts report --repo ../your-repo --base main --a feature/x [--b featur
 - Boundaries are computed only for `variable >= number` style conditions with a matching `+= 1` counter; otherwise it says it can't tell.
 - Flow maps simplify to `if` branches inside a function; loops, `switch` and `try` collapse to one step.
 - Dynamic calls such as `hooks[event]()` are flagged as "unresolved" rather than followed.
-- No editor extension, PR integration, or accounts yet. Those come after we learn from feedback.
+- The editor extension is a preview; PR integration and accounts are not built yet.
 
 ## Project layout
 
