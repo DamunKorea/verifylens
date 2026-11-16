@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- **What makes it different is now up front:** the list, the status bar and the report lead with "N of M requirements verified by evidence and tests"; the demo says what the AI claimed next to what was actually verified; the hover and the PR summary draw when the code acts, attempt by attempt (`1 2 3 4 5 [6]  ✗ 1회 늦음`); every fact is labelled with where it came from (code analysis, computed, executed test) and "no AI inference"; a requirement that is not verified says why (`미확인 · 검사 없음`).
+- **Copy verification summary for a PR:** one click (clipboard icon in the Requirements panel, the button in the report, or the command palette) copies a GitHub-markdown table with each requirement's status, evidence line, behavior, test result and your recorded decision, plus failed tests and what is still not verified. Paste it into the PR description or a comment so the reviewer does not have to redo the check. `verifylens.summaryLanguage` switches it to English.
+
 ## 0.2.0
 
 Editor-native redesign.

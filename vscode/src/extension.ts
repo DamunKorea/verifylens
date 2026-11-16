@@ -83,7 +83,8 @@ class ReqTree implements vscode.TreeDataProvider<Node> {
       const judged = j && j.judge && j.judge !== '미검토';
       const open = r.overall === '다름' || r.overall === '실패';
       const it = new vscode.TreeItem(`${r.id}  ${r.text}`, open ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
-      it.description = judged ? `${r.overall} → ${j.judge}` : r.overall;
+      const state = r.reason ? `${r.overall} · ${r.reason}` : r.overall;
+      it.description = judged ? `${state} → ${j.judge}` : state;
       const md = new vscode.MarkdownString(run ? (M.hoverMarkdown(run.report, r.id, false) ?? '') : '');
       if (judged) md.appendMarkdown(`\n\n**사람의 판단: ${j.judge}**${j.note ? ` — ${j.note}` : ''}`);
       it.tooltip = md;
@@ -110,7 +111,7 @@ function updateViewMeta() {
   const n = M.attentionCount(run.report);
   view.badge = n ? { value: n, tooltip: `확인이 필요한 요구사항 ${n}개` } : undefined;
   const judged = Object.values(judgments()).filter((j) => j.judge && j.judge !== '미검토').length;
-  view.message = `${M.contextLine(run)} · 판단 ${judged}/${run.report.summaries.length}`;
+  view.message = `${M.verifiedLine(run.report)} · ${M.contextLine(run)} · 판단 ${judged}/${run.report.summaries.length}`;
 }
 
 // ---------------------------------------------------------------- 문서 ↔ 결과 연결
@@ -252,6 +253,7 @@ function showReport(id?: string) {
     panel.webview.onDidReceiveMessage((m: { type: string; set: string; file: string; line: number; id: string; judge: string; note: string }) => {
       if (m?.type === 'open') void openLocation(m.set, m.file, m.line);
       else if (m?.type === 'diff') void openDiff(m.id);
+      else if (m?.type === 'copy') void copySummary();
       else if (m?.type === 'judge') void setJudgment(m.id, { judge: m.judge, note: m.note }, true);
     });
     renderPanel();
@@ -263,7 +265,7 @@ function showReport(id?: string) {
 function renderPanel() {
   if (!panel || !run) return;
   const focus = focusId && run.report.summaries.some((s) => s.req.id === focusId) ? focusId : undefined;
-  panel.webview.html = M.webviewHtml(run.report, randomBytes(16).toString('base64'), panel.webview.cspSource, { judgments: judgments(), focus });
+  panel.webview.html = M.webviewHtml(run.report, randomBytes(16).toString('base64'), panel.webview.cspSource, { judgments: judgments(), focus, demo: run.kind === 'demo' });
 }
 
 async function openLocation(setKey: string, file: string, line: number) {
@@ -325,6 +327,33 @@ async function recordJudgment(arg?: unknown) {
   await setJudgment(id, { judge: pick.label, note });
 }
 
+/**
+ * PR 설명이나 댓글에 붙여 넣을 검증 요약을 클립보드에 복사한다. 요약 글을 돌려준다.
+ * { dryRun: true } 를 주면 복사하지 않고 글만 돌려준다 (시험용).
+ */
+async function copySummary(arg?: unknown): Promise<string | undefined> {
+  if (!run) {
+    void vscode.window.showInformationMessage('VerifyLens: 먼저 분석을 실행하세요.');
+    return undefined;
+  }
+  const lang: M.SummaryLang = cfg<string>('summaryLanguage', 'ko') === 'en' ? 'en' : 'ko';
+  const js = judgments();
+  const text = M.prSummary(run, js, { lang, version: String(ctx.extension?.packageJSON?.version ?? '') });
+  if ((arg as { dryRun?: boolean } | undefined)?.dryRun) return text;
+  await vscode.env.clipboard.writeText(text);
+  const pending = M.pendingDecisions(run.report, js);
+  const msg = pending
+    ? `VerifyLens: 검증 요약을 복사했습니다. 판단을 기록하지 않은 항목 ${pending}개는 「미검토」로 들어갔습니다.`
+    : 'VerifyLens: 검증 요약을 복사했습니다. PR 설명이나 댓글에 붙여 넣으세요.';
+  void vscode.window.showInformationMessage(msg, '미리 보기', ...(pending ? ['판단 기록'] : [])).then(async (pick) => {
+    if (pick === '미리 보기') {
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: text });
+      await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: true });
+    } else if (pick === '판단 기록') await recordJudgment();
+  });
+  return text;
+}
+
 // ---------------------------------------------------------------- 실행
 function fail(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
@@ -341,7 +370,7 @@ function applyRun(r: M.Run) {
   publishDiagnostics();
   const n = r.report.summaries.filter((s) => s.overall === '다름' || s.overall === '실패').length;
   status.text = M.statusIcons(r.report);
-  status.tooltip = `VerifyLens · ${M.contextLine(r)}\n${M.statusText(r.report)}\n눌러서 리포트 열기`;
+  status.tooltip = `VerifyLens · ${M.verifiedLine(r.report)}\n${M.contextLine(r)}\n${M.statusText(r.report)} · AI 추정 없음\n눌러서 리포트 열기`;
   status.backgroundColor = n ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
   status.show();
   renderPanel();
@@ -369,6 +398,7 @@ async function execute(job: Job, opts: RunOpts = {}) {
     showReport();
     void vscode.commands.executeCommand('verifylens.requirements.focus');
     for (const n of r.notes) void vscode.window.showWarningMessage(`VerifyLens: ${n}`);
+    if (r.kind === 'demo') void vscode.window.showInformationMessage(`VerifyLens: ${M.demoHeadline(r.report)}`);
   } catch (e) {
     if (!opts.silent) return fail(e);
     // 저장 도중의 파일처럼 잠깐 읽을 수 없는 상태일 수 있다. 조용히 기록만 하고 이전 결과를 둔다.
@@ -595,6 +625,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('verifylens.openDiff', (arg?: unknown) => openDiff(arg)),
     vscode.commands.registerCommand('verifylens.recordJudgment', (arg?: unknown) => recordJudgment(arg)),
+    vscode.commands.registerCommand('verifylens.copySummary', (arg?: unknown) => copySummary(arg)),
     vscode.commands.registerCommand('verifylens.openLocation', (setKey: string, file: string, line: number) => openLocation(setKey, file, line)),
   );
 }

@@ -7,7 +7,7 @@ const { execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 
 const ext = path.join(__dirname, '..');
-const log = { errors: [], warnings: [], infos: [], opened: [], shown: [], posted: [], exec: [], diffs: [], decorations: 0 };
+const log = { errors: [], warnings: [], infos: [], opened: [], shown: [], posted: [], exec: [], diffs: [], clipboard: [], decorations: 0 };
 let answers = { warning: undefined, quickPick: [], input: '' };
 const reg = { commands: {}, tree: null, view: null, lens: null, content: {}, panel: null, status: null, diags: null };
 const config = { nodePath: process.execPath, requirementsFile: '.verifylens/requirements.md', baseBranch: '', junitPath: '' };
@@ -79,6 +79,7 @@ const vscode = {
       return { uri, getText: () => text, lineCount: lines.length, lineAt: (i) => ({ range: { end: new Position(i, lines[i].length) } }) };
     },
   },
+  env: { clipboard: { writeText: async (t) => { log.clipboard.push(t); } } },
   languages: {
     registerCodeLensProvider: (_s, p) => { reg.lens = p; return disp; },
     registerHoverProvider: (_s, p) => { reg.hover = p; return disp; },
@@ -99,7 +100,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   const ctx = { subscriptions: [], asAbsolutePath: (p) => path.join(ext, p), workspaceState: { get: (k, d) => (store.has(k) ? store.get(k) : d), update: async (k, v) => { store.set(k, v); } } };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   mod.activate(ctx);
-  for (const id of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.openReport', 'verifylens.createRequirements', 'verifylens.rerun', 'verifylens.focusRequirement', 'verifylens.openLocation', 'verifylens.openDiff', 'verifylens.recordJudgment'])
+  for (const id of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.openReport', 'verifylens.createRequirements', 'verifylens.rerun', 'verifylens.focusRequirement', 'verifylens.openLocation', 'verifylens.openDiff', 'verifylens.recordJudgment', 'verifylens.copySummary'])
     assert.ok(reg.commands[id], `registered ${id}`);
   assert.deepEqual(reg.tree.getChildren(), [], 'empty tree before a run (welcome view shows)');
 
@@ -123,7 +124,10 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.ok(reg.status.backgroundColor, 'warning color when something differs');
   assert.ok(reg.status.visible);
   assert.deepEqual(reg.view.badge.value, 2, 'badge: R2 and R3 need attention');
-  assert.equal(reg.view.message, '샘플 · 결과 A ↔ 결과 B (기준 main) · 판단 0/3');
+  assert.equal(reg.view.message, '요구사항 3개 중 1개만 근거와 검사로 확인됨 · 샘플 · 결과 A ↔ 결과 B (기준 main) · 판단 0/3');
+  assert.ok(log.infos.some((m) => /AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다\. 근거와 검사로 확인된 것은 3개 중 1개입니다/.test(m)), 'demo says what the AI claimed vs what was verified');
+  assert.equal(reg.tree.getTreeItem(roots[2]).description, '미확인 · 검사 없음', 'the list says why R3 is not verified');
+  assert.match(reg.status.tooltip, /AI 추정 없음/);
   const warn = [...reg.diags.map.entries()].find(([k]) => k.includes('/B/src/auth.ts'))[1].find((d) => d.code === 'R2');
   assert.equal(warn.severity, 1, 'B line is a warning in Problems');
   assert.match(warn.message, /^R2 · 다름 — 6번째 시도에 동작 \(요구사항 5회\) · 검사 실패/);
@@ -172,7 +176,20 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.match(reg.view.message, /판단 1\/3$/);
   assert.deepEqual(log.posted.at(-1), { type: 'judgments', state: { R2: { judge: '수정', note: 'B 조건 고치기' } } });
   await reg.panel.webview.recv({ type: 'judge', id: 'R3', judge: '추가 검증', note: '' });
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[2]).description, '미확인 → 추가 검증');
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[2]).description, '미확인 · 검사 없음 → 추가 검증');
+  // PR 요약 복사: 기록한 판단이 들어가고, 판단이 다 있으면 미검토 경고가 없다
+  const sum = await reg.commands['verifylens.copySummary']();
+  assert.equal(log.clipboard.at(-1), sum);
+  assert.match(sum, /^## VerifyLens 검증 요약\n\n\*\*요구사항 3개 중 1개만 근거와 검사로 확인됨\*\*/);
+  assert.match(sum, /\*\*수정\*\* — B 조건 고치기 \|/);
+  assert.match(sum, /\| \*\*추가 검증\*\* \|/);
+  assert.match(log.infos.at(-1), /검증 요약을 복사했습니다\. PR 설명이나 댓글에 붙여 넣으세요/);
+  const n = log.clipboard.length;
+  assert.equal(await reg.commands['verifylens.copySummary']({ dryRun: true }), sum, 'dry run returns the same text');
+  assert.equal(log.clipboard.length, n, 'and does not touch the clipboard');
+  await reg.panel.webview.recv({ type: 'copy' });
+  await sleep(20);
+  assert.equal(log.clipboard.length, n + 1, 'report button copies too');
   await reg.panel.webview.recv({ type: 'diff', id: 'R2' });
   assert.equal(log.diffs.length, 2, 'report button opens the diff too');
 
@@ -210,7 +227,12 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.equal(log.opened.at(-1).scheme, 'file');
   assert.ok(log.warnings.some((w) => /미실행/.test(w)), 'warns that tests were not given');
 
-  assert.equal(reg.view.message, 'feature/lockout-b ← main · 판단 0/2');
+  assert.equal(reg.view.message, '요구사항 2개 중 0개만 근거와 검사로 확인됨 · feature/lockout-b ← main · 판단 0/2');
+  config.summaryLanguage = 'en';
+  const en = await reg.commands['verifylens.copySummary']();
+  assert.match(en, /^## VerifyLens verification summary/);
+  assert.match(log.infos.at(-1), /판단을 기록하지 않은 항목 2개는 「미검토」로 들어갔습니다/);
+  config.summaryLanguage = 'ko';
   // 한 브랜치만 볼 때의 비교는 기준(main) ↔ 지금 파일
   await reg.commands['verifylens.openDiff']('R2');
   assert.deepEqual([log.diffs.at(-1)[0].path, log.diffs.at(-1)[1].scheme], ['/base/src/auth.ts', 'file']);
@@ -224,8 +246,8 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   fs.writeFileSync(authFile, fs.readFileSync(authFile, 'utf8').replace('user.failures > 5', 'user.failures >= 5'));
   execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-am', 'fix lockout']);
   let auto = '';
-  for (let i = 0; i < 60 && auto !== '미확인'; i++) { await sleep(150); auto = reg.tree.getTreeItem(reg.tree.getChildren()[1]).description; }
-  assert.equal(auto, '미확인', 'after the fix R2 is no longer 다름 (no test report here, so 미확인)');
+  for (let i = 0; i < 60 && !/^미확인/.test(auto); i++) { await sleep(150); auto = reg.tree.getTreeItem(reg.tree.getChildren()[1]).description; }
+  assert.equal(auto, '미확인 · 검사 없음', 'after the fix R2 is no longer 다름 (no test report here, so 미확인)');
   assert.equal(reg.status.backgroundColor, undefined, 'warning color cleared');
   assert.deepEqual(log.errors, []);
 

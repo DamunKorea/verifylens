@@ -47,7 +47,7 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 ```bash
 cd vscode
 npm install
-npm run package     # verifylens-0.2.0.vsix 를 만듭니다
+npm run package     # verifylens-0.3.0.vsix 를 만듭니다
 ```
 
 에디터에서 **확장 → ⋯ → VSIX에서 설치…**로 파일을 고르면 됩니다. 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.

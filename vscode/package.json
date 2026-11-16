@@ -2,7 +2,7 @@
   "name": "verifylens",
   "displayName": "VerifyLens",
   "description": "See per requirement whether an AI-generated change is verified, different, or not yet verified — linked to code lines and the tests that ran. Local, no LLM.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "damun",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -101,6 +101,13 @@
         "category": "VerifyLens",
         "icon": "$(checklist)",
         "enablement": "verifylens.hasRun"
+      },
+      {
+        "command": "verifylens.copySummary",
+        "title": "Copy verification summary for a PR",
+        "category": "VerifyLens",
+        "icon": "$(clippy)",
+        "enablement": "verifylens.hasRun"
       }
     ],
     "viewsContainers": {
@@ -134,6 +141,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "verifylens.copySummary",
+          "when": "view == verifylens.requirements && verifylens.hasRun",
+          "group": "navigation@0"
+        },
         {
           "command": "verifylens.rerun",
           "when": "view == verifylens.requirements && verifylens.hasRun",
@@ -225,6 +237,15 @@
           "type": "boolean",
           "default": true,
           "description": "List lines that need attention in the Problems panel, so F8 jumps to the next one."
+        },
+        "verifylens.summaryLanguage": {
+          "type": "string",
+          "enum": [
+            "ko",
+            "en"
+          ],
+          "default": "ko",
+          "description": "Language of the PR verification summary copied by \"Copy verification summary for a PR\"."
         }
       }
     }

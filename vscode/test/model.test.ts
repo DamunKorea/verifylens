@@ -167,3 +167,59 @@ test('webview html carries judgments and focus, and offers side-by-side', () => 
   assert.match(html, /body\.vscode-dark\{background:var\(--vscode-editor-background\)\}/);
   for (const s of html.match(/<script[^>]*>/g)!) assert.match(s, /nonce="N"/);
 });
+
+test('differentiators up front: verified ratio, reason for 미확인, attempt strip', () => {
+  const r = demo(null);
+  assert.equal(M.verifiedLine(r.report), '요구사항 3개 중 1개만 근거와 검사로 확인됨');
+  assert.equal(M.verifiedLine(r.report, 'en'), '1 of 3 requirements verified by evidence and tests');
+  assert.match(M.demoHeadline(r.report), /「요구사항 전부 반영, 완료」.*3개 중 1개/);
+  const rows = M.treeModel(r.report);
+  assert.deepEqual(rows.map((x) => x.reason), ['', '', '검사 없음']);
+  assert.deepEqual(M.attemptLines(r.report, 'R2'), [
+    '요구사항   1  2  3  4 [5] 6',
+    '결과 A     1  2  3  4 [5] 6   ✓ 요구사항과 같음',
+    '결과 B     1  2  3  4  5 [6]  ✗ 1회 늦음',
+  ]);
+  assert.deepEqual(M.attemptLines(r.report, 'R1'), [], 'nothing to compute for R1');
+  const md = M.hoverMarkdown(r.report, 'R2')!;
+  assert.match(md, /결과 B     1  2  3  4  5 \[6\]  ✗ 1회 늦음/);
+  assert.match(md, /AI 추정 없음/);
+  const html = M.webviewHtml(r.report, 'N', 'x', { demo: true });
+  assert.match(html, /"line":"요구사항 3개 중 1개만 근거와 검사로 확인됨"/);
+  assert.match(html, /"need":"다름 1 · 미확인 1"/);
+  assert.match(html, /AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다/);
+  assert.match(html, /PR 요약 복사/);
+});
+
+test('PR summary: one table a reviewer can trust without redoing the check', () => {
+  const r = demo(null);
+  const ko = M.prSummary(r, { R2: { judge: '수정', note: 'a | b' } }, { lang: 'ko', version: '9.9.9' });
+  const lines = ko.split('\n');
+  assert.equal(lines[0], '## VerifyLens 검증 요약');
+  assert.equal(lines[2], '**요구사항 3개 중 1개만 근거와 검사로 확인됨**');
+  assert.match(lines[4], /^_AI가 쓴 의견이 아닙니다\./);
+  assert.match(ko, /샘플\(가상 사례\) · A `feature\/lockout-a` \(`[0-9a-f]{7}`\) ↔ B `feature\/lockout-b` \(`[0-9a-f]{7}`\) · 기준 `main`/);
+  assert.match(ko, /\| \*\*R2\*\* 연속 5회 실패하면 계정을 잠근다 \| ⚠️ 다름 \| A `src\/auth\.ts:17` `user\.failures >= 5` → 5번째 시도에 동작<br>B `src\/auth\.ts:21` `user\.failures > 5` → 6번째 시도에 동작 \(요구사항 5회\) \| A 통과<br>B 실패 \| \*\*수정\*\* — a \\\| b \|/);
+  assert.match(ko, /\| \*\*R1\*\* [^|]+ \| ✅ 확인됨 \|[^|]+\|[^|]+\| — \|/);
+  assert.match(ko, /\| \*\*R3\*\* [^|]+ \| ❔ 미확인 \|[^|]+\|[^|]+\| 미검토 \|/);
+  assert.match(ko, /\*\*동작 시점 \(조건 값에서 계산, \[n\] = 동작하는 시도\)\*\*\n```\nR2\n요구사항 /);
+  assert.match(ko, /\*\*실패한 검사\*\*\n- R2 · B · `locks the account on the 5th consecutive failure` — Expected values/);
+  assert.match(ko, /\*\*확인되지 않은 것 \(통과로 치지 않음\)\*\*\n- R3: 연결된 검사가 실행되지 않음 \(A, B\)/);
+  assert.match(ko, /해석하지 못한 호출 \(B\): `src\/auth\.ts:31`/);
+  assert.match(ko, /<sub>VerifyLens 9\.9\.9 · 정적 분석과 실행된 검사 결과만 사용 \(AI 추정 없음\)/);
+  // every table row has the same number of unescaped cell separators
+  const rows = lines.filter((l) => l.startsWith('| '));
+  for (const row of rows) assert.equal(row.replace(/\\\|/g, '').split('|').length, 7, row);
+  assert.equal(M.pendingDecisions(r.report, { R2: { judge: '수정', note: '' } }), 1, 'R3 still has no decision');
+  assert.equal(M.pendingDecisions(r.report, {}), 2);
+
+  const reqFile = join(ext, 'samples', 'login-lockout', 'requirements.md');
+  const one = M.runRepo({ repo: r.repo, base: 'main', a: 'feature/lockout-b', reqFile, junitA: join(ext, 'samples', 'junit', 'junit-b.xml') });
+  const en = M.prSummary(one, {}, { lang: 'en' });
+  assert.match(en, /^## VerifyLens verification summary\n\n\*\*1 of 3 requirements verified by evidence and tests\*\*/);
+  assert.match(en, /`feature\/lockout-b` \(`[0-9a-f]{7}`\) ← `main`/);
+  assert.match(en, /⚠️ Different \| `src\/auth\.ts:21` `user\.failures > 5` → acts on attempt 6 \(requirement: 5\) \| Failed \| Not reviewed \|/);
+  assert.match(en, /code       1  2  3  4  5 \[6\]  ✗ 1 late/);
+  assert.match(en, /- R3: no linked test was run\n/);
+  assert.ok(!/[가-힣]/.test(en.replace(/\| \*\*R\d\*\* [^|]+\|/g, '')), 'English summary has no Korean outside the requirement text');
+});

@@ -23,6 +23,7 @@ The demo builds a small sample repo with two AI results for "lock the account af
 - **Problems panel:** lines that need attention are listed there, so `F8` walks through them.
 - **Report panel:** the full evidence chain. Click any code line in it to jump to that line in the editor.
 - **Your decision:** record use / fix / verify more / hold from the list, the lens or the report. It shows next to the requirement.
+- **PR summary:** the clipboard icon copies a GitHub-markdown summary (status, evidence line, when it acts, test result, your decision, what is still not verified) to paste into the PR, so the reviewer does not redo the check.
 
 The demo runs its tests with Node.js 22.18+ if it finds one, and otherwise uses bundled test results.
 
@@ -51,6 +52,7 @@ Optional: set `verifylens.junitPath` to a JUnit XML report (for example from `no
 | `verifylens.autoRerun` | `true` | Re-run on commit, branch switch, or when the requirements file or JUnit report changes |
 | `verifylens.inlineNotes` | `true` | Show the note at the end of evidence lines |
 | `verifylens.problems` | `true` | List lines that need attention in the Problems panel |
+| `verifylens.summaryLanguage` | `ko` | Language of the copied PR summary (`ko` or `en`) |
 
 ## Limitations
 
@@ -70,4 +72,4 @@ AI가 「완료」라고 한 변경이 요구사항마다 **확인됨 · 다름 
 - **내 브랜치 확인:** **요구사항 파일 만들기**로 요구사항을 적고, 변경을 커밋한 뒤 **지금 브랜치 확인**을 누르세요. 그 뒤로는 커밋하거나 테스트를 돌리면 스스로 다시 분석합니다.
 - **AI 결과 두 개 비교:** **두 브랜치 비교**를 쓰세요.
 
-근거가 된 줄에는 아이콘과 줄 끝 설명이 붙고, 마우스를 올리면 근거 표가 나옵니다. 줄 위 **A ↔ B 비교**를 누르면 VS Code 기본 비교 화면으로 두 결과를 나란히 봅니다. 확인이 필요한 줄은 문제(Problems) 목록에도 올라가서 `F8`로 넘겨 볼 수 있고, 판단(사용 · 수정 · 추가 검증 · 보류)은 목록에서 바로 기록합니다.
+근거가 된 줄에는 아이콘과 줄 끝 설명이 붙고, 마우스를 올리면 근거 표가 나옵니다. 줄 위 **A ↔ B 비교**를 누르면 VS Code 기본 비교 화면으로 두 결과를 나란히 봅니다. 확인이 필요한 줄은 문제(Problems) 목록에도 올라가서 `F8`로 넘겨 볼 수 있고, 판단(사용 · 수정 · 추가 검증 · 보류)은 목록에서 바로 기록합니다. 목록 위 클립보드 아이콘을 누르면 PR에 붙일 **검증 요약**(상태 · 근거 줄 · 동작 시점 · 검사 · 판단 · 아직 확인 안 된 것)이 복사됩니다.

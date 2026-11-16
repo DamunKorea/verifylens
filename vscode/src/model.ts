@@ -105,7 +105,59 @@ export const REQ_TEMPLATE = `# 요구사항 — VerifyLens 가 이 파일을 읽
 // ---------------------------------------------------------------- 화면에 보여 줄 모양
 /** 좁은 옆 패널에서도 읽히게 label · detail 은 짧게, 긴 설명은 tooltip 에 둔다. */
 export type EvidenceRow = { setKey: 'A' | 'B'; label: string; file?: string; line?: number; detail: string; tooltip: string };
-export type ReqRow = { id: string; text: string; overall: Overall; summary: string; children: EvidenceRow[] };
+export type ReqRow = { id: string; text: string; overall: Overall; reason: string; summary: string; children: EvidenceRow[] };
+
+/** 상태 옆에 붙일 짧은 이유. 「미확인」이 왜 미확인인지 한눈에 보이게 한다. */
+function shortReason(report: Report, s: ReqSummary): string {
+  const id = s.req.id;
+  if (s.overall === '미확인') return report.sets.some((x) => x.perReq[id].evidence.status === '미발견') ? '근거 없음' : '검사 없음';
+  if (s.overall === '실패') return '검사 실패';
+  return '';
+}
+
+const dispWidth = (s: string) => [...s].reduce((n, ch) => n + (/[ᄀ-ᇿ　-鿿가-힣＀-￯]/.test(ch) ? 2 : 1), 0);
+const padDisp = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - dispWidth(s)));
+
+/**
+ * 시도 횟수별 동작 시점을 글자로 그린 줄들. [n] 이 동작하는 시도다.
+ * 조건 값에서 계산한 것이라 「눈으로는 놓치는 한 글자 차이」를 그대로 보여 준다. 계산할 수 없으면 빈 배열.
+ */
+export function attemptLines(report: Report, reqId: string, lang: 'ko' | 'en' = 'ko'): string[] {
+  const rows = report.sets.map((set) => ({ set, b: set.perReq[reqId]?.evidence.boundary })).filter((x) => x.b && x.b.attempts !== null);
+  if (!rows.length) return [];
+  const req = rows[0].b!.required;
+  const max = Math.max(req, ...rows.map((x) => x.b!.attempts as number));
+  if (max > 12) return [];
+  const two = report.sets.length > 1;
+  const strip = (at: number) => Array.from({ length: max }, (_, i) => (i + 1 === at ? `[${i + 1}]` : ` ${i + 1} `)).join('');
+  const lines: [string, string, string][] = [[lang === 'ko' ? '요구사항' : 'required', strip(req), '']];
+  for (const { set, b } of rows) {
+    const at = b!.attempts as number;
+    const d = Math.abs(at - req);
+    const note =
+      at === req
+        ? lang === 'ko' ? '✓ 요구사항과 같음' : '✓ matches'
+        : lang === 'ko' ? `✗ ${d}회 ${at > req ? '늦음' : '빠름'}` : `✗ ${d} ${at > req ? 'late' : 'early'}`;
+    lines.push([two ? (lang === 'ko' ? `결과 ${set.key}` : `result ${set.key}`) : lang === 'ko' ? '코드' : 'code', strip(at), note]);
+  }
+  const w = Math.max(...lines.map((l) => dispWidth(l[0])));
+  return lines.map(([label, s, note]) => `${padDisp(label, w)}  ${s}${note ? '  ' + note : ''}`.trimEnd());
+}
+
+/** 가장 앞에 내세울 한 줄: 요구사항 몇 개 중 몇 개가 근거와 검사로 확인됐는가 */
+export function verifiedLine(report: Report, lang: 'ko' | 'en' = 'ko'): string {
+  const n = report.summaries.length;
+  const v = report.summaries.filter((s) => s.overall === '확인됨').length;
+  if (lang === 'en') return v === n ? `All ${n} requirements verified by evidence and tests` : `${v} of ${n} requirements verified by evidence and tests`;
+  return v === n ? `요구사항 ${n}개 모두 근거와 검사로 확인됨` : `요구사항 ${n}개 중 ${v}개만 근거와 검사로 확인됨`;
+}
+
+/** 샘플을 돌린 직후 보여 줄 말: AI 의 「완료」와 확인된 사실의 차이 */
+export function demoHeadline(report: Report): string {
+  const n = report.summaries.length;
+  const v = report.summaries.filter((s) => s.overall === '확인됨').length;
+  return `AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다. 근거와 검사로 확인된 것은 ${n}개 중 ${v}개입니다.`;
+}
 
 function boundaryText(set: ResultSet, id: string): string {
   const b = set.perReq[id].evidence.boundary;
@@ -134,6 +186,7 @@ export function treeModel(report: Report): ReqRow[] {
     id: s.req.id,
     text: s.req.text,
     overall: s.overall,
+    reason: shortReason(report, s),
     summary: summaryLine(report, s),
     children: report.sets.map((set) => {
       const rr = set.perReq[s.req.id];
@@ -232,7 +285,10 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
       failed.push(`- ${set.key} · ${mdCode(t.name)}${why ? ` — ${why.replace(/\|/g, '\\|')}` : ''}`);
     }
   }
+  const strip = attemptLines(report, reqId);
+  if (strip.length) out.push('', '```', ...strip, '```');
   if (failed.length) out.push('', '실패한 검사', ...failed);
+  out.push('', '_출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음_');
   if (links) {
     const acts = [cmdLink('근거 보기', 'verifylens.focusRequirement', [reqId])];
     if (diffTarget(report, reqId)) acts.push(cmdLink(report.sets.length > 1 ? 'A ↔ B 비교' : '기준과 비교', 'verifylens.openDiff', [reqId]));
@@ -320,7 +376,7 @@ export function signature(spec: WatchSpec): string {
 
 // ---------------------------------------------------------------- 리포트 웹뷰
 export type Judgment = { judge: string; note: string };
-export type WebviewOptions = { judgments?: Record<string, Judgment>; focus?: string };
+export type WebviewOptions = { judgments?: Record<string, Judgment>; focus?: string; demo?: boolean };
 
 /**
  * 리포트 HTML 을 VS Code 웹뷰용으로 바꾼다.
@@ -346,7 +402,15 @@ svg.chain{width:100%;min-width:900px;height:auto}.card:has(>svg.chain){overflow-
 .vl-acts button:hover{background:var(--vscode-button-hoverBackground,#2B6AD0)}
 .vl-acts button.sec{background:var(--vscode-button-secondaryBackground,#16294A);color:var(--vscode-button-secondaryForeground,#E6EDF8)}
 .vl-acts button.sec:hover{background:var(--vscode-button-secondaryHoverBackground,#1D3660)}
-.top{height:44px}.top .badge.g{display:none}
+.top{height:44px}
+@media (max-width:980px){.top .meta{display:none}}
+.vl-hero{border:1px solid #1C2B46;border-left:4px solid #FBBF24;border-radius:10px;background:#0E1A2E;padding:12px 16px;margin-bottom:14px}
+.vl-hero.all{border-left-color:#34D399}
+.vl-hero b{display:block;font-size:16px;color:#fff;letter-spacing:-.01em}
+.vl-hero span{display:block;margin-top:3px;font-size:12.5px;color:#AEBBD0}
+.vl-hero em{font-style:normal;color:#FCD34D;font-weight:700}
+${D} .vl-hero{background:var(--vscode-sideBar-background,#0E1A2E);border-color:var(--vscode-panel-border,#1C2B46);border-left-color:#FBBF24}
+${D} .vl-hero.all{border-left-color:#34D399}
 ${D}{background:var(--vscode-editor-background)}
 ${D} .top{background:var(--vscode-editor-background);border-bottom-color:var(--vscode-panel-border,#1C2B46)}
 ${D} .ov,${D} .card{background:var(--vscode-sideBar-background,#0C1628);border-color:var(--vscode-panel-border,#1C2B46)}
@@ -360,7 +424,15 @@ ${D} .judge select,${D} .judge textarea{background:var(--vscode-input-background
 ${D} .tk{border-color:var(--vscode-sideBar-background,#0C1628)}
 </style>`;
   const sets = JSON.stringify(report.sets.map((s) => s.key));
-  const init = JSON.stringify({ judgments: opts.judgments ?? {}, focus: opts.focus ?? null }).replace(/</g, '\\u003c');
+  const cnt = counts(report);
+  const need = [cnt.다름 ? `다름 ${cnt.다름}` : '', cnt.실패 ? `실패 ${cnt.실패}` : '', cnt.미확인 ? `미확인 ${cnt.미확인}` : ''].filter(Boolean).join(' · ');
+  const hero = {
+    all: attentionCount(report) === 0,
+    line: verifiedLine(report),
+    need,
+    sub: `${opts.demo ? 'AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다. ' : ''}모든 표시는 코드 줄과 실행된 검사 기록으로 이어집니다. AI 의견은 들어 있지 않고, 확인하지 못한 것은 「미확인」으로 남깁니다.`,
+  };
+  const init = JSON.stringify({ judgments: opts.judgments ?? {}, focus: opts.focus ?? null, hero }).replace(/</g, '\\u003c');
   const bridge = `<script nonce="${nonce}">(function(){var api=acquireVsCodeApi(),SETS=${sets},INIT=${init},seeding=false;
 function all(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));}
 document.addEventListener('click',function(e){var t=e.target;if(!t||!t.closest)return;
@@ -370,6 +442,14 @@ var pane=hit.closest('.pane'),list=Array.prototype.filter.call(pane.parentElemen
 var loc=pane.querySelector('.loc');if(!loc)return;var m=/^(.*):(\\d+)/.exec(loc.textContent.trim());if(!m)return;
 var line=+m[2],ln=hit.classList.contains('cl')?hit.querySelector('.ln'):null;if(ln&&/^\\d+$/.test(ln.textContent))line=+ln.textContent;
 api.postMessage({type:'open',set:SETS[list.indexOf(pane)],file:m[1],line:line});});
+(function(){var top=document.querySelector('.top'),vt=top&&top.querySelector('.vt');if(!top)return;
+var w=document.createElement('span');w.className='vl-acts';w.style.marginLeft='0';w.innerHTML='<button class="sec" data-vl="copy" title="PR 설명이나 댓글에 붙여 넣을 검증 요약을 복사합니다">PR 요약 복사</button>';
+top.insertBefore(w,vt||null);
+var bg=top.querySelector('.badge.g');if(bg)bg.textContent='AI 추정 0건 · 이 PC에서만 분석';
+var wrap=document.querySelector('.wrap');if(wrap&&INIT.hero){var h=document.createElement('div');h.className='vl-hero'+(INIT.hero.all?' all':'');
+var b=document.createElement('b');b.textContent=INIT.hero.line;if(INIT.hero.need){var em=document.createElement('em');em.textContent='  ·  '+INIT.hero.need;b.appendChild(em);}
+var sp=document.createElement('span');sp.textContent=INIT.hero.sub;h.appendChild(b);h.appendChild(sp);wrap.insertBefore(h,wrap.firstChild);}
+})();
 all('.det').forEach(function(det){var id=det.getAttribute('data-req'),dh=det.querySelector('.dh');if(!dh)return;
 var w=document.createElement('span');w.className='vl-acts';
 if(det.querySelector('.pane .loc'))w.innerHTML='<button data-vl="diff" data-id="'+id+'">'+(SETS.length>1?'A ↔ B 나란히 비교':'기준과 나란히 비교')+'</button>';
@@ -384,4 +464,122 @@ apply(INIT.judgments);if(INIT.focus)sel(INIT.focus);
 window.addEventListener('message',function(e){var m=e.data||{};if(m.type==='select')sel(m.id);else if(m.type==='judgments')apply(m.state||{});});
 })();</script>`;
   return html.replace('</head>', `${css}</head>`).replace('</body>', `${bridge}</body>`);
+}
+
+// ---------------------------------------------------------------- PR 에 붙이는 검증 요약
+export type SummaryLang = 'ko' | 'en';
+const TXT = {
+  ko: {
+    title: 'VerifyLens 검증 요약',
+    sample: '샘플(가상 사례)',
+    base: '기준',
+    status: { 확인됨: '✅ 확인됨', 다름: '⚠️ 다름', 실패: '❌ 실패', 미확인: '❔ 미확인' } as Record<Overall, string>,
+    count: { 확인됨: '확인됨', 다름: '다름', 실패: '실패', 미확인: '미확인' } as Record<Overall, string>,
+    test: { 통과: '통과', 실패: '실패', 미실행: '미실행' } as Record<string, string>,
+    judge: { 사용: '사용', 수정: '수정', '추가 검증': '추가 검증', 보류: '보류', 미검토: '미검토' } as Record<string, string>,
+    cols: ['요구사항', '상태', '근거와 동작 (코드 분석 · 계산)', '검사 (실행 기록)', '판단 (작성자)'],
+    notOpinion: 'AI가 쓴 의견이 아닙니다. 아래 항목은 모두 코드 줄과 실행된 검사 기록에서 나왔고, 확인하지 못한 것은 통과로 치지 않았습니다.',
+    when: '동작 시점 (조건 값에서 계산, [n] = 동작하는 시도)',
+    attempt: (n: number, req: number, ok: boolean | null) => (ok === false ? `${n}번째 시도에 동작 (요구사항 ${req}회)` : `${n}번째 시도에 동작`),
+    noEvidence: '근거를 찾지 못함',
+    whole: '함수 전체',
+    failed: '실패한 검사',
+    open: '확인되지 않은 것 (통과로 치지 않음)',
+    notRun: '연결된 검사가 실행되지 않음',
+    noImpl: '구현 근거를 찾지 못함',
+    dyn: '해석하지 못한 호출',
+    footer: (v: string) => `VerifyLens${v ? ' ' + v : ''} · 정적 분석과 실행된 검사 결과만 사용 (AI 추정 없음) · 판단은 작성자가 직접 기록`,
+  },
+  en: {
+    title: 'VerifyLens verification summary',
+    sample: 'Sample (fictional case)',
+    base: 'base',
+    status: { 확인됨: '✅ Verified', 다름: '⚠️ Different', 실패: '❌ Failed', 미확인: '❔ Not verified' } as Record<Overall, string>,
+    count: { 확인됨: 'Verified', 다름: 'Different', 실패: 'Failed', 미확인: 'Not verified' } as Record<Overall, string>,
+    test: { 통과: 'Passed', 실패: 'Failed', 미실행: 'Not run' } as Record<string, string>,
+    judge: { 사용: 'Use', 수정: 'Fix', '추가 검증': 'Verify more', 보류: 'Hold', 미검토: 'Not reviewed' } as Record<string, string>,
+    cols: ['Requirement', 'Status', 'Evidence and behavior (code analysis · computed)', 'Tests (executed)', 'Decision (author)'],
+    notOpinion: 'This is not an AI opinion. Every item below comes from a code line or an executed test, and anything that could not be checked is not counted as passing.',
+    when: 'When it acts (computed from the condition, [n] = the attempt that triggers it)',
+    attempt: (n: number, req: number, ok: boolean | null) => (ok === false ? `acts on attempt ${n} (requirement: ${req})` : `acts on attempt ${n}`),
+    noEvidence: 'no evidence found',
+    whole: 'whole function',
+    failed: 'Failed tests',
+    open: 'Not verified (not counted as passing)',
+    notRun: 'no linked test was run',
+    noImpl: 'no implementation evidence found',
+    dyn: 'Unresolved call',
+    footer: (v: string) => `VerifyLens${v ? ' ' + v : ''} · static analysis and executed test results only (no AI inference) · decisions recorded by the author`,
+  },
+};
+
+const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+const isJudged = (j?: Judgment) => !!j && !!j.judge && j.judge !== '미검토';
+
+/** 확인이 필요한데(다름 · 실패 · 미확인) 아직 판단을 기록하지 않은 요구사항 수 */
+export function pendingDecisions(report: Report, judgments: Record<string, Judgment>): number {
+  return report.summaries.filter((s) => s.overall !== '확인됨' && !isJudged(judgments[s.req.id])).length;
+}
+
+/**
+ * PR 설명이나 댓글에 붙여 넣을 검증 요약 (GitHub 마크다운).
+ * 리뷰어가 같은 확인을 다시 하지 않도록: 요구사항마다 상태 · 근거 줄 · 동작 시점 · 검사 · 작성자의 판단을 한 표에 담는다.
+ */
+export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts: { lang?: SummaryLang; version?: string } = {}): string {
+  const t = TXT[opts.lang ?? 'ko'];
+  const { report } = r;
+  const two = report.sets.length > 1;
+  const c = counts(report);
+  const lang = opts.lang ?? 'ko';
+  const out: string[] = [`## ${t.title}`, '', `**${verifiedLine(report, lang)}**`, '', `_${t.notOpinion}_`, ''];
+  const strips: string[] = [];
+  const ref = (s: ResultSet) => `\`${s.ref}\` (\`${s.sha}\`)`;
+  const scope = two ? `A ${ref(report.sets[0])} ↔ B ${ref(report.sets[1])} · ${t.base} \`${report.base}\`` : `${ref(report.sets[0])} ← \`${report.base}\``;
+  out.push(`${r.kind === 'demo' ? `${t.sample} · ` : ''}${scope}`, '');
+  out.push((['확인됨', '다름', '실패', '미확인'] as Overall[]).map((k) => `${t.count[k]} ${c[k]}`).join(' · '), '');
+  out.push(`| ${t.cols.join(' | ')} |`, `|${t.cols.map(() => '---').join('|')}|`);
+  const failed: string[] = [];
+  const open: string[] = [];
+  for (const s of report.summaries) {
+    const id = s.req.id;
+    const ev: string[] = [];
+    const tests: string[] = [];
+    const notRun: string[] = [];
+    let noImpl = false;
+    for (const set of report.sets) {
+      const rr = set.perReq[id];
+      const u = rr.evidence.unit;
+      const b = rr.evidence.boundary;
+      const pre = two ? `${set.key} ` : '';
+      let e = u ? `\`${cell(`${u.file}:${u.startLine}`)}\`${u.cond?.expr ? ` \`${cell(u.cond.expr)}\`` : u.kind === 'function' ? ` ${t.whole}` : ''}` : t.noEvidence;
+      if (b && b.attempts !== null) e += ` → ${t.attempt(b.attempts, b.required, b.ok)}`;
+      ev.push(pre + e);
+      tests.push(pre + (t.test[rr.testStatus] ?? rr.testStatus));
+      if (rr.testStatus === '미실행') notRun.push(set.key);
+      if (!u) noImpl = true;
+      for (const tc of rr.tests) {
+        if (tc.status !== 'fail') continue;
+        const why = tc.message.split('\n').map((x) => x.trim()).filter(Boolean).join(' ').slice(0, 160);
+        failed.push(`- ${id}${two ? ` · ${set.key}` : ''} · \`${tc.name.replace(/`/g, "'")}\`${why ? ` — ${why}` : ''}`);
+      }
+    }
+    const j = judgments[id];
+    const decision = isJudged(j) ? `**${t.judge[j.judge] ?? j.judge}**${j.note ? ` — ${cell(j.note)}` : ''}` : s.overall === '확인됨' ? '—' : t.judge.미검토;
+    out.push(`| **${id}** ${cell(s.req.text)} | ${t.status[s.overall]} | ${ev.join('<br>')} | ${tests.join('<br>')} | ${decision} |`);
+    const strip = attemptLines(report, id, lang);
+    if (strip.length && (s.overall !== '확인됨' || two)) strips.push(`${id}`, ...strip, '');
+    if (noImpl) open.push(`- ${id}: ${t.noImpl}`);
+    else if (notRun.length) open.push(`- ${id}: ${t.notRun}${two ? ` (${notRun.join(', ')})` : ''}`);
+  }
+  for (const set of report.sets) {
+    for (const d of set.dyn) {
+      const line = `- ${t.dyn}${two ? ` (${set.key})` : ''}: \`${d.file}:${d.line}\` \`${d.text.replace(/`/g, "'")}\``;
+      if (!open.includes(line)) open.push(line);
+    }
+  }
+  if (strips.length) out.push('', `**${t.when}**`, '```', ...strips.slice(0, -1), '```');
+  if (failed.length) out.push('', `**${t.failed}**`, ...failed);
+  if (open.length) out.push('', `**${t.open}**`, ...open);
+  out.push('', `<sub>${t.footer(opts.version ?? '')}</sub>`, '');
+  return out.join('\n');
 }
