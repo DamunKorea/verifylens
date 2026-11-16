@@ -1,0 +1,44 @@
+name: Feedback / 의견
+description: Tried VerifyLens? Tell us how it fit (or didn't) into your workflow. / 써 보셨다면 작업 흐름에 맞았는지 알려 주세요.
+title: "[Feedback] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't paste private or company code. A description or a minimal example is enough.
+        회사 코드는 붙이지 마세요. 설명이나 작은 예시면 충분합니다.
+  - type: dropdown
+    id: tried
+    attributes:
+      label: What did you try? / 무엇을 해 보셨나요?
+      options:
+        - Demo only / 데모만
+        - My own repo / 내 저장소
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: How do you check AI-generated code today? / 지금은 AI가 만든 코드를 어떻게 확인하세요?
+      description: The last time you didn't trust an AI result — what did you do, in order, and roughly how long did it take? / 가장 최근에 AI 결과를 못 믿었던 때, 무엇을 어떤 순서로 했고 대략 몇 분 걸렸나요?
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where should this appear? / 이 화면이 어디에 있으면 좋겠나요?
+      multiple: true
+      options:
+        - Editor side panel / 에디터 옆 패널
+        - Pull request / PR
+        - Terminal / 터미널
+        - AI agent (before it says "done") / AI 에이전트 (완료라고 말하기 전)
+        - Nowhere, I wouldn't use it / 쓰지 않을 것 같음
+  - type: textarea
+    id: first
+    attributes:
+      label: What did you look at first, and what was missing? / 무엇을 제일 먼저 봤고, 무엇이 빠졌나요?
+  - type: textarea
+    id: wrong
+    attributes:
+      label: Anything wrong? / 틀린 판정이 있었나요?
+      description: Which requirement, what it linked to, and what it should have linked to. / 어떤 요구사항이 무엇에 연결됐고, 무엇에 연결됐어야 했는지.

@@ -1,0 +1,21 @@
+name: Bug report / 오류 신고
+description: Something crashed or produced a clearly broken report. / 실행이 멈추거나 리포트가 깨졌을 때.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / 무슨 일이 있었나요?
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and error output / 실행한 명령과 오류 메시지
+      render: shell
+  - type: input
+    id: env
+    attributes:
+      label: OS and Node.js version / 운영체제와 Node.js 버전
+      placeholder: "e.g. Windows 11, Node 24.1"
