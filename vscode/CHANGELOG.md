@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+- **On Open VSX.** Cursor (and other editors that use Open VSX) can now install VerifyLens by searching for it in the Extensions view. The install section says so instead of "Not on Open VSX yet".
+- No change to the extension itself.
+
 ## 0.6.0
 
 English UI.

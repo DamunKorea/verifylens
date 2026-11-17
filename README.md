@@ -62,14 +62,15 @@ The same engine runs inside the editor and feels native to it: a requirements si
 **Install**
 
 - **VS Code:** open the Extensions view, search for **VerifyLens** and click **Install** ([Marketplace page](https://marketplace.visualstudio.com/items?itemName=damun.verifylens)).
-- **Cursor and other VS Code–based editors:** download the `.vsix` from the [latest release](https://github.com/DamunKorea/verifylens/releases/latest), then **Extensions → ⋯ → Install from VSIX…**. (Not on Open VSX yet.)
+- **Cursor:** search for **VerifyLens** in the Extensions view and click **Install**. It comes from [Open VSX](https://open-vsx.org/extension/damun/verifylens). Other editors that use Open VSX (VSCodium, Windsurf) should find it the same way, but have not been checked.
+- **Or from a file:** download the `.vsix` from the [latest release](https://github.com/DamunKorea/verifylens/releases/latest), then **Extensions → ⋯ → Install from VSIX…**.
 
 Click the VerifyLens icon in the Activity Bar and choose **Try the sample**. The panel, the notes in the editor and the report are in English or Korean, following VS Code's display language; `verifylens.language` overrides it. To build the `.vsix` yourself:
 
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.6.0.vsix
+npm run package     # builds verifylens-0.6.1.vsix
 ```
 
 See [vscode/README.md](vscode/README.md) for details.

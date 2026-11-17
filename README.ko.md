@@ -61,14 +61,15 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 **설치**
 
 - **VS Code:** 확장 검색에서 **VerifyLens**를 찾아 **설치**를 누릅니다([장터 페이지](https://marketplace.visualstudio.com/items?itemName=damun.verifylens)).
-- **Cursor 등 VS Code 기반 에디터:** [최신 Release](https://github.com/DamunKorea/verifylens/releases/latest)에서 `.vsix`를 받아 **확장 → ⋯ → VSIX에서 설치…**로 넣습니다. (Open VSX에는 아직 없습니다.)
+- **Cursor:** 확장 검색에서 **VerifyLens**를 찾아 **설치**를 누릅니다. [Open VSX](https://open-vsx.org/extension/damun/verifylens)에서 받아 옵니다. Open VSX를 쓰는 다른 에디터(VSCodium, Windsurf)에서도 같은 방법으로 찾을 수 있을 것으로 보지만, 직접 확인하지는 않았습니다.
+- **파일로 넣기:** [최신 Release](https://github.com/DamunKorea/verifylens/releases/latest)에서 `.vsix`를 받아 **확장 → ⋯ → VSIX에서 설치…**로 넣습니다.
 
 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요. 화면 글은 VS Code 화면 언어를 따릅니다. VS Code를 영어로 쓰면 영어(**Try the sample**)로 나오고, 설정 `verifylens.language`를 `ko`로 두면 언제나 한국어로 나옵니다. `.vsix`를 직접 만들려면:
 
 ```bash
 cd vscode
 npm install
-npm run package     # verifylens-0.6.0.vsix 를 만듭니다
+npm run package     # verifylens-0.6.1.vsix 를 만듭니다
 ```
 
 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
