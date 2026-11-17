@@ -10,8 +10,7 @@ The AI says "Done, all requirements implemented", and **every test passes.** The
 Requirement    Lock the account after 5 consecutive failures
 AI's code      if (user.failures > 5) { user.locked = true }
 AI's test      'locks the account after 5 consecutive failures'  → passes ✓
-VerifyLens     ← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과
-               (R2 · different · acts on the 6th attempt, requirement says 5 · the test passes)
+VerifyLens     ← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes
 ```
 
 The AI wrote the code and the test with the same misunderstanding. The test is named "after 5 failures" but actually checks after six failed attempts. So **every test passes, and the requirement is still not met.** Running the tests does not show this; computing when the condition fires does.
@@ -20,9 +19,9 @@ VerifyLens shows, per requirement, what is **verified**, what is **different**, 
 
 ![VerifyLens in VS Code: the AI says "done", VerifyLens shows that only 1 of 3 requirements is verified, the evidence on hover, a side-by-side diff, the result updating by itself after a fix, and the PR summary](docs/demo.gif)
 
-<sub>Recorded from the real extension in VS Code (25 seconds). A Korean-captioned version is in the [Korean README](README.ko.md).</sub>
+<sub>Recorded from the real extension in VS Code (25 seconds). The same recording with the Korean UI is in the [Korean README](README.ko.md).</sub>
 
-> **Status: v0 prototype.** It works end to end on TypeScript/JavaScript repos, but it is early. The report UI is currently in **Korean** (English UI is planned). Feedback is the main goal of this release — see [Feedback](#feedback).
+> **Status: v0 prototype.** It works end to end on TypeScript/JavaScript repos, but it is early. The UI is in **English or Korean** and follows your editor's display language. Feedback is the main goal of this release — see [Feedback](#feedback).
 
 ## Why it's different
 
@@ -40,10 +39,11 @@ Requires **Node.js 22.18+** (runs TypeScript directly) and git.
 git clone <this repository>
 cd verifylens
 npm install
-npm run demo        # builds a sample repo, runs its tests, opens the concept demo
+npm run demo:en     # builds a sample repo, runs its tests, opens the report (English)
+npm run demo        # the same in Korean, with a step-by-step concept demo
 ```
 
-Windows users can also double-click `demo-windows.cmd`. If PowerShell says *running scripts is disabled on this system*, use `npm.cmd install` and `npm.cmd run demo` instead.
+Windows users can also double-click `demo-windows.cmd` (the Korean demo). If PowerShell says *running scripts is disabled on this system*, use `npm.cmd install` and `npm.cmd run demo:en` instead.
 
 The demo creates a throwaway git repo with two AI-style results for the same task ("lock the account after 5 failed logins"). Result A uses `failures >= 5`; result B uses `failures > 5` and comes with a test the AI wrote alongside it. Both claim to be done, and **all tests pass in both**. VerifyLens computes the condition and shows that B only locks on the **6th** attempt, even though B's test passes.
 
@@ -51,25 +51,25 @@ Outputs are written to `out/`:
 
 | File | What it is |
 |---|---|
-| `out/concept.html` | Step-by-step concept demo inside an editor-like screen (→ / Space to advance) |
+| `out/concept.html` | Step-by-step concept demo inside an editor-like screen (→ / Space to advance). Korean only, written by `npm run demo` |
 | `out/report.html` | Full report: per-requirement status, evidence chain, code diff, attempt timeline, flow map |
 | `out/summary.md` | The same findings as plain text |
 
 ## VS Code and Cursor extension (preview)
 
-The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.
+The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.
 
 **Install**
 
 - **VS Code:** open the Extensions view, search for **VerifyLens** and click **Install** ([Marketplace page](https://marketplace.visualstudio.com/items?itemName=damun.verifylens)).
 - **Cursor and other VS Code–based editors:** download the `.vsix` from the [latest release](https://github.com/DamunKorea/verifylens/releases/latest), then **Extensions → ⋯ → Install from VSIX…**. (Not on Open VSX yet.)
 
-Click the VerifyLens icon in the Activity Bar and choose **Run demo**. To build the `.vsix` yourself:
+Click the VerifyLens icon in the Activity Bar and choose **Try the sample**. The panel, the notes in the editor and the report are in English or Korean, following VS Code's display language; `verifylens.language` overrides it. To build the `.vsix` yourself:
 
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.5.2.vsix
+npm run package     # builds verifylens-0.6.0.vsix
 ```
 
 See [vscode/README.md](vscode/README.md) for details.
@@ -89,7 +89,7 @@ node src/cli.ts extract --pr-body pr.md > requirements.md
 
 # 2) Build a report for one branch, or compare two results
 node src/cli.ts report --repo ../your-repo --base main --a feature/x [--b feature/y] \
-     --requirements requirements.md [--junit-a a.xml --junit-b b.xml] --out out --open
+     --requirements requirements.md [--junit-a a.xml --junit-b b.xml] --out out --open --lang en
 ```
 
 - Requirements written in English or Korean are linked to code automatically (English by their own words, Korean through a fixed glossary of common terms, no LLM). If a requirement lands on the wrong code, append `| keywords: words, in, the, code` to pin it. Automatic links are deliberately strict about tests: a test only counts when its name covers most of the requirement, so a missing test stays "not verified".

@@ -1,0 +1,11 @@
+{
+  "view.requirements": "요구사항",
+  "welcome.trusted": "AI가 만든 변경이 요구사항마다 확인됨 · 다름 · 미확인인지 보여 줍니다. 코드는 이 PC 밖으로 나가지 않습니다.\n[샘플로 해 보기](command:verifylens.runDemo)\n[지금 브랜치 확인](command:verifylens.checkBranch)\n[두 브랜치 비교](command:verifylens.compareBranches)\n요구사항은 [이슈 · PR에서 가져오기](command:verifylens.importRequirements)로 채우거나 [직접 적을](command:verifylens.createRequirements) 수 있습니다.",
+  "welcome.untrusted": "AI가 만든 변경이 요구사항마다 확인됨 · 다름 · 미확인인지 보여 줍니다. 코드는 이 PC 밖으로 나가지 않습니다.\n[샘플로 해 보기](command:verifylens.runDemo)\n이 폴더는 아직 신뢰하지 않은 상태(제한 모드)라 내 브랜치 확인은 꺼져 있습니다.\n[이 폴더 신뢰하기](command:workbench.trust.manage)",
+  "config.language": "VerifyLens 패널 · 에디터 안 표시 · 리포트 · 알림의 언어. 「auto」는 VS Code 화면 언어를 따릅니다(VS Code가 한국어면 한국어, 아니면 영어). 명령 이름과 이 설정 화면은 언제나 VS Code 화면 언어를 따릅니다.",
+  "config.language.auto": "VS Code 화면 언어를 따름",
+  "config.language.ko": "한국어",
+  "config.language.en": "English (영어)",
+  "config.inlineNotes": "근거가 된 줄 끝에 짧은 설명을 붙입니다 (예: 「← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회)」).",
+  "config.summaryLanguage": "「Copy verification summary for a PR」로 복사하는 PR 검증 요약의 언어. 「auto」는 VerifyLens 패널과 같은 언어를 씁니다."
+}

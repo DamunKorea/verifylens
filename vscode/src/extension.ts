@@ -28,6 +28,14 @@ let watcher: { dispose(): void } | undefined;
 let focusId: string | undefined;
 
 const cfg = <T>(key: string, fallback: T): T => vscode.workspace.getConfiguration('verifylens').get<T>(key) ?? fallback;
+const L = M.L;
+/** 화면 글의 언어를 정한다: 설정 verifylens.language (auto 면 VS Code 화면 언어를 따른다). 바뀌었으면 true. */
+function applyLang(): boolean {
+  const next = M.resolveLang(cfg<string>('language', 'auto'), vscode.env.language);
+  if (next === M.getLang()) return false;
+  M.setLang(next);
+  return true;
+}
 
 const ICON: Record<Overall, [string, string]> = {
   확인됨: ['pass', 'testing.iconPassed'],
@@ -84,13 +92,13 @@ class ReqTree implements vscode.TreeDataProvider<Node> {
       const judged = j && j.judge && j.judge !== '미검토';
       const open = r.overall === '다름' || r.overall === '실패';
       const it = new vscode.TreeItem(`${r.id}  ${r.text}`, open ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
-      const state = r.reason ? `${r.overall} · ${r.reason}` : r.overall;
-      it.description = judged ? `${state} → ${j.judge}` : state;
+      const state = r.reason ? `${M.wOverall(r.overall)} · ${r.reason}` : M.wOverall(r.overall);
+      it.description = judged ? `${state} → ${M.wJudge(j.judge)}` : state;
       const md = new vscode.MarkdownString(run ? (M.hoverMarkdown(run.report, r.id, false) ?? '') : '');
-      if (judged) md.appendMarkdown(`\n\n**사람의 판단: ${j.judge}**${j.note ? ` — ${j.note}` : ''}`);
+      if (judged) md.appendMarkdown(`\n\n**${L('사람의 판단', 'Your decision')}: ${M.wJudge(j.judge)}**${j.note ? ` — ${j.note}` : ''}`);
       it.tooltip = md;
       it.iconPath = new vscode.ThemeIcon(ICON[r.overall][0], new vscode.ThemeColor(ICON[r.overall][1]));
-      it.command = { command: 'verifylens.focusRequirement', title: '근거 보기', arguments: [r.id] };
+      it.command = { command: 'verifylens.focusRequirement', title: L('근거 보기', 'Show evidence'), arguments: [r.id] };
       it.contextValue = 'requirement';
       return it;
     }
@@ -100,8 +108,8 @@ class ReqTree implements vscode.TreeDataProvider<Node> {
     it.tooltip = e.tooltip;
     it.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor(SET_COLOR[e.setKey] ?? 'foreground'));
     if (e.file && e.line) {
-      it.command = { command: 'verifylens.openLocation', title: '코드로 이동', arguments: [e.setKey, e.file, e.line] };
-      it.tooltip = `${e.tooltip} — 눌러서 코드로 이동`;
+      it.command = { command: 'verifylens.openLocation', title: L('코드로 이동', 'Go to code'), arguments: [e.setKey, e.file, e.line] };
+      it.tooltip = `${e.tooltip} — ${L('눌러서 코드로 이동', 'click to go to the code')}`;
     }
     return it;
   }
@@ -110,9 +118,9 @@ class ReqTree implements vscode.TreeDataProvider<Node> {
 function updateViewMeta() {
   if (!run) return;
   const n = M.attentionCount(run.report);
-  view.badge = n ? { value: n, tooltip: `확인이 필요한 요구사항 ${n}개` } : undefined;
+  view.badge = n ? { value: n, tooltip: L(`확인이 필요한 요구사항 ${n}개`, `${n} requirement(s) need attention`) } : undefined;
   const judged = Object.values(judgments()).filter((j) => j.judge && j.judge !== '미검토').length;
-  view.message = `${M.verifiedLine(run.report)} · ${M.contextLine(run)} · 판단 ${judged}/${run.report.summaries.length}`;
+  view.message = `${M.verifiedLine(run.report)} · ${M.contextLine(run)} · ${L('판단', 'decisions')} ${judged}/${run.report.summaries.length}`;
 }
 
 // ---------------------------------------------------------------- 문서 ↔ 결과 연결
@@ -157,8 +165,8 @@ class Lenses implements vscode.CodeLensProvider {
     for (const l of M.lensesFor(run.report, t.setKey, t.file)) {
       const at = new vscode.Range(l.line - 1, 0, l.line - 1, 0);
       res.push(new vscode.CodeLens(at, { title: `VerifyLens ${l.head}`, tooltip: l.title, command: 'verifylens.focusRequirement', arguments: [l.reqId] }));
-      res.push(new vscode.CodeLens(at, { title: two ? 'A ↔ B 비교' : '기준과 비교', command: 'verifylens.openDiff', arguments: [l.reqId] }));
-      res.push(new vscode.CodeLens(at, { title: '판단 기록', command: 'verifylens.recordJudgment', arguments: [l.reqId] }));
+      res.push(new vscode.CodeLens(at, { title: two ? L('A ↔ B 비교', 'Compare A ↔ B') : L('기준과 비교', 'Compare with base'), command: 'verifylens.openDiff', arguments: [l.reqId] }));
+      res.push(new vscode.CodeLens(at, { title: L('판단 기록', 'Record decision'), command: 'verifylens.recordJudgment', arguments: [l.reqId] }));
     }
     return res;
   }
@@ -257,7 +265,7 @@ function showReport(id?: string) {
   if (!run) return;
   if (id) focusId = id;
   if (!panel) {
-    panel = vscode.window.createWebviewPanel('verifylens.report', 'VerifyLens 리포트', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] });
+    panel = vscode.window.createWebviewPanel('verifylens.report', L('VerifyLens 리포트', 'VerifyLens report'), { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] });
     panel.onDidDispose(() => (panel = undefined));
     panel.webview.onDidReceiveMessage((m: { type: string; set: string; file: string; line: number; id: string; judge: string; note: string }) => {
       if (m?.type === 'open') void openLocation(m.set, m.file, m.line);
@@ -289,26 +297,28 @@ async function openLocation(setKey: string, file: string, line: number) {
   }
 }
 
+const runFirst = () => L('VerifyLens: 먼저 분석을 실행하세요.', 'VerifyLens: run a check first.');
+
 /** 명령 인자로 요구사항 번호를 얻는다: 문자열, 목록의 항목, 없으면 고르게 한다. */
 async function resolveReq(arg: unknown, placeHolder: string): Promise<string | undefined> {
   if (!run) {
-    void vscode.window.showInformationMessage('VerifyLens: 먼저 분석을 실행하세요.');
+    void vscode.window.showInformationMessage(runFirst());
     return undefined;
   }
   if (typeof arg === 'string') return arg;
   const n = arg as Node | undefined;
   if (n && n.kind === 'req') return n.row.id;
   if (n && n.kind === 'ev') return n.reqId;
-  const items = run.report.summaries.map((s) => ({ label: `${s.req.id}  ${s.req.text}`, description: s.overall, id: s.req.id }));
+  const items = run.report.summaries.map((s) => ({ label: `${s.req.id}  ${s.req.text}`, description: M.wOverall(s.overall), id: s.req.id }));
   return (await vscode.window.showQuickPick(items, { placeHolder }))?.id;
 }
 
 /** VS Code 기본 비교 화면으로 두 결과(또는 기준과 결과)를 나란히 연다. */
 async function openDiff(arg?: unknown) {
-  const id = await resolveReq(arg, '어느 요구사항의 코드를 나란히 비교할까요?');
+  const id = await resolveReq(arg, L('어느 요구사항의 코드를 나란히 비교할까요?', 'Which requirement do you want to compare side by side?'));
   if (!id || !run) return;
   const t = M.diffTarget(run.report, id);
-  if (!t) return void vscode.window.showInformationMessage(`VerifyLens: ${id}는 연결된 코드 근거가 없어 비교할 수 없습니다.`);
+  if (!t) return void vscode.window.showInformationMessage(L(`VerifyLens: ${id}는 연결된 코드 근거가 없어 비교할 수 없습니다.`, `VerifyLens: ${id} has no linked code evidence, so there is nothing to compare.`));
   const uri = (s: M.DiffSide) => (s.key === 'base' ? virtualUri('base', s.ref, s.file) : locationUri(s.key, s.file));
   try {
     const at = new vscode.Range(t.right.line - 1, 0, t.right.line - 1, 0);
@@ -319,21 +329,25 @@ async function openDiff(arg?: unknown) {
 }
 
 async function recordJudgment(arg?: unknown) {
-  const id = await resolveReq(arg, '어느 요구사항에 판단을 기록할까요?');
+  const id = await resolveReq(arg, L('어느 요구사항에 판단을 기록할까요?', 'Which requirement do you want to record a decision for?'));
   if (!id || !run) return;
   const cur = judgments()[id];
   const pick = await vscode.window.showQuickPick(
-    [...JUDGE_OPTIONS.map((label) => ({ label, description: cur?.judge === label ? '지금 판단' : '' })), { label: '미검토', description: '판단 지우기' }],
-    { placeHolder: `${id} — 근거를 보고 어떻게 할지 정합니다` },
+    [
+      ...JUDGE_OPTIONS.map((value) => ({ label: M.wJudge(value), value, description: cur?.judge === value ? L('지금 판단', 'current decision') : '' })),
+      { label: M.wJudge('미검토'), value: '미검토', description: L('판단 지우기', 'clear the decision') },
+    ],
+    { placeHolder: L(`${id} — 근거를 보고 어떻게 할지 정합니다`, `${id} — decide what to do after reading the evidence`) },
   );
   if (!pick) return;
   let note = '';
-  if (pick.label !== '미검토') {
-    const typed = await vscode.window.showInputBox({ prompt: `${id} · ${pick.label} — 이유나 남은 확인 사항 (비워 둬도 됩니다)`, value: cur?.note ?? '' });
+  if (pick.value !== '미검토') {
+    const typed = await vscode.window.showInputBox({ prompt: L(`${id} · ${pick.label} — 이유나 남은 확인 사항 (비워 둬도 됩니다)`, `${id} · ${pick.label} — reason, or what is left to check (may be left empty)`), value: cur?.note ?? '' });
     if (typed === undefined) return;
     note = typed;
   }
-  await setJudgment(id, { judge: pick.label, note });
+  // 저장하는 값은 언어와 상관없이 같다 (사용 · 수정 · 추가 검증 · 보류).
+  await setJudgment(id, { judge: pick.value, note });
 }
 
 /**
@@ -342,23 +356,27 @@ async function recordJudgment(arg?: unknown) {
  */
 async function copySummary(arg?: unknown): Promise<string | undefined> {
   if (!run) {
-    void vscode.window.showInformationMessage('VerifyLens: 먼저 분석을 실행하세요.');
+    void vscode.window.showInformationMessage(runFirst());
     return undefined;
   }
-  const lang: M.SummaryLang = cfg<string>('summaryLanguage', 'ko') === 'en' ? 'en' : 'ko';
+  // auto 면 화면 글의 언어를 따른다.
+  const sl = cfg<string>('summaryLanguage', 'auto');
+  const lang: M.SummaryLang = sl === 'en' || sl === 'ko' ? sl : M.getLang();
   const js = judgments();
   const text = M.prSummary(run, js, { lang, version: String(ctx.extension?.packageJSON?.version ?? '') });
   if ((arg as { dryRun?: boolean } | undefined)?.dryRun) return text;
   await vscode.env.clipboard.writeText(text);
   const pending = M.pendingDecisions(run.report, js);
   const msg = pending
-    ? `VerifyLens: 검증 요약을 복사했습니다. 판단을 기록하지 않은 항목 ${pending}개는 「미검토」로 들어갔습니다.`
-    : 'VerifyLens: 검증 요약을 복사했습니다. PR 설명이나 댓글에 붙여 넣으세요.';
-  void vscode.window.showInformationMessage(msg, '미리 보기', ...(pending ? ['판단 기록'] : [])).then(async (pick) => {
-    if (pick === '미리 보기') {
+    ? L(`VerifyLens: 검증 요약을 복사했습니다. 판단을 기록하지 않은 항목 ${pending}개는 「미검토」로 들어갔습니다.`, `VerifyLens: verification summary copied. ${pending} item(s) without a recorded decision are listed as "Not reviewed".`)
+    : L('VerifyLens: 검증 요약을 복사했습니다. PR 설명이나 댓글에 붙여 넣으세요.', 'VerifyLens: verification summary copied. Paste it into the PR description or a comment.');
+  const preview = L('미리 보기', 'Preview');
+  const record = L('판단 기록', 'Record decision');
+  void vscode.window.showInformationMessage(msg, preview, ...(pending ? [record] : [])).then(async (pick) => {
+    if (pick === preview) {
       const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: text });
       await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: true });
-    } else if (pick === '판단 기록') await recordJudgment();
+    } else if (pick === record) await recordJudgment();
   });
   return text;
 }
@@ -366,7 +384,7 @@ async function copySummary(arg?: unknown): Promise<string | undefined> {
 // ---------------------------------------------------------------- 실행
 function fail(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
-  out.appendLine(`[오류] ${e instanceof Error && e.stack ? e.stack : msg}`);
+  out.appendLine(`[${L('오류', 'error')}] ${e instanceof Error && e.stack ? e.stack : msg}`);
   void vscode.window.showErrorMessage(`VerifyLens: ${msg}`);
 }
 
@@ -379,7 +397,7 @@ function applyRun(r: M.Run) {
   publishDiagnostics();
   const n = r.report.summaries.filter((s) => s.overall === '다름' || s.overall === '실패').length;
   status.text = M.statusIcons(r.report);
-  status.tooltip = `VerifyLens · ${M.verifiedLine(r.report)}\n${M.contextLine(r)}\n${M.statusText(r.report)} · AI 추정 없음\n눌러서 리포트 열기`;
+  status.tooltip = `VerifyLens · ${M.verifiedLine(r.report)}\n${M.contextLine(r)}\n${M.statusText(r.report)} · ${L('AI 추정 없음', 'no AI inference')}\n${L('눌러서 리포트 열기', 'Click to open the report')}`;
   status.backgroundColor = n ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
   status.show();
   renderPanel();
@@ -401,20 +419,21 @@ async function execute(job: Job, opts: RunOpts = {}) {
     again = job;
     await vscode.commands.executeCommand('setContext', 'verifylens.hasRun', true);
     applyRun(r);
-    out.appendLine(`[${new Date().toLocaleTimeString()}] ${opts.silent ? '변경 감지 → ' : ''}${job.title} → ${M.statusText(r.report)}`);
+    out.appendLine(`[${new Date().toLocaleTimeString()}] ${opts.silent ? L('변경 감지 → ', 'change detected → ') : ''}${job.title} → ${M.statusText(r.report)}`);
     if (opts.silent) return;
     arm(job.watch);
     showReport();
     void vscode.commands.executeCommand('verifylens.requirements.focus');
     for (const n of r.notes) {
-      const offer = r.kind === 'repo' && /테스트/.test(n) ? ['테스트 실행'] : [];
-      void vscode.window.showWarningMessage(`VerifyLens: ${n}`, ...offer).then((pick) => (pick === '테스트 실행' ? vscode.commands.executeCommand('verifylens.runTests') : undefined));
+      const runThem = L('테스트 실행', 'Run tests');
+      const offer = r.kind === 'repo' && /테스트|\btests?\b/i.test(n) ? [runThem] : [];
+      void vscode.window.showWarningMessage(`VerifyLens: ${n}`, ...offer).then((pick) => (pick === runThem ? vscode.commands.executeCommand('verifylens.runTests') : undefined));
     }
     if (r.kind === 'demo') void vscode.window.showInformationMessage(`VerifyLens: ${M.demoHeadline(r.report)}`);
   } catch (e) {
     if (!opts.silent) return fail(e);
     // 저장 도중의 파일처럼 잠깐 읽을 수 없는 상태일 수 있다. 조용히 기록만 하고 이전 결과를 둔다.
-    out.appendLine(`[다시 분석 실패] ${e instanceof Error ? e.message : String(e)}`);
+    out.appendLine(`[${L('다시 분석 실패', 're-check failed')}] ${e instanceof Error ? e.message : String(e)}`);
     if (run) status.text = M.statusIcons(run.report);
   }
 }
@@ -487,7 +506,10 @@ function arm(spec?: M.WatchSpec) {
 /** 제한 모드(신뢰하지 않은 폴더)에서는 저장소를 읽지 않는다. 신뢰하라고 안내하고 true 를 돌려준다. */
 async function needTrust(): Promise<boolean> {
   if (vscode.workspace.isTrusted) return false;
-  const pick = await vscode.window.showWarningMessage('VerifyLens: 이 폴더는 아직 신뢰하지 않은 상태(제한 모드)입니다. 내 브랜치를 확인하려면 폴더를 신뢰해야 합니다. 샘플은 지금도 해 볼 수 있습니다.', '이 폴더 신뢰하기');
+  const pick = await vscode.window.showWarningMessage(
+    L('VerifyLens: 이 폴더는 아직 신뢰하지 않은 상태(제한 모드)입니다. 내 브랜치를 확인하려면 폴더를 신뢰해야 합니다. 샘플은 지금도 해 볼 수 있습니다.', 'VerifyLens: this folder is not trusted yet (Restricted Mode). Checking your branch needs a trusted folder. The demo works as it is.'),
+    L('이 폴더 신뢰하기', 'Trust this folder'),
+  );
   if (pick) await vscode.commands.executeCommand('workbench.trust.manage');
   return true;
 }
@@ -496,11 +518,11 @@ async function pickRepo(): Promise<string | undefined> {
   const folders = vscode.workspace.workspaceFolders ?? [];
   const roots = [...new Set(folders.map((f) => M.gitRoot(f.uri.fsPath)).filter((x): x is string => !!x))];
   if (!roots.length) {
-    void vscode.window.showWarningMessage('VerifyLens: 열린 폴더에서 git 저장소를 찾지 못했습니다. 저장소 폴더를 연 뒤 다시 실행하세요.');
+    void vscode.window.showWarningMessage(L('VerifyLens: 열린 폴더에서 git 저장소를 찾지 못했습니다. 저장소 폴더를 연 뒤 다시 실행하세요.', 'VerifyLens: no git repository was found in the open folder. Open a repository folder and run this again.'));
     return undefined;
   }
   if (roots.length === 1) return roots[0];
-  return vscode.window.showQuickPick(roots, { placeHolder: '어느 저장소를 확인할까요?' });
+  return vscode.window.showQuickPick(roots, { placeHolder: L('어느 저장소를 확인할까요?', 'Which repository do you want to check?') });
 }
 
 async function pickBase(repo: string, current: string): Promise<string | undefined> {
@@ -510,10 +532,10 @@ async function pickBase(repo: string, current: string): Promise<string | undefin
   if (auto) return auto;
   const items = M.orderBases(M.localBranches(repo), current);
   if (!items.length) {
-    void vscode.window.showWarningMessage('VerifyLens: 비교할 기준 브랜치가 없습니다. main 같은 브랜치가 있어야 합니다.');
+    void vscode.window.showWarningMessage(L('VerifyLens: 비교할 기준 브랜치가 없습니다. main 같은 브랜치가 있어야 합니다.', 'VerifyLens: there is no base branch to compare against. A branch such as main is needed.'));
     return undefined;
   }
-  return vscode.window.showQuickPick(items, { placeHolder: `무엇과 비교할까요? (지금 브랜치: ${current})` });
+  return vscode.window.showQuickPick(items, { placeHolder: L(`무엇과 비교할까요? (지금 브랜치: ${current})`, `Compare against which branch? (current branch: ${current})`) });
 }
 
 function reqPath(repo: string) {
@@ -523,12 +545,13 @@ function reqPath(repo: string) {
 async function ensureReqs(repo: string): Promise<string | undefined> {
   const file = reqPath(repo);
   if (existsSync(file)) return file;
+  const imp = L('이슈 · PR에서 가져오기', 'Import from issue / PR');
   const pick = await vscode.window.showWarningMessage(
-    `VerifyLens: 요구사항 파일(${path.relative(repo, file)})이 없습니다. 이슈나 PR 글에서 가져오거나 직접 적을 수 있습니다.`,
-    '이슈 · PR에서 가져오기',
-    '요구사항 파일 만들기',
+    L(`VerifyLens: 요구사항 파일(${path.relative(repo, file)})이 없습니다. 이슈나 PR 글에서 가져오거나 직접 적을 수 있습니다.`, `VerifyLens: there is no requirements file (${path.relative(repo, file)}). Import the requirements from an issue or PR, or write them yourself.`),
+    imp,
+    L('요구사항 파일 만들기', 'Create requirements file'),
   );
-  if (pick === '이슈 · PR에서 가져오기') await importRequirements(undefined, repo);
+  if (pick === imp) await importRequirements(undefined, repo);
   else if (pick) await createReqs(repo);
   return undefined;
 }
@@ -539,10 +562,10 @@ async function createReqs(repo?: string) {
   const file = reqPath(repo);
   if (!existsSync(file)) {
     mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, M.REQ_TEMPLATE, 'utf8');
+    writeFileSync(file, M.reqTemplate(), 'utf8');
   }
   await vscode.window.showTextDocument(vscode.Uri.file(file));
-  void vscode.window.showInformationMessage('VerifyLens: 요구사항을 적고 저장한 뒤 「Check current branch」를 실행하세요.');
+  void vscode.window.showInformationMessage(L('VerifyLens: 요구사항을 적고 저장한 뒤 「Check my changes」를 실행하세요.', 'VerifyLens: write the requirements, save, then run "Check my changes".'));
 }
 
 /**
@@ -552,42 +575,45 @@ async function createReqs(repo?: string) {
  */
 async function importRequirements(arg?: unknown, repoArg?: string): Promise<string | undefined> {
   const a = arg as { text?: string; dryRun?: boolean } | undefined;
-  if (a?.dryRun) return M.mergeRequirementsFile(null, M.requirementsFrom([{ label: '글', url: '', title: '', body: a.text ?? '' }]).requirements, '붙여 넣은 글', 'replace').text;
+  if (a?.dryRun) return M.mergeRequirementsFile(null, M.requirementsFrom([{ label: L('글', 'text'), url: '', title: '', body: a.text ?? '' }]).requirements, L('붙여 넣은 글', 'pasted text'), 'replace').text;
   if (await needTrust()) return undefined;
   const repo = repoArg ?? (await pickRepo());
   if (!repo) return undefined;
   const src = await vscode.window.showQuickPick(
     [
-      { label: '$(git-pull-request) 지금 브랜치의 GitHub PR', detail: 'PR 설명과 PR이 닫는 이슈의 글을 gh로 읽어 옵니다. 글만 읽고 코드는 보내지 않습니다.', id: 'pr' },
-      { label: '$(issues) GitHub 이슈 번호나 주소', detail: '예: 123 또는 https://github.com/owner/repo/issues/123', id: 'issue' },
-      { label: '$(clippy) 복사한 글 (클립보드)', detail: 'Jira · Linear · 메신저 등 어디서든 복사한 요구사항 글. 네트워크를 쓰지 않습니다.', id: 'clip' },
+      { label: L('$(git-pull-request) 지금 브랜치의 GitHub PR', "$(git-pull-request) This branch's GitHub PR"), detail: L('PR 설명과 PR이 닫는 이슈의 글을 gh로 읽어 옵니다. 글만 읽고 코드는 보내지 않습니다.', 'Reads the PR description and the issues it closes through gh. Only the text is read; your code is not sent.'), id: 'pr' },
+      { label: L('$(issues) GitHub 이슈 번호나 주소', '$(issues) GitHub issue number or URL'), detail: L('예: 123 또는 https://github.com/owner/repo/issues/123', 'For example 123 or https://github.com/owner/repo/issues/123'), id: 'issue' },
+      { label: L('$(clippy) 복사한 글 (클립보드)', '$(clippy) Copied text (clipboard)'), detail: L('Jira · Linear · 메신저 등 어디서든 복사한 요구사항 글. 네트워크를 쓰지 않습니다.', 'Requirement text copied from anywhere: Jira, Linear, chat. No network use.'), id: 'clip' },
     ],
-    { placeHolder: '요구사항을 어디서 가져올까요?' },
+    { placeHolder: L('요구사항을 어디서 가져올까요?', 'Where should the requirements come from?') },
   );
   if (!src) return undefined;
   let texts: M.SourceText[];
   try {
     if (src.id === 'clip') {
-      texts = [{ label: '복사한 글', url: '', title: '', body: await vscode.env.clipboard.readText() }];
+      texts = [{ label: L('복사한 글', 'copied text'), url: '', title: '', body: await vscode.env.clipboard.readText() }];
     } else {
       const run = M.ghRunner(repo, cfg('ghPath', 'gh') || 'gh');
       if (src.id === 'issue') {
-        const ref = await vscode.window.showInputBox({ prompt: '이슈 번호나 주소', placeHolder: '123' });
+        const ref = await vscode.window.showInputBox({ prompt: L('이슈 번호나 주소', 'Issue number or URL'), placeHolder: '123' });
         if (!ref) return undefined;
-        texts = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'VerifyLens: GitHub에서 이슈를 읽는 중' }, async () => M.fetchIssue(run, ref));
+        texts = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: L('VerifyLens: GitHub에서 이슈를 읽는 중', 'VerifyLens: reading the issue from GitHub') }, async () => M.fetchIssue(run, ref));
       } else {
-        texts = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'VerifyLens: GitHub에서 PR과 이슈를 읽는 중' }, async () => M.fetchPr(run));
+        texts = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: L('VerifyLens: GitHub에서 PR과 이슈를 읽는 중', 'VerifyLens: reading the PR and its issues from GitHub') }, async () => M.fetchPr(run));
       }
     }
   } catch (e) {
-    out.appendLine(`[가져오기 실패] ${e instanceof Error ? e.message : String(e)}`);
+    out.appendLine(`[${L('가져오기 실패', 'import failed')}] ${e instanceof Error ? e.message : String(e)}`);
     void vscode.window.showErrorMessage(`VerifyLens: ${M.ghError(e)}`);
     return undefined;
   }
   const { requirements, sources } = M.requirementsFrom(texts);
   if (!requirements.length) {
     void vscode.window.showWarningMessage(
-      `VerifyLens: ${texts.map((t) => t.label).join(', ')}에서 요구사항으로 볼 문장을 찾지 못했습니다. 목록(- 항목)이나 「~해야 한다」 꼴 문장이 있어야 합니다.`,
+      L(
+        `VerifyLens: ${texts.map((t) => t.label).join(', ')}에서 요구사항으로 볼 문장을 찾지 못했습니다. 목록(- 항목)이나 「~해야 한다」 꼴 문장이 있어야 합니다.`,
+        `VerifyLens: nothing that reads like a requirement was found in ${texts.map((t) => t.label).join(', ')}. It needs a list (- item) or sentences with "must" / "should".`,
+      ),
     );
     return undefined;
   }
@@ -595,21 +621,27 @@ async function importRequirements(arg?: unknown, repoArg?: string): Promise<stri
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : null;
   let mode: 'replace' | 'append' = 'replace';
   if (existing && M.treeCount(existing) > 0) {
-    const pick = await vscode.window.showWarningMessage(`VerifyLens: 요구사항 파일에 이미 ${M.treeCount(existing)}개가 있습니다. 가져온 ${requirements.length}개를 어떻게 넣을까요?`, { modal: true }, '뒤에 추가', '바꾸기');
+    const replace = L('바꾸기', 'Replace');
+    const pick = await vscode.window.showWarningMessage(
+      L(`VerifyLens: 요구사항 파일에 이미 ${M.treeCount(existing)}개가 있습니다. 가져온 ${requirements.length}개를 어떻게 넣을까요?`, `VerifyLens: the requirements file already has ${M.treeCount(existing)}. What should happen with the ${requirements.length} imported?`),
+      { modal: true },
+      L('뒤에 추가', 'Append'),
+      replace,
+    );
     if (!pick) return undefined;
-    mode = pick === '바꾸기' ? 'replace' : 'append';
+    mode = pick === replace ? 'replace' : 'append';
   }
   const label = sources.join(' · ');
   const merged = M.mergeRequirementsFile(existing, requirements, label, mode);
   if (!merged.added) {
-    void vscode.window.showInformationMessage('VerifyLens: 가져온 요구사항이 이미 모두 들어 있습니다.');
+    void vscode.window.showInformationMessage(L('VerifyLens: 가져온 요구사항이 이미 모두 들어 있습니다.', 'VerifyLens: every imported requirement is already in the file.'));
     return merged.text;
   }
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, merged.text, 'utf8');
   await vscode.window.showTextDocument(vscode.Uri.file(file));
   void vscode.window
-    .showInformationMessage(`VerifyLens: ${label}에서 요구사항 ${merged.added}개를 가져왔습니다. 읽어 보고 고친 뒤 확인을 실행하세요.`, '지금 브랜치 확인')
+    .showInformationMessage(L(`VerifyLens: ${label}에서 요구사항 ${merged.added}개를 가져왔습니다. 읽어 보고 고친 뒤 확인을 실행하세요.`, `VerifyLens: imported ${merged.added} requirement(s) from ${label}. Read them, fix them, then run the check.`), L('지금 브랜치 확인', 'Check my changes'))
     .then((pick) => (pick ? vscode.commands.executeCommand('verifylens.checkBranch') : undefined));
   return merged.text;
 }
@@ -625,19 +657,22 @@ async function runTests(): Promise<void> {
   const plan = M.detectTestPlan(repo, cfg('testCommand', ''), cfg('junitPath', ''), cfg('nodePath', 'node') || 'node');
   if (!plan) {
     const pick = await vscode.window.showWarningMessage(
-      'VerifyLens: 테스트 실행 방법을 알아내지 못했습니다 (Vitest · Jest · node:test 를 찾습니다). 설정에 명령을 적어 주세요. 예: npx mocha --reporter xunit --reporter-option output=${report}',
-      '설정 열기',
+      L(
+        'VerifyLens: 테스트 실행 방법을 알아내지 못했습니다 (Vitest · Jest · node:test 를 찾습니다). 설정에 명령을 적어 주세요. 예: npx mocha --reporter xunit --reporter-option output=${report}',
+        'VerifyLens: could not tell how to run your tests (it looks for Vitest, Jest and node:test). Put the command in the settings, for example: npx mocha --reporter xunit --reporter-option output=${report}',
+      ),
+      L('설정 열기', 'Open settings'),
     );
     if (pick) await vscode.commands.executeCommand('workbench.action.openSettings', 'verifylens.testCommand');
     return;
   }
   mkdirSync(path.dirname(plan.report), { recursive: true });
   const started = Date.now();
-  out.appendLine(`[테스트 · ${plan.framework}] ${plan.command}`);
+  out.appendLine(`[${L('테스트', 'tests')} · ${plan.framework}] ${plan.command}`);
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   delete env.ELECTRON_RUN_AS_NODE;
-  const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `VerifyLens: 테스트 실행 중 (${plan.framework})`, cancellable: true }, (_p, token) => {
+  const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: L(`VerifyLens: 테스트 실행 중 (${plan.framework})`, `VerifyLens: running tests (${plan.framework})`), cancellable: true }, (_p, token) => {
     return new Promise<{ code: number | null; text: string; cancelled: boolean }>((resolve) => {
       let cancelled = false;
       const child = cp.exec(plan.command, { cwd: repo, windowsHide: true, timeout: 10 * 60 * 1000, maxBuffer: 32 * 1024 * 1024, env }, (err, stdout, stderr) => {
@@ -655,17 +690,23 @@ async function runTests(): Promise<void> {
   const fresh = existsSync(plan.report) && statSync(plan.report).mtimeMs >= started - 2000;
   if (!fresh) {
     out.show(true);
-    void vscode.window.showErrorMessage(`VerifyLens: 테스트를 실행했지만 결과 파일(${path.relative(repo, plan.report)})이 만들어지지 않았습니다. 출력 창의 내용을 확인하세요. 명령: ${plan.command}`);
+    void vscode.window.showErrorMessage(
+      L(
+        `VerifyLens: 테스트를 실행했지만 결과 파일(${path.relative(repo, plan.report)})이 만들어지지 않았습니다. 출력 창의 내용을 확인하세요. 명령: ${plan.command}`,
+        `VerifyLens: the tests ran, but the report file (${path.relative(repo, plan.report)}) was not written. See the Output panel. Command: ${plan.command}`,
+      ),
+    );
     return;
   }
   if (again && run?.kind === 'repo') await execute(again, { silent: true });
   else await vscode.commands.executeCommand('verifylens.checkBranch');
-  if (run) void vscode.window.showInformationMessage(`VerifyLens: 테스트 결과를 반영했습니다 (${plan.framework}) · ${M.statusText(run.report)}`);
+  if (run) void vscode.window.showInformationMessage(L(`VerifyLens: 테스트 결과를 반영했습니다 (${plan.framework}) · ${M.statusText(run.report)}`, `VerifyLens: test results included (${plan.framework}) · ${M.statusText(run.report)}`));
 }
 
 // ---------------------------------------------------------------- 시작
 export function activate(context: vscode.ExtensionContext) {
   ctx = context;
+  applyLang();
   out = vscode.window.createOutputChannel('VerifyLens');
   makeDecorations();
   tree = new ReqTree();
@@ -695,12 +736,17 @@ export function activate(context: vscode.ExtensionContext) {
       provideTextDocumentContent(uri) {
         const q = new URLSearchParams(uri.query);
         const file = uri.path.split('/').slice(2).join('/');
-        return showFile(q.get('repo') ?? '', q.get('ref') ?? '', file) ?? `// ${file} 은(는) 이 결과에 없습니다.`;
+        return showFile(q.get('repo') ?? '', q.get('ref') ?? '', file) ?? L(`// ${file} 은(는) 이 결과에 없습니다.`, `// ${file} does not exist in this result.`);
       },
     }),
     vscode.window.onDidChangeVisibleTextEditors((eds) => decorate(eds)),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('verifylens')) return;
+      // 언어가 바뀌면 분석 결과에 들어 있는 글도 다시 만들어야 한다.
+      if (applyLang()) {
+        if (again) void execute(again, { silent: true });
+        else tree.refresh();
+      }
       decorate(vscode.window.visibleTextEditors);
       publishDiagnostics();
       arm(again?.watch);
@@ -710,7 +756,7 @@ export function activate(context: vscode.ExtensionContext) {
       const node = cfg('nodePath', 'node') || 'node';
       const sampleDir = ctx.asAbsolutePath(path.join('samples', 'login-lockout'));
       const fallbackJunit = { a: ctx.asAbsolutePath(path.join('samples', 'junit', 'junit-a.xml')), b: ctx.asAbsolutePath(path.join('samples', 'junit', 'junit-b.xml')) };
-      return execute({ title: '샘플(로그인 잠금 가상 사례) 분석', fn: () => M.runDemo({ sampleDir, node: M.nodeSupportsTs(node) ? node : null, fallbackJunit }) });
+      return execute({ title: L('샘플(로그인 잠금 가상 사례) 분석', 'Analyzing the sample (a made-up login-lockout case)'), fn: () => M.runDemo({ sampleDir, node: M.nodeSupportsTs(node) ? node : null, fallbackJunit }) });
     }),
 
     vscode.commands.registerCommand('verifylens.checkBranch', async () => {
@@ -718,7 +764,7 @@ export function activate(context: vscode.ExtensionContext) {
       const repo = await pickRepo();
       if (!repo) return;
       const current = M.currentBranch(repo);
-      if (current === 'HEAD') return void vscode.window.showWarningMessage('VerifyLens: 브랜치에 있지 않습니다(detached HEAD). 브랜치를 체크아웃한 뒤 실행하세요.');
+      if (current === 'HEAD') return void vscode.window.showWarningMessage(L('VerifyLens: 브랜치에 있지 않습니다(detached HEAD). 브랜치를 체크아웃한 뒤 실행하세요.', 'VerifyLens: you are not on a branch (detached HEAD). Check out a branch and run this again.'));
       const base = await pickBase(repo, current);
       if (!base) return;
       const reqFile = await ensureReqs(repo);
@@ -727,7 +773,7 @@ export function activate(context: vscode.ExtensionContext) {
       const worktree = cfg('includeUncommitted', true);
       const setting = cfg('junitPath', '');
       return execute({
-        title: `${current} 확인 (기준 ${base})`,
+        title: L(`${current} 확인 (기준 ${base})`, `Checking ${current} (base ${base})`),
         fn: () => {
           const now = worktree ? M.currentBranch(repo) : current;
           return M.runRepo({ repo, base, a: now, reqFile, junitA: M.findReport(repo, setting), workingRef: M.currentBranch(repo), worktree });
@@ -745,15 +791,15 @@ export function activate(context: vscode.ExtensionContext) {
       const base = await pickBase(repo, current);
       if (!base) return;
       const others = branches.filter((b) => b !== base);
-      if (others.length < 2) return void vscode.window.showWarningMessage('VerifyLens: 비교하려면 기준 말고 브랜치가 두 개 있어야 합니다.');
-      const a = await vscode.window.showQuickPick(others, { placeHolder: '결과 A 브랜치' });
+      if (others.length < 2) return void vscode.window.showWarningMessage(L('VerifyLens: 비교하려면 기준 말고 브랜치가 두 개 있어야 합니다.', 'VerifyLens: comparing needs two branches besides the base.'));
+      const a = await vscode.window.showQuickPick(others, { placeHolder: L('결과 A 브랜치', 'Branch for result A') });
       if (!a) return;
-      const b = await vscode.window.showQuickPick(others.filter((x) => x !== a), { placeHolder: '결과 B 브랜치' });
+      const b = await vscode.window.showQuickPick(others.filter((x) => x !== a), { placeHolder: L('결과 B 브랜치', 'Branch for result B') });
       if (!b) return;
       const reqFile = await ensureReqs(repo);
       if (!reqFile) return;
       return execute({
-        title: `${a} ↔ ${b} 비교 (기준 ${base})`,
+        title: L(`${a} ↔ ${b} 비교 (기준 ${base})`, `Comparing ${a} ↔ ${b} (base ${base})`),
         fn: () => M.runRepo({ repo, base, a, b, reqFile, workingRef: M.currentBranch(repo) }),
         watch: { repo, refs: [base, a, b, 'HEAD'], files: [reqFile] },
       });
@@ -763,13 +809,13 @@ export function activate(context: vscode.ExtensionContext) {
       if (!again || run?.kind === 'repo') if (await needTrust()) return;
       return again ? execute(again) : vscode.commands.executeCommand('verifylens.checkBranch');
     }),
-    vscode.commands.registerCommand('verifylens.openReport', () => (run ? showReport() : vscode.window.showInformationMessage('VerifyLens: 먼저 분석을 실행하세요.'))),
+    vscode.commands.registerCommand('verifylens.openReport', () => (run ? showReport() : vscode.window.showInformationMessage(runFirst()))),
     vscode.commands.registerCommand('verifylens.createRequirements', async () => {
       if (await needTrust()) return;
       return createReqs();
     }),
     vscode.commands.registerCommand('verifylens.focusRequirement', async (arg?: unknown) => {
-      const id = await resolveReq(arg, '어느 요구사항의 근거를 볼까요?');
+      const id = await resolveReq(arg, L('어느 요구사항의 근거를 볼까요?', 'Which requirement do you want to see the evidence for?'));
       if (id) showReport(id);
     }),
     vscode.commands.registerCommand('verifylens.openDiff', (arg?: unknown) => openDiff(arg)),

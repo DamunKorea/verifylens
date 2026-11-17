@@ -9,6 +9,10 @@ import { renderHtml } from '../../src/output.ts';
 import { counts, renderSummaryMd } from '../../src/summary.ts';
 import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
 import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../src/types.ts';
+import { L, getLang, setLabel, testPhrase, wOverall, wTest } from '../../src/i18n.ts';
+
+export { L, getLang, resolveLang, setLang, wJudge, wOverall } from '../../src/i18n.ts';
+export type { Lang } from '../../src/i18n.ts';
 
 export type RepoParams = {
   repo: string;
@@ -43,9 +47,9 @@ export type Run = {
 };
 
 function readReqs(reqFile: string) {
-  if (!existsSync(reqFile)) throw new Error(`요구사항 파일이 없습니다: ${reqFile}`);
+  if (!existsSync(reqFile)) throw new Error(L(`요구사항 파일이 없습니다: ${reqFile}`, `The requirements file does not exist: ${reqFile}`));
   const reqs = parseRequirements(readFileSync(reqFile, 'utf8'));
-  if (!reqs.length) throw new Error('요구사항을 읽지 못했습니다. 「- R1: 문장 | keywords: 영어 단어」 형식인지 확인하세요.');
+  if (!reqs.length) throw new Error(L('요구사항을 읽지 못했습니다. 「- R1: 문장 | keywords: 영어 단어」 형식인지 확인하세요.', 'No requirements could be read. Each line must look like "- R1: sentence" (optionally followed by "| keywords: words, in, the, code").'));
   return reqs;
 }
 
@@ -56,21 +60,21 @@ export function runDemo(p: DemoParams): Run {
     analyzeResult({ key: 'A', repo: env.repo, base: 'main', ref: 'feature/lockout-a', junit: env.junitA }),
     analyzeResult({ key: 'B', repo: env.repo, base: 'main', ref: 'feature/lockout-b', junit: env.junitB }),
   ];
-  const notes = env.testsFromFallback ? ['Node.js 22.18 이상을 찾지 못해 테스트는 미리 만들어 둔 결과(JUnit)를 썼습니다.'] : [];
+  const notes = env.testsFromFallback ? [L('Node.js 22.18 이상을 찾지 못해 테스트는 미리 만들어 둔 결과(JUnit)를 썼습니다.', 'Node.js 22.18 or later was not found, so the demo used bundled test results (JUnit) instead of running the tests.')] : [];
   return { kind: 'demo', repo: env.repo, report: evaluate(sets, reqs, env.repo, 'main'), notes };
 }
 
 export function runRepo(p: RepoParams): Run {
   const reqs = readReqs(p.reqFile);
-  for (const [ref, label] of [[p.base, '기준'], [p.a, '결과 A'], ...(p.b ? [[p.b, '결과 B']] : [])] as [string, string][]) {
+  for (const [ref, label] of [[p.base, L('기준', 'base')], [p.a, setLabel('A')], ...(p.b ? [[p.b, setLabel('B')]] : [])] as [string, string][]) {
     try {
       git(p.repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
     } catch {
-      throw new Error(`${label} 브랜치 「${ref}」를 찾지 못했습니다.`);
+      throw new Error(L(`${label} 브랜치 「${ref}」를 찾지 못했습니다.`, `Branch "${ref}" (${label}) was not found.`));
     }
   }
   for (const [j, label] of [[p.junitA, 'A'], [p.junitB, 'B']] as [string | undefined, string][]) {
-    if (j && !existsSync(j)) throw new Error(`결과 ${label}의 테스트 보고서가 없습니다: ${j}`);
+    if (j && !existsSync(j)) throw new Error(L(`결과 ${label}의 테스트 보고서가 없습니다: ${j}`, `The test report for result ${label} does not exist: ${j}`));
   }
   // 테스트 결과가 코드보다 오래됐으면 쓰지 않는다. 고치기 전의 「통과」나 「실패」는 지금 코드에 대한 근거가 아니다.
   let junitA = p.junitA;
@@ -90,12 +94,12 @@ export function runRepo(p: RepoParams): Run {
     if (s.analyses.length) continue;
     notes.push(
       p.worktree && s.key === 'A'
-        ? `${p.base}와 비교해 바뀐 TypeScript · JavaScript 파일이 없습니다.`
-        : `${s.label}(${s.ref})에는 ${p.base}와 비교해 바뀐 TypeScript · JavaScript 파일이 없습니다. 커밋된 변경만 봅니다.`,
+        ? L(`${p.base}와 비교해 바뀐 TypeScript · JavaScript 파일이 없습니다.`, `No TypeScript or JavaScript files changed compared to ${p.base}.`)
+        : L(`${s.label}(${s.ref})에는 ${p.base}와 비교해 바뀐 TypeScript · JavaScript 파일이 없습니다. 커밋된 변경만 봅니다.`, `${s.label} (${s.ref}) has no TypeScript or JavaScript files changed compared to ${p.base}. Only committed changes are compared.`),
     );
   }
-  if (stale) notes.push('테스트 결과가 코드보다 오래되어 쓰지 않았습니다. 테스트를 다시 실행하면 반영됩니다.');
-  else if (!junitA && !p.junitB) notes.push('테스트 결과가 없어 검사는 모두 「미실행」으로 표시됩니다. 테스트를 실행하면 채워집니다.');
+  if (stale) notes.push(L('테스트 결과가 코드보다 오래되어 쓰지 않았습니다. 테스트를 다시 실행하면 반영됩니다.', 'The test results are older than the code and were not used. Run the tests again to include them.'));
+  else if (!junitA && !p.junitB) notes.push(L('테스트 결과가 없어 검사는 모두 「미실행」으로 표시됩니다. 테스트를 실행하면 채워집니다.', 'There are no test results, so every requirement shows "no test run". Run the tests to fill them in.'));
   const report = evaluate(sets, reqs, p.repo, p.base);
   report.testsStale = stale;
   return { kind: 'repo', repo: p.repo, report, workingRef: p.workingRef, notes };
@@ -133,6 +137,16 @@ export function nodeSupportsTs(node: string): boolean {
   }
 }
 
+const REQ_TEMPLATE_EN = `# Requirements — VerifyLens reads this file.
+# Format: - R<number>: requirement sentence
+# If you write a number (5 times, 30 minutes), it is compared with the condition in the code to compute when the code acts.
+# If a requirement lands on the wrong code, append "| keywords: words, in, the, code" to pin it yourself.
+# To pull requirements from an issue or a PR, run "VerifyLens: Import requirements" from the Command Palette.
+# The two lines below are examples. Replace them with the requirements of this change.
+- R1: Users can log in with the right password
+- R2: Lock the account after 5 consecutive failures
+`;
+
 export const REQ_TEMPLATE = `# 요구사항 — VerifyLens 가 이 파일을 읽습니다.
 # 형식: - R번호: 요구사항 문장
 # 숫자(5회, 30분 등)를 쓰면 코드의 조건과 비교해 몇 번째에 동작하는지 계산합니다.
@@ -142,6 +156,8 @@ export const REQ_TEMPLATE = `# 요구사항 — VerifyLens 가 이 파일을 읽
 - R1: 올바른 비밀번호로 로그인할 수 있다
 - R2: 연속 5회 실패하면 계정을 잠근다
 `;
+/** 지금 언어의 요구사항 파일 본보기 */
+export const reqTemplate = (): string => L(REQ_TEMPLATE, REQ_TEMPLATE_EN);
 
 // ---------------------------------------------------------------- 화면에 보여 줄 모양
 /** 좁은 옆 패널에서도 읽히게 label · detail 은 짧게, 긴 설명은 tooltip 에 둔다. */
@@ -152,10 +168,10 @@ export type ReqRow = { id: string; text: string; overall: Overall; reason: strin
 function shortReason(report: Report, s: ReqSummary): string {
   const id = s.req.id;
   if (s.overall === '미확인') {
-    if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return '근거 없음';
-    return report.testsStale ? '검사 오래됨' : '검사 없음';
+    if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return L('근거 없음', 'no evidence');
+    return report.testsStale ? L('검사 오래됨', 'tests out of date') : L('검사 없음', 'no test');
   }
-  if (s.overall === '실패') return '검사 실패';
+  if (s.overall === '실패') return L('검사 실패', 'a test fails');
   return '';
 }
 
@@ -175,7 +191,7 @@ function alignLabels(labels: string[]): string[] {
  * 시도 횟수별 동작 시점을 글자로 그린 줄들. [n] 이 동작하는 시도다.
  * 조건 값에서 계산한 것이라 「눈으로는 놓치는 한 글자 차이」를 그대로 보여 준다. 계산할 수 없으면 빈 배열.
  */
-export function attemptLines(report: Report, reqId: string, lang: 'ko' | 'en' = 'ko'): string[] {
+export function attemptLines(report: Report, reqId: string, lang: 'ko' | 'en' = getLang()): string[] {
   const rows = report.sets.map((set) => ({ set, b: set.perReq[reqId]?.evidence.boundary })).filter((x) => x.b && x.b.attempts !== null);
   if (!rows.length) return [];
   const req = rows[0].b!.required;
@@ -198,7 +214,7 @@ export function attemptLines(report: Report, reqId: string, lang: 'ko' | 'en' = 
 }
 
 /** 가장 앞에 내세울 한 줄: 요구사항 몇 개 중 몇 개가 근거와 검사로 확인됐는가 */
-export function verifiedLine(report: Report, lang: 'ko' | 'en' = 'ko'): string {
+export function verifiedLine(report: Report, lang: 'ko' | 'en' = getLang()): string {
   const n = report.summaries.length;
   const v = report.summaries.filter((s) => s.overall === '확인됨').length;
   if (lang === 'en') {
@@ -215,26 +231,35 @@ export function verifiedLine(report: Report, lang: 'ko' | 'en' = 'ko'): string {
  */
 export const passButOff = (rr: ReqResult): boolean => rr.testStatus === '통과' && rr.evidence.boundary?.ok === false;
 /** 검사 결과를 짧게. 위 경우는 「검사는 통과」라고 써서 어긋남이 드러나게 한다. */
-const testWord = (rr: ReqResult): string => (passButOff(rr) ? '검사는 통과' : `검사 ${rr.testStatus}`);
+const testWord = (rr: ReqResult): string => (passButOff(rr) ? L('검사는 통과', 'but the test passes') : testPhrase(rr.testStatus));
 /** 요구사항 하나에서 위 경우에 해당하는 결과들 */
 export function passButOffSets(report: Report, reqId: string): ResultSet[] {
   return report.sets.filter((x) => x.perReq[reqId] && passButOff(x.perReq[reqId]));
 }
 export const PASS_BUT_OFF_NOTE = '검사는 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다릅니다. 검사가 요구사항과 같은 횟수를 확인하는지 검사 코드를 보세요.';
+export const passButOffNote = (): string =>
+  L(PASS_BUT_OFF_NOTE, 'The test passes, but the attempt computed from the condition differs from the requirement. Check in the test code that it exercises the same count as the requirement.');
 
 /** 샘플을 돌린 직후 보여 줄 말: AI 의 「완료」와 확인된 사실의 차이 */
 export function demoHeadline(report: Report): string {
   const n = report.summaries.length;
   const v = report.summaries.filter((s) => s.overall === '확인됨').length;
   const allGreen = report.sets.every((s) => s.tests.length > 0 && s.tests.every((t) => t.status !== 'fail'));
-  if (allGreen) return `AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했고, 테스트도 전부 통과했습니다. 그런데 근거와 검사로 확인된 것은 ${n}개 중 ${v}개입니다.`;
-  return `AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다. 근거와 검사로 확인된 것은 ${n}개 중 ${v}개입니다.`;
+  if (allGreen)
+    return L(
+      `AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했고, 테스트도 전부 통과했습니다. 그런데 근거와 검사로 확인된 것은 ${n}개 중 ${v}개입니다.`,
+      `The AI said "all requirements implemented, done" for both results, and every test passes. Yet only ${v} of ${n} requirements are verified by evidence and tests.`,
+    );
+  return L(
+    `AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다. 근거와 검사로 확인된 것은 ${n}개 중 ${v}개입니다.`,
+    `The AI said "all requirements implemented, done" for both results. ${v} of ${n} requirements are verified by evidence and tests.`,
+  );
 }
 
 function boundaryText(set: ResultSet, id: string): string {
   const b = set.perReq[id].evidence.boundary;
   if (!b || b.attempts === null) return '';
-  return `${b.attempts}번째 시도에 동작${b.ok === false ? ` (요구사항 ${b.required}회)` : ''}`;
+  return L(`${b.attempts}번째 시도에 동작${b.ok === false ? ` (요구사항 ${b.required}회)` : ''}`, `acts on attempt ${b.attempts}${b.ok === false ? ` (requirement: ${b.required})` : ''}`);
 }
 
 export function summaryLine(report: Report, s: ReqSummary): string {
@@ -243,18 +268,18 @@ export function summaryLine(report: Report, s: ReqSummary): string {
     const bad = report.sets.filter((x) => x.perReq[id].evidence.boundary?.ok === false);
     if (bad.length) {
       const line = bad.map((x) => (report.sets.length > 1 ? `${x.label}: ` : '') + boundaryText(x, id)).join(' · ');
-      return bad.every((x) => passButOff(x.perReq[id])) ? `${line} — 검사는 통과` : line;
+      return bad.every((x) => passButOff(x.perReq[id])) ? `${line} — ${L('검사는 통과', 'but the test passes')}` : line;
     }
-    if (s.relation.kind === '불일치') return `두 결과의 조건이 다름 (${s.relation.detail})`;
-    return '결과 사이에 검사 결과가 다름';
+    if (s.relation.kind === '불일치') return L(`두 결과의 조건이 다름 (${s.relation.detail})`, `the two results use different conditions (${s.relation.detail})`);
+    return L('결과 사이에 검사 결과가 다름', 'the test results differ between the results');
   }
-  if (s.overall === '실패') return '연결된 검사가 실패';
+  if (s.overall === '실패') return L('연결된 검사가 실패', 'a linked test fails');
   if (s.overall === '미확인') {
-    if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return '구현 근거를 찾지 못함';
-    if (report.testsStale) return '테스트 결과가 코드보다 오래되어 쓰지 않음 — 테스트를 다시 실행해야 함';
-    return '연결된 검사가 없어 동작을 확인하지 못함';
+    if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return L('구현 근거를 찾지 못함', 'no implementation evidence found');
+    if (report.testsStale) return L('테스트 결과가 코드보다 오래되어 쓰지 않음 — 테스트를 다시 실행해야 함', 'test results are older than the code and were not used — run the tests again');
+    return L('연결된 검사가 없어 동작을 확인하지 못함', 'no linked test, so the behavior is not confirmed');
   }
-  return '근거를 찾았고 검사가 통과';
+  return L('근거를 찾았고 검사가 통과', 'evidence found and the tests pass');
 }
 
 export function treeModel(report: Report): ReqRow[] {
@@ -269,16 +294,16 @@ export function treeModel(report: Report): ReqRow[] {
       const u = rr.evidence.unit;
       const bt = boundaryText(set, s.req.id);
       const b = rr.evidence.boundary;
-      const when = b && b.attempts !== null ? `${b.attempts}번째 동작` : '';
+      const when = b && b.attempts !== null ? L(`${b.attempts}번째 동작`, `attempt ${b.attempts}`) : '';
       const who = `${set.label} (${set.ref})`;
       return {
         setKey: set.key,
         // 결과가 하나뿐이면 「A」를 붙이지 않는다 (브랜치 하나만 확인할 때)
-        label: (report.sets.length > 1 ? `${set.key}  ` : '') + (u ? `${u.file.split('/').pop()}:${u.startLine}` : '근거 없음'),
+        label: (report.sets.length > 1 ? `${set.key}  ` : '') + (u ? `${u.file.split('/').pop()}:${u.startLine}` : L('근거 없음', 'no evidence')),
         file: u?.file,
         line: u?.startLine,
         detail: [when, testWord(rr)].filter(Boolean).join(' · '),
-        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${PASS_BUT_OFF_NOTE}` : ''}` : `${who} · 구현 근거를 찾지 못함 · 검사 ${rr.testStatus}`,
+        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote()}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhrase(rr.testStatus)}`,
       };
     }),
   }));
@@ -313,9 +338,9 @@ export function allLenses(report: Report): Lens[] {
       const bt = boundaryText(set, s.req.id);
       const notes = [bt, testWord(rr)].filter(Boolean);
       const other = report.sets.find((x) => x.key !== set.key);
-      if (other && s.relation.kind === '불일치') notes.push(`${other.key}와 조건 다름`);
+      if (other && s.relation.kind === '불일치') notes.push(L(`${other.key}와 조건 다름`, `condition differs from ${other.key}`));
       const bad = rr.testStatus === '실패' || rr.evidence.boundary?.ok === false;
-      const long = [`VerifyLens ${s.req.id} · ${s.overall}`, bt, testWord(rr), other && s.relation.kind === '불일치' ? 'A·B 조건 다름' : ''].filter(Boolean);
+      const long = [`VerifyLens ${s.req.id} · ${wOverall(s.overall)}`, bt, testWord(rr), other && s.relation.kind === '불일치' ? L('A·B 조건 다름', 'A and B use different conditions') : ''].filter(Boolean);
       out.push({
         setKey: set.key,
         file: u.file,
@@ -325,7 +350,7 @@ export function allLenses(report: Report): Lens[] {
         reqText: s.req.text,
         overall: s.overall,
         severity: bad ? 'warn' : s.overall === '확인됨' ? 'ok' : 'info',
-        head: `${s.req.id} · ${s.overall}`,
+        head: `${s.req.id} · ${wOverall(s.overall)}`,
         note: notes.join(' · '),
         title: long.join(' · '),
       });
@@ -347,36 +372,37 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
   const s = report.summaries.find((x) => x.req.id === reqId);
   if (!s) return null;
   const two = report.sets.length > 1;
-  const out: string[] = [`**VerifyLens · ${s.req.id} · ${s.overall}** — ${s.req.text}`, '', summaryLine(report, s)];
+  const out: string[] = [`**VerifyLens · ${s.req.id} · ${wOverall(s.overall)}** — ${s.req.text}`, '', summaryLine(report, s)];
   // 검사는 통과했는데 계산과 다른 경우의 설명은 표보다 위에 둔다 (hover 가 길면 아래쪽이 잘려 보이지 않는다).
   const off = passButOffSets(report, reqId);
-  if (off.length) out.push('', `⚠ ${two ? `${off.map((x) => x.label).join(' · ')}: ` : ''}${PASS_BUT_OFF_NOTE}`);
+  if (off.length) out.push('', `⚠ ${two ? `${off.map((x) => x.label).join(' · ')}: ` : ''}${passButOffNote()}`);
   const strip = attemptLines(report, reqId);
   if (strip.length) out.push('', '```', ...strip, '```');
-  out.push('', two ? '| 결과 | 근거 | 동작 시점 | 검사 |' : '| 근거 | 동작 시점 | 검사 |', two ? '|---|---|---|---|' : '|---|---|---|');
+  const cols = L('| 근거 | 동작 시점 | 검사 |', '| Evidence | Acts on | Tests |');
+  out.push('', two ? `| ${L('결과', 'Result')} ${cols}` : cols, two ? '|---|---|---|---|' : '|---|---|---|');
   const failed: string[] = [];
   for (const set of report.sets) {
     const rr = set.perReq[reqId];
     const u = rr.evidence.unit;
     const b = rr.evidence.boundary;
-    const where = u ? `${mdCode(`${u.file.split('/').pop()}:${u.startLine}`)}${u.cond?.expr ? ' ' + mdCode(u.cond.expr) : u.kind === 'function' ? ' 함수 전체' : ''}` : '찾지 못함';
-    const when = b && b.attempts !== null ? `${b.attempts}번째${b.ok === false ? ` ⚠ (요구 ${b.required}회)` : ''}` : '–';
-    out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${rr.testStatus} |`);
+    const where = u ? `${mdCode(`${u.file.split('/').pop()}:${u.startLine}`)}${u.cond?.expr ? ' ' + mdCode(u.cond.expr) : u.kind === 'function' ? L(' 함수 전체', ' whole function') : ''}` : L('찾지 못함', 'not found');
+    const when = b && b.attempts !== null ? L(`${b.attempts}번째${b.ok === false ? ` ⚠ (요구 ${b.required}회)` : ''}`, `attempt ${b.attempts}${b.ok === false ? ` ⚠ (required: ${b.required})` : ''}`) : '–';
+    out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${wTest(rr.testStatus)} |`);
     for (const t of rr.tests) {
       if (t.status !== 'fail') continue;
       const why = t.message.split('\n').map((x) => x.trim()).filter(Boolean).join(' ').slice(0, 140);
       failed.push(`- ${two ? `${set.key} · ` : ''}${mdCode(t.name)}${why ? ` — ${why.replace(/\|/g, '\\|')}` : ''}`);
     }
   }
-  if (failed.length) out.push('', '실패한 검사', ...failed);
+  if (failed.length) out.push('', L('실패한 검사', 'Failed tests'), ...failed);
   if (links) {
-    const acts = [cmdLink('근거 보기', 'verifylens.focusRequirement', [reqId])];
-    if (diffTarget(report, reqId)) acts.push(cmdLink(two ? 'A ↔ B 비교' : '기준과 비교', 'verifylens.openDiff', [reqId]));
-    acts.push(cmdLink('판단 기록', 'verifylens.recordJudgment', [reqId]));
+    const acts = [cmdLink(L('근거 보기', 'Show evidence'), 'verifylens.focusRequirement', [reqId])];
+    if (diffTarget(report, reqId)) acts.push(cmdLink(two ? L('A ↔ B 비교', 'Compare A ↔ B') : L('기준과 비교', 'Compare with base'), 'verifylens.openDiff', [reqId]));
+    acts.push(cmdLink(L('판단 기록', 'Record decision'), 'verifylens.recordJudgment', [reqId]));
     out.push('', acts.join(' · '));
   }
-  out.push('', '_출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음_');
-  if (s.req.auto) out.push('', '_키워드를 적지 않아 용어집으로 코드와 이었습니다. 근거 줄이 맞는지 확인하세요._');
+  out.push('', L('_출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음_', '_Source: the condition comes from code analysis · the attempt is computed · tests come from the executed report (JUnit) — no AI inference_'));
+  if (s.req.auto) out.push('', L('_키워드를 적지 않아 용어집으로 코드와 이었습니다. 근거 줄이 맞는지 확인하세요._', '_No keywords were given, so this requirement was linked to code by its own words. Check that the evidence line is the right one._'));
   return out.join('\n');
 }
 
@@ -411,7 +437,7 @@ export function attentionCount(report: Report): number {
 
 export function statusText(report: Report): string {
   const c = counts(report);
-  return `확인됨 ${c.확인됨} · 다름 ${c.다름} · 실패 ${c.실패} · 미확인 ${c.미확인}`;
+  return (['확인됨', '다름', '실패', '미확인'] as const).map((k) => `${wOverall(k)} ${c[k]}`).join(' · ');
 }
 
 /** 상태 표시줄용: 0 이 아닌 항목만 아이콘과 숫자로 */
@@ -424,8 +450,8 @@ export function statusIcons(report: Report): string {
 /** 목록 위 한 줄: 무엇을 무엇과 비교했는지 */
 export function contextLine(r: Run): string {
   const [a, b] = r.report.sets;
-  if (r.kind === 'demo') return `샘플 · 결과 A ↔ 결과 B (기준 ${r.report.base})`;
-  return b ? `${a.ref} ↔ ${b.ref} (기준 ${r.report.base})` : `${a.ref}${a.wip ? ' + 커밋 전 변경' : ''} ← ${r.report.base}`;
+  if (r.kind === 'demo') return L(`샘플 · 결과 A ↔ 결과 B (기준 ${r.report.base})`, `Sample · Result A ↔ Result B (base ${r.report.base})`);
+  return b ? L(`${a.ref} ↔ ${b.ref} (기준 ${r.report.base})`, `${a.ref} ↔ ${b.ref} (base ${r.report.base})`) : `${a.ref}${a.wip ? L(' + 커밋 전 변경', ' + uncommitted changes') : ''} ← ${r.report.base}`;
 }
 
 /** 판단이 어느 코드에 대한 것인지 구분하는 값. 코드가 바뀌면(커밋) 이전 판단은 쓰지 않는다. */
@@ -504,7 +530,7 @@ export function detectTestPlan(repo: string, override = '', reportSetting = '', 
   const rel = (def: string) => reportSetting.trim() || def;
   if (override.trim()) {
     const r = rel('.verifylens/test-report.xml');
-    return { framework: '직접 지정', command: override.trim().split('${report}').join(r), report: join(repo, r) };
+    return { framework: L('직접 지정', 'custom command'), command: override.trim().split('${report}').join(r), report: join(repo, r) };
   }
   let pkg: { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } = {};
   try {
@@ -560,7 +586,7 @@ code,.cl,.loc,.fnn,.mx th small,.ph .sub,.tl small{font-family:var(--vscode-edit
 svg.chain{width:100%;min-width:900px;height:auto}.card:has(>svg.chain){overflow-x:auto}
 .det{scroll-margin-top:56px}
 .pane .cl,.pane .loc{cursor:pointer}.pane .cl:hover{outline:1px solid var(--vscode-focusBorder,#4285E8);outline-offset:-1px}
-.pane .loc::after{content:'↗ 에디터에서 열기';margin-left:10px;color:var(--vscode-textLink-foreground,#8DB5F4);font-family:var(--vscode-font-family,inherit)}.pane .loc:hover{text-decoration:underline}
+.pane .loc::after{content:'${L('↗ 에디터에서 열기', '↗ Open in editor')}';margin-left:10px;color:var(--vscode-textLink-foreground,#8DB5F4);font-family:var(--vscode-font-family,inherit)}.pane .loc:hover{text-decoration:underline}
 .vl-acts{margin-left:auto;display:flex;gap:8px}
 .vl-acts button{background:var(--vscode-button-background,#1F57B5);color:var(--vscode-button-foreground,#fff);border:1px solid var(--vscode-button-border,transparent);border-radius:4px;padding:4px 12px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
 .vl-acts button:hover{background:var(--vscode-button-hoverBackground,#2B6AD0)}
@@ -589,12 +615,23 @@ ${D} .tk{border-color:var(--vscode-sideBar-background,#0C1628)}
 </style>`;
   const sets = JSON.stringify(report.sets.map((s) => s.key));
   const cnt = counts(report);
-  const need = [cnt.다름 ? `다름 ${cnt.다름}` : '', cnt.실패 ? `실패 ${cnt.실패}` : '', cnt.미확인 ? `미확인 ${cnt.미확인}` : ''].filter(Boolean).join(' · ');
+  const need = (['다름', '실패', '미확인'] as const).map((k) => (cnt[k] ? `${wOverall(k)} ${cnt[k]}` : '')).filter(Boolean).join(' · ');
   const hero = {
     all: attentionCount(report) === 0,
     line: verifiedLine(report),
     need,
-    sub: `${opts.demo ? 'AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다. ' : ''}모든 표시는 코드 줄과 실행된 검사 기록으로 이어집니다. AI 의견은 들어 있지 않고, 확인하지 못한 것은 「미확인」으로 남깁니다.`,
+    sub: L(
+      `${opts.demo ? 'AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다. ' : ''}모든 표시는 코드 줄과 실행된 검사 기록으로 이어집니다. AI 의견은 들어 있지 않고, 확인하지 못한 것은 「미확인」으로 남깁니다.`,
+      `${opts.demo ? 'The AI said "all requirements implemented, done" for both results. ' : ''}Every mark links to a code line or an executed test. There is no AI opinion in here, and anything that could not be checked stays "Not verified".`,
+    ),
+  };
+  // 아래 글은 웹뷰의 스크립트 안 작은따옴표 문자열로 들어간다. 따옴표를 쓰지 않는다.
+  const B = {
+    copyTip: L('PR 설명이나 댓글에 붙여 넣을 검증 요약을 복사합니다', 'Copies a verification summary to paste into the PR description or a comment'),
+    copy: L('PR 요약 복사', 'Copy PR summary'),
+    badge: L('AI 추정 0건 · 이 PC에서만 분석', 'No AI inference · analyzed on this machine only'),
+    diffAB: L('A ↔ B 나란히 비교', 'Compare A ↔ B side by side'),
+    diffBase: L('기준과 나란히 비교', 'Compare with base side by side'),
   };
   const init = JSON.stringify({ judgments: opts.judgments ?? {}, focus: opts.focus ?? null, hero }).replace(/</g, '\\u003c');
   const bridge = `<script nonce="${nonce}">(function(){var api=acquireVsCodeApi(),SETS=${sets},INIT=${init},seeding=false;
@@ -607,16 +644,16 @@ var loc=pane.querySelector('.loc');if(!loc)return;var m=/^(.*):(\\d+)/.exec(loc.
 var line=+m[2],ln=hit.classList.contains('cl')?hit.querySelector('.ln'):null;if(ln&&/^\\d+$/.test(ln.textContent))line=+ln.textContent;
 api.postMessage({type:'open',set:SETS[list.indexOf(pane)],file:m[1],line:line});});
 (function(){var top=document.querySelector('.top'),vt=top&&top.querySelector('.vt');if(!top)return;
-var w=document.createElement('span');w.className='vl-acts';w.style.marginLeft='0';w.innerHTML='<button class="sec" data-vl="copy" title="PR 설명이나 댓글에 붙여 넣을 검증 요약을 복사합니다">PR 요약 복사</button>';
+var w=document.createElement('span');w.className='vl-acts';w.style.marginLeft='0';w.innerHTML='<button class="sec" data-vl="copy" title="${B.copyTip}">${B.copy}</button>';
 top.insertBefore(w,vt||null);
-var bg=top.querySelector('.badge.g');if(bg)bg.textContent='AI 추정 0건 · 이 PC에서만 분석';
+var bg=top.querySelector('.badge.g');if(bg)bg.textContent='${B.badge}';
 var wrap=document.querySelector('.wrap');if(wrap&&INIT.hero){var h=document.createElement('div');h.className='vl-hero'+(INIT.hero.all?' all':'');
 var b=document.createElement('b');b.textContent=INIT.hero.line;if(INIT.hero.need){var em=document.createElement('em');em.textContent='  ·  '+INIT.hero.need;b.appendChild(em);}
 var sp=document.createElement('span');sp.textContent=INIT.hero.sub;h.appendChild(b);h.appendChild(sp);wrap.insertBefore(h,wrap.firstChild);}
 })();
 all('.det').forEach(function(det){var id=det.getAttribute('data-req'),dh=det.querySelector('.dh');if(!dh)return;
 var w=document.createElement('span');w.className='vl-acts';
-if(det.querySelector('.pane .loc'))w.innerHTML='<button data-vl="diff" data-id="'+id+'">'+(SETS.length>1?'A ↔ B 나란히 비교':'기준과 나란히 비교')+'</button>';
+if(det.querySelector('.pane .loc'))w.innerHTML='<button data-vl="diff" data-id="'+id+'">'+(SETS.length>1?'${B.diffAB}':'${B.diffBase}')+'</button>';
 dh.appendChild(w);});
 function apply(state){seeding=true;all('.judge').forEach(function(box){var r=state[box.getAttribute('data-req')]||{},sel=box.querySelector('select'),note=box.querySelector('textarea');
 sel.value=r.judge||'미검토';note.value=r.note||'';sel.dispatchEvent(new Event('change'));});seeding=false;}
@@ -700,11 +737,11 @@ export function pendingDecisions(report: Report, judgments: Record<string, Judgm
  * 리뷰어가 같은 확인을 다시 하지 않도록: 요구사항마다 상태 · 근거 줄 · 동작 시점 · 검사 · 작성자의 판단을 한 표에 담는다.
  */
 export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts: { lang?: SummaryLang; version?: string } = {}): string {
-  const t = TXT[opts.lang ?? 'ko'];
+  const lang = opts.lang ?? getLang();
+  const t = TXT[lang];
   const { report } = r;
   const two = report.sets.length > 1;
   const c = counts(report);
-  const lang = opts.lang ?? 'ko';
   const out: string[] = [`## ${t.title}`, '', `**${verifiedLine(report, lang)}**`, '', `_${t.notOpinion}_`, ''];
   const strips: string[] = [];
   const ref = (s: ResultSet) => `\`${s.ref}\` (\`${s.sha}\`${s.wip ? `, ${t.wip}` : ''})`;
@@ -773,13 +810,13 @@ export function ghRunner(cwd: string, gh = 'gh'): GhRun {
 /** gh 가 실패한 이유를 사람이 바로 고칠 수 있는 말로 바꾼다. */
 export function ghError(e: unknown): string {
   const err = e as { code?: string; stderr?: string | Buffer; message?: string };
-  if (err?.code === 'ENOENT') return 'GitHub CLI(gh)를 찾지 못했습니다. gh를 설치하거나 「복사한 글에서 가져오기」를 쓰세요.';
+  if (err?.code === 'ENOENT') return L('GitHub CLI(gh)를 찾지 못했습니다. gh를 설치하거나 「복사한 글에서 가져오기」를 쓰세요.', 'GitHub CLI (gh) was not found. Install gh, or use "Copied text (clipboard)" instead.');
   const text = String(err?.stderr ?? err?.message ?? e);
-  if (/no pull requests found/i.test(text)) return '이 브랜치로 올린 PR을 찾지 못했습니다. PR을 먼저 올리거나 이슈 번호로 가져오세요.';
-  if (/gh auth login|not logged in|authentication/i.test(text)) return 'gh에 로그인되어 있지 않습니다. 터미널에서 gh auth login 을 실행한 뒤 다시 해 보세요.';
-  if (/could not resolve|not found|404/i.test(text)) return '그 이슈나 PR을 찾지 못했습니다. 번호나 주소, 그리고 gh로 로그인한 계정의 권한을 확인하세요.';
-  if (/ETIMEDOUT|timed out/i.test(text)) return 'GitHub 응답이 늦어 중단했습니다. 잠시 뒤 다시 해 보세요.';
-  return text.split('\n').map((x) => x.trim()).filter(Boolean)[0] ?? 'gh 실행에 실패했습니다.';
+  if (/no pull requests found/i.test(text)) return L('이 브랜치로 올린 PR을 찾지 못했습니다. PR을 먼저 올리거나 이슈 번호로 가져오세요.', 'No pull request was found for this branch. Open the PR first, or import from an issue number.');
+  if (/gh auth login|not logged in|authentication/i.test(text)) return L('gh에 로그인되어 있지 않습니다. 터미널에서 gh auth login 을 실행한 뒤 다시 해 보세요.', 'gh is not logged in. Run "gh auth login" in a terminal and try again.');
+  if (/could not resolve|not found|404/i.test(text)) return L('그 이슈나 PR을 찾지 못했습니다. 번호나 주소, 그리고 gh로 로그인한 계정의 권한을 확인하세요.', 'That issue or PR was not found. Check the number or URL, and the access of the account gh is logged in with.');
+  if (/ETIMEDOUT|timed out/i.test(text)) return L('GitHub 응답이 늦어 중단했습니다. 잠시 뒤 다시 해 보세요.', 'GitHub took too long to answer. Try again in a moment.');
+  return text.split('\n').map((x) => x.trim()).filter(Boolean)[0] ?? L('gh 실행에 실패했습니다.', 'gh failed to run.');
 }
 
 export type SourceText = { label: string; url: string; title: string; body: string };
@@ -803,7 +840,7 @@ export function fetchPr(run: GhRun, ref?: string): SourceText[] {
 
 export function fetchIssue(run: GhRun, ref: string): SourceText[] {
   const it = JSON.parse(run(['issue', 'view', ref.trim().replace(/^#/, ''), '--json', 'number,title,body,url'])) as GhItem;
-  return [{ label: `이슈 #${it.number}`, url: it.url ?? '', title: it.title ?? '', body: it.body ?? '' }];
+  return [{ label: L(`이슈 #${it.number}`, `issue #${it.number}`), url: it.url ?? '', title: it.title ?? '', body: it.body ?? '' }];
 }
 
 /** 요구사항 파일에 들어 있는 요구사항 수 */
@@ -822,7 +859,7 @@ export function requirementsFrom(texts: SourceText[]): { requirements: string[];
       const title = t.title.replace(/^\s*(feat|fix|chore|refactor|docs|test|perf)(\([^)]*\))?!?:\s*/i, '').replace(/\s*\((?:fix(?:es)?|close[sd]?|resolve[sd]?)?\s*#\d+\)\s*$/i, '').trim();
       if (title.length < 6 || seen.has(title.toLowerCase())) continue;
       found = [title];
-      label = `${t.label} 제목`;
+      label = L(`${t.label} 제목`, `${t.label} title`);
     }
     found.forEach((x) => seen.add(x.toLowerCase()));
     requirements.push(...found);
@@ -842,6 +879,6 @@ export function mergeRequirementsFile(existing: string | null, cands: string[], 
   const fresh = cands.filter((c) => !have.has(c.toLowerCase()));
   if (!fresh.length) return { text: existing!, added: 0 };
   const start = Math.max(...old.map((r) => Number(r.id.slice(1)))) + 1;
-  const lines = [`# ↓ ${source}에서 추가`, ...fresh.map((c, i) => `- R${start + i}: ${c}`)];
+  const lines = [L(`# ↓ ${source}에서 추가`, `# ↓ added from ${source}`), ...fresh.map((c, i) => `- R${start + i}: ${c}`)];
   return { text: existing!.replace(/\n*$/, '\n') + lines.join('\n') + '\n', added: fresh.length };
 }

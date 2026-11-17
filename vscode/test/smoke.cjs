@@ -71,7 +71,7 @@ const vscode = {
     isTrusted: true,
     workspaceFolders: [],
     getConfiguration: () => ({ get: (k) => config[k] }),
-    onDidChangeConfiguration: () => disp,
+    onDidChangeConfiguration: (f) => { reg.onConfig = f; return disp; },
     onDidSaveTextDocument: (f) => { reg.saveListeners.push(f); return { dispose() { reg.saveListeners = reg.saveListeners.filter((x) => x !== f); } }; },
     createFileSystemWatcher: () => ({ onDidChange: () => disp, onDidCreate: () => disp, onDidDelete: () => disp, dispose() {} }),
     registerTextDocumentContentProvider: (scheme, p) => { reg.content[scheme] = p; return disp; },
@@ -82,7 +82,7 @@ const vscode = {
       return { uri, getText: () => text, lineCount: lines.length, lineAt: (i) => ({ range: { end: new Position(i, lines[i].length) } }) };
     },
   },
-  env: { clipboard: { writeText: async (t) => { log.clipboard.push(t); }, readText: async () => answers.clipboard || '' } },
+  env: { language: 'ko', clipboard: { writeText: async (t) => { log.clipboard.push(t); }, readText: async () => answers.clipboard || '' } },
   languages: {
     registerCodeLensProvider: (_s, p) => { reg.lens = p; return disp; },
     registerHoverProvider: (_s, p) => { reg.hover = p; return disp; },
@@ -307,6 +307,41 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   await reg.commands['verifylens.runDemo']();
   assert.deepEqual(log.errors, [], 'demo still works in restricted mode');
   assert.match(reg.status.text, /\$\(diff\) 1/);
+
+  // 7) 영어 화면: 설정을 en 으로 바꾸면 다시 분석해서 패널 · 줄 표시 · 리포트 · 알림이 영어로 나온다
+  config.language = 'en';
+  reg.onConfig({ affectsConfiguration: () => true });
+  for (let i = 0; i < 100 && !/^R2  Lock the account/.test(String(reg.tree.getTreeItem(reg.tree.getChildren()[1]).label)); i++) await sleep(100);
+  const enItems = reg.tree.getChildren().map((n) => reg.tree.getTreeItem(n));
+  assert.equal(enItems[1].label, 'R2  Lock the account after 5 consecutive failures');
+  assert.equal(enItems[1].description, 'Different → Fix', 'the decision recorded in Korean shows in English');
+  assert.match(enItems[1].tooltip.value, /Result B: acts on attempt 6 \(requirement: 5\) — but the test passes/);
+  assert.equal(enItems[2].description, 'Not verified · no test → Verify more');
+  const enKids = reg.tree.getChildren(reg.tree.getChildren()[1]).map((n) => reg.tree.getTreeItem(n));
+  assert.equal(enKids[1].description, 'attempt 6 · but the test passes');
+  const HANGUL = /[가-힣]/;
+  const seen = (html) => html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '').replace(/ value="[^"]*"/g, '');
+  assert.equal(HANGUL.test(seen(reg.panel.webview.html)), false, 'report has no Korean left');
+  assert.match(reg.panel.webview.html, /Verification status by requirement/);
+  assert.equal(HANGUL.test(reg.status.tooltip), false, 'status tooltip is English');
+  for (const list of reg.diags.map.values()) for (const d of list) assert.equal(HANGUL.test(d.message), false, `problem is English: ${d.message}`);
+  assert.ok([...reg.diags.map.values()].flat().some((d) => /R2 · Different — acts on attempt 6 \(requirement: 5\) · but the test passes/.test(d.message)));
+  delete config.summaryLanguage; // auto: 화면 글의 언어를 따른다
+  const enSummary = await reg.commands['verifylens.copySummary']({ dryRun: true });
+  assert.match(enSummary, /^## VerifyLens verification summary/);
+  // 사용자가 적은 메모(앞에서 한국어로 적었다)는 그대로 둔다. 그것만 빼고 본다.
+  assert.match(enSummary, /\*\*Fix\*\* — B 조건 고치기/);
+  assert.equal(HANGUL.test(enSummary.replace('B 조건 고치기', '')), false, `PR summary follows the UI language: ${enSummary.split(/\r?\n/).filter((l) => HANGUL.test(l)).join(' / ')}`);
+  vscode.workspace.isTrusted = false;
+  log.warnings.length = 0;
+  answers = { warning: undefined, quickPick: [] };
+  await reg.commands['verifylens.checkBranch']();
+  assert.match(log.warnings[0], /Restricted Mode/);
+  // 다시 한국어로
+  config.language = 'ko';
+  reg.onConfig({ affectsConfiguration: () => true });
+  for (let i = 0; i < 100 && !/^R2  연속 5회/.test(String(reg.tree.getTreeItem(reg.tree.getChildren()[1]).label)); i++) await sleep(100);
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[1]).description, '다름 → 수정');
   mod.deactivate();
   console.log('smoke OK —', reg.status.text);
 })().catch((e) => {

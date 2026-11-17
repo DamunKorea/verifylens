@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { L, isEn } from './i18n.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const SAMPLE = join(here, '..', 'samples', 'login-lockout');
@@ -64,8 +65,13 @@ export function buildSampleRepo(o: DemoOptions = {}): DemoEnv {
       cpSync(fallback, out);
       testsFromFallback = true;
     }
-    if (!existsSync(out)) throw new Error(`테스트 보고서를 만들지 못했습니다: ${out}`);
+    if (!existsSync(out)) throw new Error(L(`테스트 보고서를 만들지 못했습니다: ${out}`, `Could not create the test report: ${out}`));
     junit[v] = out;
   }
-  return { root, repo, junitA: junit.a, junitB: junit.b, reqFile: join(sample, 'requirements.md'), prFile: join(sample, 'pr.md'), testsFromFallback };
+  // 영어 화면이면 영어로 적은 같은 요구사항을 쓴다 (없으면 한국어 것).
+  const pick = (name: string) => {
+    const en = join(sample, name.replace(/\.md$/, '.en.md'));
+    return isEn() && existsSync(en) ? en : join(sample, name);
+  };
+  return { root, repo, junitA: junit.a, junitB: junit.b, reqFile: pick('requirements.md'), prFile: pick('pr.md'), testsFromFallback };
 }

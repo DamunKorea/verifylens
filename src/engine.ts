@@ -7,6 +7,7 @@ import { changedFiles, changedLines, mergeBase, shortSha, showFile, uncommittedF
 import { parseTestReport } from './tests.ts';
 import { tokenize } from './tokens.ts';
 import { normalizePhrases } from './glossary.ts';
+import { L, setLabel } from './i18n.ts';
 
 const CODE_EXT = /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
 const TEST_FILE = /(\.test\.|\.spec\.|__tests__\/|\/tests?\/)/;
@@ -48,7 +49,7 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
   }
   return {
     key,
-    label: `결과 ${key}`,
+    label: setLabel(key),
     ref,
     sha: shortSha(repo, opts.worktree ? 'HEAD' : ref),
     wip,
@@ -73,42 +74,44 @@ function countsOnRequirement(req: Requirement, u: Unit): boolean {
   return tokenize(c.left).some((t) => set.has(t));
 }
 
-function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[] } {
+function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[]; num: boolean } {
   const why: string[] = [];
+  let num = false;
   const set = new Set(req.tokens);
   const shared = [...new Set(u.tokens.filter((t) => set.has(t)))];
   // 자동 연결(키워드 없음)은 같은 뜻의 낱말을 한 개념으로 센다. 한 개념의 동의어가 여러 번 겹쳐도 한 번이다.
   const hits = req.auto ? req.concepts.filter((c) => c.some((t) => u.tokens.includes(t))).length : shared.length;
   let s = u.kind === 'function' ? Math.min(hits, 1.5) : hits;
-  if (shared.length) why.push(`겹치는 단어: ${shared.join(', ')}`);
+  if (shared.length) why.push(L(`겹치는 단어: ${shared.join(', ')}`, `shared words: ${shared.join(', ')}`));
   if (u.cond && u.cond.lit !== undefined && req.numbers.some((n) => Math.abs(n - u.cond!.lit!) <= 1)) {
     s += 2;
-    why.push(`숫자 ${u.cond.lit} (요구사항 ${req.numbers.join('·')})`);
+    num = true;
+    why.push(L(`숫자 ${u.cond.lit} (요구사항 ${req.numbers.join('·')})`, `number ${u.cond.lit} (requirement: ${req.numbers.join(', ')})`));
   } else if (countsOnRequirement(req, u)) {
     s += 2;
-    why.push(`숫자 조건 ${u.cond!.left} ↔ ${u.cond!.lit} (요구사항 ${req.numbers.join('·')})`);
+    num = true;
+    why.push(L(`숫자 조건 ${u.cond!.left} ↔ ${u.cond!.lit} (요구사항 ${req.numbers.join('·')})`, `numeric condition ${u.cond!.left} ↔ ${u.cond!.lit} (requirement: ${req.numbers.join(', ')})`));
   }
   if (req.guardCue && u.guard) {
     s += 1;
-    why.push('거부 문장 ↔ 조건 뒤 throw/return');
+    why.push(L('거부 문장 ↔ 조건 뒤 throw/return', 'rejection wording ↔ throw/return after the condition'));
   }
   if (u.changed) s += 0.5;
-  return { score: s, why };
+  return { score: s, why, num };
 }
 
 /** 점수가 같을 때: 함수보다 조건, 숫자가 맞는 조건, 더 좁은 범위(안쪽 조건)를 고른다. */
-function moreSpecific(u: Unit, why: string[], best: { u: Unit; why: string[] }): boolean {
+function moreSpecific(u: Unit, num: boolean, best: { u: Unit; num: boolean }): boolean {
   if (u.kind !== best.u.kind) return u.kind === 'condition';
-  const num = (w: string[]) => w.some((x) => x.startsWith('숫자 '));
-  if (num(why) !== num(best.why)) return num(why);
+  if (num !== best.num) return num;
   return u.endLine - u.startLine < best.u.endLine - best.u.startLine;
 }
 
 function findEvidence(req: Requirement, units: Unit[]): Evidence {
-  let best: { u: Unit; score: number; why: string[] } | null = null;
+  let best: { u: Unit; score: number; why: string[]; num: boolean } | null = null;
   for (const u of units) {
-    const { score, why } = scoreUnit(req, u);
-    if (!best || score > best.score || (score === best.score && moreSpecific(u, why, best))) best = { u, score, why };
+    const { score, why, num } = scoreUnit(req, u);
+    if (!best || score > best.score || (score === best.score && moreSpecific(u, num, best))) best = { u, score, why, num };
   }
   if (!best || best.score < 1) return { unit: null, score: best?.score ?? 0, status: '미발견', why: [] };
   const status = best.score >= 2 ? '발견' : '일부 발견';
@@ -174,20 +177,20 @@ function summarize(req: Requirement, sets: ResultSet[]): ReqSummary {
     const a = A.perReq[req.id].evidence;
     const b = B.perReq[req.id].evidence;
     if (!a.unit || !b.unit) {
-      relation = { kind: '비교 조건 다름', detail: '한쪽에서 구현 근거를 찾지 못했다.' };
+      relation = { kind: '비교 조건 다름', detail: L('한쪽에서 구현 근거를 찾지 못했다.', 'No implementation evidence was found on one side.') };
     } else if (a.unit.cond && b.unit.cond) {
       const sa = `${a.unit.cond.op ?? ''}${a.unit.cond.lit ?? a.unit.cond.expr}`;
       const sb = `${b.unit.cond.op ?? ''}${b.unit.cond.lit ?? b.unit.cond.expr}`;
-      relation = sa === sb ? { kind: '일치', detail: `둘 다 ${a.unit.cond.expr}` } : { kind: '불일치', detail: `A ${a.unit.cond.expr} · B ${b.unit.cond.expr}` };
+      relation = sa === sb ? { kind: '일치', detail: L(`둘 다 ${a.unit.cond.expr}`, `both ${a.unit.cond.expr}`) } : { kind: '불일치', detail: `A ${a.unit.cond.expr} · B ${b.unit.cond.expr}` };
     } else {
-      relation = { kind: '일치', detail: '둘 다 같은 종류의 구현 근거를 찾았다.' };
+      relation = { kind: '일치', detail: L('둘 다 같은 종류의 구현 근거를 찾았다.', 'Both sides have the same kind of implementation evidence.') };
     }
   }
   const evs = sets.map((s) => s.perReq[req.id]);
   for (const [i, s] of sets.entries()) {
     const b = evs[i].evidence.boundary;
-    if (b && b.ok === false) notes.push(`${s.label}: 요구사항 ${b.required}회, 코드는 ${b.attempts}회째에 동작`);
-    if (b && b.ok === null) notes.push(`${s.label}: 카운터 증가 순서를 찾지 못해 경계값을 확정할 수 없음`);
+    if (b && b.ok === false) notes.push(L(`${s.label}: 요구사항 ${b.required}회, 코드는 ${b.attempts}회째에 동작`, `${s.label}: the requirement says ${b.required}, the code acts on attempt ${b.attempts}`));
+    if (b && b.ok === null) notes.push(L(`${s.label}: 카운터 증가 순서를 찾지 못해 경계값을 확정할 수 없음`, `${s.label}: could not tell whether the counter is incremented before the comparison, so the boundary is undetermined`));
   }
   const anyFail = evs.some((e) => e.testStatus === '실패');
   const allPass = evs.every((e) => e.testStatus === '통과');

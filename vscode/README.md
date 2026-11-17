@@ -8,8 +8,7 @@ The AI says "Done, all requirements implemented", and **every test passes.** The
 Requirement    Lock the account after 5 consecutive failures
 AI's code      if (user.failures > 5) { user.locked = true }
 AI's test      'locks the account after 5 consecutive failures'  → passes ✓
-VerifyLens     ← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과
-               (R2 · different · acts on the 6th attempt, requirement says 5 · the test passes)
+VerifyLens     ← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes
 ```
 
 The AI wrote the code and the test with the same misunderstanding. The test is named "after 5 failures" but actually checks after six failed attempts. So **every test passes, and the requirement is still not met.** Running the tests does not show this; computing when the condition fires does.
@@ -22,7 +21,7 @@ VerifyLens checks each requirement against your git diff and the tests that actu
 
 ![VerifyLens in VS Code](https://raw.githubusercontent.com/DamunKorea/verifylens/main/docs/demo.gif)
 
-> v0 preview: analyzes **TypeScript and JavaScript**. The report text is currently **Korean**.
+> v0 preview: analyzes **TypeScript and JavaScript**. The UI is in **English or Korean**, following VS Code's display language (`verifylens.language` overrides it).
 
 **Editors:** checked on VS Code 1.146 and on **Cursor 3.29** (the same `.vsix`; the integration tests pass there too). In Cursor, use the editor window: extensions are not loaded in Cursor's agent window. Other VS Code–based editors (Windsurf, VSCodium) should accept the same file but have not been checked.
 
@@ -34,13 +33,13 @@ VerifyLens checks each requirement against your git diff and the tests that actu
 ## Try it in 10 seconds
 
 1. Click the **VerifyLens** icon in the Activity Bar.
-2. Click **샘플로 해 보기** (Run demo).
+2. Click **Try the sample**.
 
 The demo builds a small sample repo with two AI results for "lock the account after 5 failed logins". Result A uses `failures >= 5`; result B uses `failures > 5` and comes with a test the AI wrote alongside it. Both claim to be done, and all tests pass in both. VerifyLens shows:
 
 - **Requirements panel:** R1 verified, R2 **different**, R3 not verified, with a badge for how many need attention.
-- **In the editor:** the deciding line gets a status icon and a note at its end, for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과` (different: acts on the 6th attempt, the requirement says 5, and the test passes). Hover it for the evidence table and the warning that a passing test disagrees with the computed behavior.
-- **Side by side:** click `A ↔ B 비교` above the line (or the compare icon in the list) to open VS Code's own diff editor at the line where the two results diverge.
+- **In the editor:** the deciding line gets a status icon and a note at its end, for example `← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes`. Hover it for the evidence table and the warning that a passing test disagrees with the computed behavior.
+- **Side by side:** click `Compare A ↔ B` above the line (or the compare icon in the list) to open VS Code's own diff editor at the line where the two results diverge.
 - **Problems panel:** lines that need attention are listed there, so `F8` walks through them.
 - **Report panel:** the full evidence chain. Click any code line in it to jump to that line in the editor.
 - **Your decision:** record use / fix / verify more / hold from the list, the lens or the report. It shows next to the requirement.
@@ -67,6 +66,7 @@ If your CI already writes a report, point `verifylens.junitPath` at it (JUnit XM
 
 | Setting | Default | |
 |---|---|---|
+| `verifylens.language` | `auto` | Language of the panel, editor notes, report and messages: `auto` (follow VS Code), `ko` or `en` |
 | `verifylens.baseBranch` | (ask) | Branch to compare against |
 | `verifylens.requirementsFile` | `.verifylens/requirements.md` | Requirements file, relative to the repo root |
 | `verifylens.junitPath` | `.verifylens/test-report.xml` | Test report to read and write (JUnit XML or Jest/Vitest JSON) |
@@ -76,7 +76,7 @@ If your CI already writes a report, point `verifylens.junitPath` at it (JUnit XM
 | `verifylens.autoRerun` | `true` | Re-run on commit, branch switch, or when the requirements file or JUnit report changes |
 | `verifylens.inlineNotes` | `true` | Show the note at the end of evidence lines |
 | `verifylens.problems` | `true` | List lines that need attention in the Problems panel |
-| `verifylens.summaryLanguage` | `ko` | Language of the copied PR summary (`ko` or `en`) |
+| `verifylens.summaryLanguage` | `auto` | Language of the copied PR summary: `auto` (same as the panel), `ko` or `en` |
 | `verifylens.ghPath` | `gh` | GitHub CLI used by *Import requirements* |
 
 ## Limitations
@@ -94,6 +94,7 @@ Source, issues and feedback: https://github.com/DamunKorea/verifylens
 
 AI가 「완료」라고 한 변경이 요구사항마다 **확인됨 · 다름 · 미확인**인지 에디터 옆에서 보여 줍니다. LLM과 네트워크를 쓰지 않고, 코드는 PC 밖으로 나가지 않습니다.
 
+- **화면 언어:** VS Code 화면 언어를 따릅니다(한국어면 한국어, 아니면 영어). 영어 VS Code에서 한국어로 보려면 설정 `verifylens.language`를 `ko`로 바꾸세요.
 - **처음 써 보기:** 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요.
 - **내 변경 확인:** **이슈 · PR에서 가져오기**(GitHub PR · 이슈 · 복사한 글)나 **요구사항 파일 만들기**로 요구사항을 채우고 **지금 브랜치 확인**을 누르세요. 커밋하지 않아도 됩니다. 그 뒤로는 저장할 때마다 스스로 다시 확인합니다.
 - **테스트 실행:** 목록 위 비커 아이콘을 누르면 Vitest · Jest · node:test 를 알아서 돌리고 결과를 반영합니다. 코드보다 오래된 테스트 결과는 쓰지 않습니다.

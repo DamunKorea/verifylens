@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+English UI.
+
+- **The whole UI is available in English.** The requirements panel, the note at the end of each evidence line, the hover, the Problems entries, the report, messages and the PR summary follow VS Code's display language: Korean when VS Code is in Korean, English otherwise. The line note now reads `← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes`.
+- **`verifylens.language`** (`auto` / `ko` / `en`) overrides it. If you use VS Code in English and want the Korean text back, set it to `ko`.
+- **The sample comes in English too.** "Try the sample" uses the same case with the requirements written in English.
+- `verifylens.summaryLanguage` now defaults to `auto` (same language as the panel). Decisions you recorded earlier are kept and shown in the current language.
+- The command line takes `--lang en` (`npm run demo:en`).
+- No change to what is detected or how.
+
 ## 0.5.2
 
 Lead with what running the tests cannot show.

@@ -1,5 +1,6 @@
 import type { FlowGraph, FlowNode } from './types.ts';
 import { ST, esc, wrapText } from './view.ts';
+import { L } from './i18n.ts';
 
 const COL_W = 214;
 const ROW_H = 64;
@@ -63,7 +64,7 @@ export function renderFlowSvg(g: FlowGraph, o: FlowOpts): string {
   const W = 12 + (maxCol + 1) * COL_W;
   const H = 10 + (maxRow + 1) * ROW_H + (g.truncated ? 20 : 0);
   const p: string[] = [];
-  p.push(`<svg class="flow" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(g.fn)} 흐름 지도"><defs><marker id="fa" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5C79A8"/></marker></defs>`);
+  p.push(`<svg class="flow" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(g.fn)} ${L('흐름 지도', 'flow map')}"><defs><marker id="fa" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5C79A8"/></marker></defs>`);
   for (const e of g.edges) {
     const a = byId.get(e.from);
     const b = byId.get(e.to);
@@ -113,16 +114,16 @@ export function renderFlowSvg(g: FlowGraph, o: FlowOpts): string {
     // 글자 폭 단위 1 = 한글 한 글자(약 11.5px). 상자 안쪽 폭에 맞춘다.
     const lines = wrapText(n.label, n.kind === 'decision' ? 14 : 15, 2, true);
     const ty = lines.length === 1 ? y + NODE_H / 2 + 4 : y + NODE_H / 2 - 3;
-    const tip = [...n.stmts, ...(only ? ['', `${o.onlyKey ?? ''}에만 있는 문장:`, ...extra!] : [])].join('\n') || n.label;
+    const tip = [...n.stmts, ...(only ? ['', L(`${o.onlyKey ?? ''}에만 있는 문장:`, `Only in ${o.onlyKey ?? ''}:`), ...extra!] : [])].join('\n') || n.label;
     p.push(`<text class="fl${isHot ? ' hot' : ''}"><title>${esc(tip)}</title>${lines.map((l, i) => `<tspan x="${x + (n.kind === 'decision' ? 16 : 11)}" y="${ty + i * 14}">${esc(l)}</tspan>`).join('')}</text>`);
-    p.push(`<text x="${x + NODE_W - 6}" y="${y - 3}" class="fn2" text-anchor="end">${n.line}행</text>`);
+    p.push(`<text x="${x + NODE_W - 6}" y="${y - 3}" class="fn2" text-anchor="end">${L(`${n.line}행`, `line ${n.line}`)}</text>`);
     if (only && o.onlyKey) {
-      const tag = extra!.length < n.stmts.length ? `+${extra!.length}줄 ${o.onlyKey}에만` : `${o.onlyKey}에만`;
+      const tag = extra!.length < n.stmts.length ? L(`+${extra!.length}줄 ${o.onlyKey}에만`, `+${extra!.length} only in ${o.onlyKey}`) : L(`${o.onlyKey}에만`, `only in ${o.onlyKey}`);
       p.push(`<text x="${x + 4}" y="${y - 3}" class="fo" fill="${o.idColor}">${esc(tag)}</text>`);
     }
     p.push('</g>');
   }
-  if (g.truncated) p.push(`<text x="12" y="${H - 5}" class="fe">… 함수가 길어 앞부분만 그렸습니다</text>`);
+  if (g.truncated) p.push(`<text x="12" y="${H - 5}" class="fe">${L('… 함수가 길어 앞부분만 그렸습니다', '… the function is long; only the first part is drawn')}</text>`);
   p.push('</svg>');
   return p.join('');
 }

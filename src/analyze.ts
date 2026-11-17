@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import type { CondInfo, DynCall, FileAnalysis, FlowEdge, FlowGraph, FlowNode, Unit } from './types.ts';
 import { clip, tokenize } from './tokens.ts';
+import { L } from './i18n.ts';
 
 type FnNode = ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression;
 
@@ -88,7 +89,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
 
   const summarize = (stmts: ts.Statement[]): string => {
     const first = clip(stmts[0].getText(sf).replace(/;$/, ''), 34);
-    return stmts.length > 1 ? `${first} 외 ${stmts.length - 1}` : first;
+    return stmts.length > 1 ? `${first} ${L('외', '+')} ${stmts.length - 1}` : first;
   };
 
   const buildFlow = (name: string, fn: FnNode & { body: ts.Block }): FlowGraph => {
@@ -135,9 +136,9 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
           link(cur, d, label);
           label = undefined;
           if (d < 0) break;
-          const res = walk(stmtsOf(s.thenStatement), col + 1, r, d, '예');
+          const res = walk(stmtsOf(s.thenStatement), col + 1, r, d, L('예', 'yes'));
           cur = d;
-          label = '아니오';
+          label = L('아니오', 'no');
           if (!res.terminal && res.last !== null) merges.push(res.last);
           r = Math.max(r + 1, res.nextRow);
         } else if (isTerminal(s)) {
@@ -200,7 +201,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
         id: `${file}#c${seq++}`,
         kind: 'condition',
         file,
-        fn: cur?.name ?? '(최상위)',
+        fn: cur?.name ?? L('(최상위)', '(top level)'),
         startLine: sl,
         endLine: el,
         text: clip(text, 120),

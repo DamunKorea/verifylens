@@ -6,6 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as M from '../src/model.ts';
 import { parseRequirements } from '../../src/requirements.ts';
+import { renderSummaryMd } from '../../src/summary.ts';
 
 const ext = join(dirname(fileURLToPath(import.meta.url)), '..');
 const demo = (node: string | null) =>
@@ -477,4 +478,85 @@ test('the base branch is chosen without asking when it is obvious', () => {
   assert.equal(M.defaultBase(w.repo, 'main'), null, 'on main itself there is nothing obvious to compare with');
   execFileSync('git', ['-C', w.repo, 'branch', 'develop', 'main']);
   assert.equal(M.defaultBase(w.repo, 'main'), 'develop');
+});
+
+// ---------------------------------------------------------------- 영어 화면
+const HANGUL = /[가-힣]/;
+/** 눈에 보이는 글만 남긴다: 스크립트 · 스타일과, 안에서만 쓰는 값(value="…")은 뺀다. */
+const visible = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '').replace(/ value="[^"]*"/g, '');
+const noKorean = (text: string, what: string) => {
+  const m = HANGUL.exec(text);
+  assert.equal(m, null, `${what} still has Korean: …${m ? text.slice(Math.max(0, m.index - 40), m.index + 40) : ''}…`);
+};
+const inEnglish = <T>(fn: () => T): T => {
+  M.setLang('en');
+  try {
+    return fn();
+  } finally {
+    M.setLang('ko');
+  }
+};
+
+test('language: auto follows the editor language, the setting overrides it', () => {
+  assert.equal(M.resolveLang('auto', 'ko'), 'ko');
+  assert.equal(M.resolveLang('auto', 'ko-KR'), 'ko');
+  assert.equal(M.resolveLang('auto', 'en'), 'en');
+  assert.equal(M.resolveLang('auto', 'ja'), 'en');
+  assert.equal(M.resolveLang(undefined, undefined), 'en');
+  assert.equal(M.resolveLang('ko', 'en'), 'ko');
+  assert.equal(M.resolveLang('en', 'ko'), 'en');
+});
+
+test('English UI: the sample gives the same verdicts, with an English requirement text', () => {
+  inEnglish(() => {
+    const r = demo(null);
+    // 판정 값(안에서 쓰는 값)은 언어와 상관없이 같다.
+    assert.deepEqual(status(r), { R1: '확인됨', R2: '다름', R3: '미확인' });
+    assert.equal(r.report.summaries[1].req.text, 'Lock the account after 5 consecutive failures');
+    assert.equal(r.report.sets[1].label, 'Result B');
+    const l = M.lensesFor(r.report, 'B', 'src/auth.ts').find((x) => x.reqId === 'R2')!;
+    assert.equal(l.head, 'R2 · Different');
+    assert.equal(l.note, 'acts on attempt 6 (requirement: 5) · but the test passes · condition differs from A');
+    assert.equal(l.severity, 'warn');
+    const rows = M.treeModel(r.report);
+    assert.equal(rows[1].summary, 'Result B: acts on attempt 6 (requirement: 5) — but the test passes');
+    assert.equal(rows[1].children[1].detail, 'attempt 6 · but the test passes');
+    assert.equal(rows[2].reason, 'no test');
+    assert.equal(M.verifiedLine(r.report), '1 of 3 requirements verified by evidence and tests');
+    assert.equal(M.statusText(r.report), 'Verified 1 · Different 1 · Failed 0 · Not verified 1');
+    assert.match(M.demoHeadline(r.report), /every test passes\. Yet only 1 of 3 requirements/);
+    assert.match(r.notes[0], /bundled test results/);
+  });
+});
+
+test('English UI: no Korean is left in the panel, the hover, the report or the summaries', () => {
+  inEnglish(() => {
+    const r = demo(null);
+    for (const row of M.treeModel(r.report)) {
+      noKorean([row.text, row.reason, row.summary].join(' | '), `tree row ${row.id}`);
+      for (const c of row.children) noKorean([c.label, c.detail, c.tooltip].join(' | '), `tree child ${row.id}`);
+    }
+    for (const l of M.allLenses(r.report)) noKorean([l.head, l.note, l.title, l.reqText].join(' | '), `lens ${l.reqId}`);
+    for (const s of r.report.summaries) noKorean(M.hoverMarkdown(r.report, s.req.id, true)!, `hover ${s.req.id}`);
+    noKorean(M.verifiedLine(r.report) + M.statusText(r.report) + M.contextLine(r) + M.demoHeadline(r.report) + r.notes.join(' '), 'status lines');
+    noKorean(renderSummaryMd(r.report), 'text summary');
+    noKorean(M.prSummary(r, { R2: { judge: '수정', note: '' } }), 'PR summary');
+    noKorean(visible(M.webviewHtml(r.report, 'n', 'vscode-webview:', { demo: true })), 'report');
+    noKorean(M.reqTemplate(), 'requirements template');
+    assert.equal(parseRequirements(M.reqTemplate()).length, 2);
+    noKorean(M.mergeRequirementsFile(null, ['Users must log in'], 'issue #1', 'replace').text, 'requirements draft');
+    noKorean(M.ghError({ code: 'ENOENT' }) + M.ghError(new Error('no pull requests found')), 'gh errors');
+  });
+});
+
+test('English UI: a decision is stored and shown the same way in both languages', () => {
+  const r = demo(null);
+  const ko = M.webviewHtml(r.report, 'n', 'vscode-webview:', {});
+  const en = inEnglish(() => M.webviewHtml(r.report, 'n', 'vscode-webview:', {}));
+  // 고르는 값은 같고, 보이는 글만 다르다.
+  assert.match(ko, /<option value="수정">수정<\/option>/);
+  assert.match(en, /<option value="수정">Fix<\/option>/);
+  assert.match(en, /"jl":\{[^}]*"수정":"Fix"/);
+  assert.equal(inEnglish(() => M.wJudge('추가 검증')), 'Verify more');
+  assert.equal(M.wJudge('추가 검증'), '추가 검증');
 });

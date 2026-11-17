@@ -1,0 +1,11 @@
+{
+  "view.requirements": "Requirements",
+  "welcome.trusted": "Shows, per requirement, whether an AI-generated change is verified, different, or not yet verified. Your code never leaves this machine.\n[Try the sample](command:verifylens.runDemo)\n[Check my changes](command:verifylens.checkBranch)\n[Compare two branches](command:verifylens.compareBranches)\nFill in the requirements by [importing them from an issue or PR](command:verifylens.importRequirements), or [write them yourself](command:verifylens.createRequirements).",
+  "welcome.untrusted": "Shows, per requirement, whether an AI-generated change is verified, different, or not yet verified. Your code never leaves this machine.\n[Try the sample](command:verifylens.runDemo)\nThis folder is not trusted yet (Restricted Mode), so checking your own branch is turned off.\n[Trust this folder](command:workbench.trust.manage)",
+  "config.language": "Language of the VerifyLens panel, the notes in the editor, the report and messages. \"auto\" follows the VS Code display language (Korean when VS Code is in Korean, English otherwise). Command names and this settings page always follow the VS Code display language.",
+  "config.language.auto": "Follow the VS Code display language",
+  "config.language.ko": "한국어 (Korean)",
+  "config.language.en": "English",
+  "config.inlineNotes": "Show a short note at the end of each evidence line (for example \"← R2 · Different · acts on attempt 6 (requirement: 5)\").",
+  "config.summaryLanguage": "Language of the PR verification summary copied by \"Copy verification summary for a PR\". \"auto\" uses the same language as the VerifyLens panel."
+}

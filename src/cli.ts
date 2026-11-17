@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { analyzeResult, evaluate } from './engine.ts';
 import { parseRequirements, extractFromPrBody } from './requirements.ts';
 import { buildSampleRepo } from './demo.ts';
+import { L, setLang } from './i18n.ts';
 
 /** 결과 HTML 을 기본 브라우저로 연다 (Windows · macOS · Linux). */
 function openInBrowser(file: string) {
@@ -27,6 +28,21 @@ function args(argv: string[]): { cmd: string; opts: Record<string, string> } {
   return { cmd, opts };
 }
 
+const HELP_EN = `VerifyLens preview — your code never leaves this machine (no network use)
+
+  node src/cli.ts demo [--out dir] [--open] [--lang en|ko]
+      Builds a report from the sample (a made-up login-lockout case). --open opens it in the browser.
+
+  node src/cli.ts extract --pr-body pr.md
+      Extracts requirement candidates from a PR description and prints a requirements.md draft.
+
+  node src/cli.ts report --repo repo --base main --a branchA [--b branchB]
+        --requirements requirements.md [--junit-a a.xml --junit-b b.xml] [--out dir] [--open] [--lang en|ko]
+      Analyzes base..branch and writes report.html and summary.md.
+
+  node src/cli.ts check   (engine check: prints the sample result as text)
+`;
+
 const HELP = `VerifyLens 프로토타입 v0 — 코드는 이 PC 밖으로 나가지 않습니다 (네트워크 사용 없음)
 
   node src/cli.ts demo [--out 폴더] [--open]
@@ -44,8 +60,11 @@ const HELP = `VerifyLens 프로토타입 v0 — 코드는 이 PC 밖으로 나�
 
 export async function main(argv: string[]) {
   const { cmd, opts } = args(argv);
+  // 글의 언어: --lang en|ko, 없으면 환경 변수 VERIFYLENS_LANG, 둘 다 없으면 한국어.
+  const lang = opts.lang ?? process.env.VERIFYLENS_LANG;
+  if (lang === 'en' || lang === 'ko') setLang(lang);
   if (cmd === 'extract') {
-    if (!opts['pr-body']) throw new Error('--pr-body 파일이 필요합니다.');
+    if (!opts['pr-body']) throw new Error(L('--pr-body 파일이 필요합니다.', '--pr-body <file> is required.'));
     process.stdout.write(extractFromPrBody(readFileSync(opts['pr-body'], 'utf8')));
     return;
   }
@@ -60,7 +79,7 @@ export async function main(argv: string[]) {
       reqFile = opts.requirements;
       ja = opts['junit-a'];
       jb = opts['junit-b'];
-      if (!a || !reqFile) throw new Error('--a(또는 --head) 와 --requirements 가 필요합니다.');
+      if (!a || !reqFile) throw new Error(L('--a(또는 --head) 와 --requirements 가 필요합니다.', '--a (or --head) and --requirements are required.'));
     } else {
       const env = buildSampleRepo();
       repo = env.repo;
@@ -73,7 +92,7 @@ export async function main(argv: string[]) {
       pr = env.prFile;
     }
     const reqs = parseRequirements(readFileSync(reqFile, 'utf8'));
-    if (!reqs.length) throw new Error('요구사항을 읽지 못했습니다. "- R1: 문장" 형식인지 확인하세요.');
+    if (!reqs.length) throw new Error(L('요구사항을 읽지 못했습니다. "- R1: 문장" 형식인지 확인하세요.', 'No requirements could be read. Each line must look like "- R1: sentence".'));
     const sets = [analyzeResult({ key: 'A', repo, base, ref: a, junit: ja })];
     if (b) sets.push(analyzeResult({ key: 'B', repo, base, ref: b, junit: jb }));
     const report = evaluate(sets, reqs, repo, base);
@@ -93,23 +112,24 @@ export async function main(argv: string[]) {
     const { writeOutputs } = await import('./output.ts');
     const out = resolve(opts.out ?? (cmd === 'demo' ? 'out' : 'verifylens-out'));
     mkdirSync(out, { recursive: true });
-    const files = writeOutputs(report, out, pr, cmd === 'demo');
-    console.log('리포트를 만들었습니다 (코드는 이 PC 밖으로 나가지 않았습니다):');
+    const files = writeOutputs(report, out, pr, cmd === 'demo' && lang !== 'en');
+    console.log(L('리포트를 만들었습니다 (코드는 이 PC 밖으로 나가지 않았습니다):', 'Report written (your code did not leave this machine):'));
     for (const f of files) console.log('  ' + f);
     if (opts.open) {
-      const page = files.find((f) => f.endsWith(cmd === 'demo' ? 'concept.html' : 'report.html'));
+      // 컨셉 시연은 한국어로만 있어서 영어일 때는 만들지 않는다. 그때는 리포트를 연다.
+      const page = files.find((f) => f.endsWith(cmd === 'demo' && lang !== 'en' ? 'concept.html' : 'report.html'));
       if (page) openInBrowser(page);
     }
     if (cmd === 'demo') {
-      console.log('\n샘플 저장소와 검사 결과는 report 명령 연습용으로 남겨 두었습니다:');
+      console.log(L('\n샘플 저장소와 검사 결과는 report 명령 연습용으로 남겨 두었습니다:', '\nThe sample repository and test results are kept so you can try the report command:'));
       console.log(`  node src/cli.ts report --repo "${repo}" --base main --a ${a} --b ${b} --requirements "${reqFile}" --junit-a "${ja}" --junit-b "${jb}"`);
     }
     return;
   }
-  console.log(HELP);
+  console.log(L(HELP, HELP_EN));
 }
 
 main(process.argv.slice(2)).catch((e) => {
-  console.error('오류:', e instanceof Error ? e.message : e);
+  console.error(L('오류:', 'Error:'), e instanceof Error ? e.message : e);
   process.exit(1);
 });

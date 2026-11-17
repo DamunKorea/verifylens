@@ -46,7 +46,8 @@ for stage in ORDER:
     # 「확인」과 「스스로 갱신」 장면만 바뀌기 전 화면을 잠깐 먼저 보여 준다.
     if stage in ('2-checked',):
         seq.append((compose(fs[0]['name'], stage), 900))
-    seq.append((compose(fs[-1]['name'], stage), HOLD[stage]))
+    # 맨 마지막 장은 다음 장면이 이미 시작된 화면일 수 있어서(찍는 순간과 장면 이름을 읽는 순간이 다르다) 그 앞 장을 쓴다.
+    seq.append((compose(fs[-2 if len(fs) > 2 else -1]['name'], stage), HOLD[stage]))
 
 # 모든 장면을 한 장에 이어 붙여 색상표를 만든다. 한 장면만으로 만들면 다른 장면의 초록 · 노랑이 빠진다.
 sheet = Image.new('RGB', (seq[0][0].size[0], seq[0][0].size[1] * len(seq)))

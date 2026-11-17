@@ -9,6 +9,7 @@
   "engines": { "node": ">=22.18" },
   "scripts": {
     "demo": "node src/cli.ts demo --open",
+    "demo:en": "node src/cli.ts demo --open --lang en",
     "report": "node src/cli.ts report",
     "check": "node src/cli.ts check"
   },

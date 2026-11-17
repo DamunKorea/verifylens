@@ -1,6 +1,7 @@
 import type { Requirement } from './types.ts';
 import { tokenize, clip } from './tokens.ts';
 import { conceptsFor } from './glossary.ts';
+import { L } from './i18n.ts';
 
 const GUARD_CUE = /(않|차단|거부|막|금지|불가|reject|deny|block|forbid|refuse|must not|cannot)/i;
 
@@ -75,9 +76,9 @@ export function extractRequirements(md: string, max = 12): string[] {
 /** 요구사항 후보를 requirements.md 글로 만든다. start 는 첫 번호. */
 export function draftRequirements(cands: string[], source = '', start = 1): string {
   const out = [
-    `# 요구사항 초안${source ? ` — ${source}에서 가져옴` : ''}. 읽어 보고 고친 뒤 저장하세요.`,
-    '# 형식: - R번호: 요구사항 문장',
-    '# 코드와 잘못 이어지면 뒤에 「| keywords: 코드에 나오는 영어 단어」를 붙여 직접 정할 수 있습니다.',
+    L(`# 요구사항 초안${source ? ` — ${source}에서 가져옴` : ''}. 읽어 보고 고친 뒤 저장하세요.`, `# Draft requirements${source ? ` — imported from ${source}` : ''}. Read them, fix them, then save.`),
+    L('# 형식: - R번호: 요구사항 문장', '# Format: - R<number>: requirement sentence'),
+    L('# 코드와 잘못 이어지면 뒤에 「| keywords: 코드에 나오는 영어 단어」를 붙여 직접 정할 수 있습니다.', '# If a requirement lands on the wrong code, append "| keywords: words, in, the, code" to pin it yourself.'),
   ];
   cands.forEach((c, i) => out.push(`- R${start + i}: ${c}`));
   return out.join('\n') + '\n';

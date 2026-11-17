@@ -1,10 +1,13 @@
-// 연습용 저장소 만들기: node practice.mjs <oss폴더> <만들 폴더> [--rehearse]
+// 연습용 저장소 만들기: node make-practice-repo.mjs <oss폴더> <만들 폴더> [--uncommitted | --rehearse] [--lang=en|ko]
+// --lang 을 주면 그 언어의 요구사항 글을 넣고, 확장의 화면 글도 그 언어로 고정한다 (시연용 VS Code 는 영어 화면이라 한국어판을 찍을 때 필요하다).
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-const [oss, target, flag] = process.argv.slice(2);
+const [oss, target, ...flags] = process.argv.slice(2);
+const flag = flags.find((f) => !f.startsWith('--lang')) ?? '';
+const lang = (flags.find((f) => f.startsWith('--lang=')) ?? '').slice(7);
 const imp = (p) => import(pathToFileURL(join(oss, p)).href);
 const { buildSampleRepo, SAMPLE } = await imp('src/demo.ts');
 
@@ -17,9 +20,9 @@ g('config', 'user.email', 'practice@example.invalid');
 g('checkout', '-q', 'feature/lockout-b');
 
 mkdirSync(join(target, '.verifylens'), { recursive: true });
-cpSync(join(SAMPLE, 'requirements.md'), join(target, '.verifylens', 'requirements.md'));
+cpSync(join(SAMPLE, lang === 'en' ? 'requirements.en.md' : 'requirements.md'), join(target, '.verifylens', 'requirements.md'));
 mkdirSync(join(target, '.vscode'), { recursive: true });
-writeFileSync(join(target, '.vscode', 'settings.json'), JSON.stringify({ 'verifylens.baseBranch': 'main', 'verifylens.junitPath': '.verifylens/junit.xml' }, null, 2) + '\n');
+writeFileSync(join(target, '.vscode', 'settings.json'), JSON.stringify({ 'verifylens.baseBranch': 'main', 'verifylens.junitPath': '.verifylens/junit.xml', ...(lang ? { 'verifylens.language': lang } : {}) }, null, 2) + '\n');
 const testCmd = 'node --test --test-reporter=junit --test-reporter-destination=.verifylens/junit.xml test/lockout.test.ts';
 writeFileSync(join(target, '.vscode', 'tasks.json'), JSON.stringify({
   version: '2.0.0',
