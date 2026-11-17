@@ -125,7 +125,7 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
             for (row in r.rows) {
                 val node = DefaultMutableTreeNode(row)
                 for (ev in row.children) {
-                    // 줄 끝 설명과 같은 글을 쓴다 (예: 6번째 시도에 동작 (요구사항 5회) · 검사 실패)
+                    // 줄 끝 설명과 같은 글을 쓴다 (예: 6번째 시도에 동작 (요구사항 5회) · 검사는 통과)
                     val lens = r.lenses.firstOrNull { it.reqId == row.id && it.setKey == ev.setKey && it.file == ev.file && it.line == ev.line }
                     node.add(DefaultMutableTreeNode(EvidenceNode(row.id, ev, lens?.note ?: ev.detail)))
                 }

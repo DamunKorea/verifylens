@@ -30,6 +30,8 @@ function headline(report: Report, s: ReqSummary): string {
     }
     if (!bad.length && s.relation.kind === '불일치') parts.push(`두 결과의 조건이 다릅니다 (${esc(s.relation.detail)}).`);
     if (failed.length) parts.push(`${labels(failed)}에서 연결된 검사가 실패해 이 차이를 뒷받침합니다.`);
+    const passOff = bad.filter((x) => x.perReq[id].testStatus === '통과');
+    if (passOff.length) parts.push(`그런데 ${labels(passOff)}에서 연결된 검사는 <b>통과</b>했습니다. 검사가 요구사항과 같은 횟수를 확인하는지 검사 코드를 보세요.`);
     return parts.join(' ');
   }
   if (s.overall === '실패') return `${labels(failed)}에서 연결된 검사가 실패했습니다. 실패 이유부터 확인하세요.`;
@@ -130,7 +132,9 @@ function timeline(report: Report, id: string): string {
     })
     .join('');
   const before = rows.every((r) => r.b!.before === true);
-  const cap = chk !== null ? `「${esc(chkName)}」 검사가 ${chk}번째 시도 뒤의 잠금을 확인합니다 — ${report.sets.map((s) => `${s.key} ${s.perReq[id].testStatus}`).join(' · ')}.` : '이 조건을 직접 확인하는 검사가 연결되지 않았습니다.';
+  const offSets = rows.filter((r) => r.set.perReq[id].testStatus === '통과' && r.b!.ok === false);
+  const offNote = offSets.length ? ` ${offSets.map((r) => r.set.label).join('·')}는 계산으로는 ${offSets.map((r) => r.b!.attempts).join('·')}번째에 동작하는데도 검사가 통과했습니다. 검사가 실제로 몇 번째 시도를 보는지 확인하세요.` : '';
+  const cap = chk !== null ? `「${esc(chkName)}」 검사는 이름으로 보면 ${chk}번째 시도 뒤의 잠금을 확인합니다 — ${report.sets.map((s) => `${s.key} ${s.perReq[id].testStatus}`).join(' · ')}.${offNote}` : '이 조건을 직접 확인하는 검사가 연결되지 않았습니다.';
   return `<div class="card"><h4>시도 횟수별 잠금 시점 <span class="mini">조건 값에서 계산한 사실</span></h4><div class="tline">${head}${reqRow}${resRows}</div><div class="cap">${cap}${before ? ' 카운터를 올린 뒤 비교하는 코드로 읽었습니다.' : ' 카운터 증가 순서는 코드에서 확인하세요.'}</div><div class="lg"><span><i class="sw" style="background:#4285E8"></i>요구사항</span><span><i class="sw" style="background:#34D399"></i>요구사항과 같은 시점</span><span><i class="sw" style="background:#FBBF24"></i>다른 시점</span><span><i class="sw miss"></i>잠겨야 하는데 안 잠김</span></div></div>`;
 }
 

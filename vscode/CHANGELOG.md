@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2
+
+Lead with what running the tests cannot show.
+
+- **The demo now passes every test.** Result B comes with a test the AI wrote with the same misunderstanding as the code (named "after 5 failures", but it checks after six). All tests are green, and R2 is still `다름`: the condition fires on the 6th attempt.
+- **A passing test that disagrees with the computed behavior is called out.** The line note reads `검사는 통과` instead of `검사 통과`, and the hover, the report and the PR summary say that the test passes while the computed attempt differs, and ask you to check that the test exercises the same count as the requirement.
+- Nothing changes for failing tests or for requirements without a test.
+
 ## 0.5.1
 
 - Checked on **Cursor 3.29** with the same `.vsix` (use the editor window; extensions are not loaded in Cursor's agent window).

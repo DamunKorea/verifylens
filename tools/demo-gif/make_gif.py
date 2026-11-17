@@ -5,9 +5,9 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 out, lang, dst = sys.argv[1:4]
 W = int(sys.argv[4]) if len(sys.argv) > 4 else 1000
 CAP = {
-    '1-code': ('AI: "Done. The account locks after 5 failed logins." (not committed yet)', 'AI: 「완료했습니다. 5회 실패하면 계정을 잠급니다.」 (아직 커밋 전)'),
-    '2-checked': ('VerifyLens: only 1 of 3 requirements is verified. Line 21 acts on the 6th attempt.', 'VerifyLens: 3개 중 1개만 확인됨. 21번째 줄은 6번째 시도에 동작합니다.'),
-    '3-hover': ('Hover for the evidence: the condition, the computed attempt, the executed test. No AI opinion.', '마우스를 올리면 근거가 나옵니다: 조건식, 계산한 동작 시점, 실행된 검사. AI 의견은 없습니다.'),
+    '1-code': ('AI: "Done. The account locks after 5 failed logins, and the tests pass." (not committed yet)', 'AI: 「완료했습니다. 5회 실패하면 잠그고, 테스트도 통과합니다.」 (아직 커밋 전)'),
+    '2-checked': ('Every test passes, yet only 1 of 3 requirements is verified: line 21 acts on the 6th attempt.', '테스트는 전부 통과. 그런데 3개 중 1개만 확인됨: 21번째 줄은 6번째 시도에 동작합니다.'),
+    '3-hover': ('Hover for the evidence: the test passes, but the computed attempt differs. No AI opinion.', '마우스를 올리면 근거가 나옵니다: 검사는 통과했지만 계산한 동작 시점이 다릅니다. AI 의견은 없습니다.'),
     '4-diff': ('One click shows what the AI changed, side by side with main.', '한 번 누르면 AI가 바꾼 부분을 main과 나란히 봅니다.'),
     '5-fix': ('Fix and save. It re-checks at once, and no longer trusts the old test result.', '고치고 저장하면 바로 다시 확인합니다. 고치기 전의 테스트 결과는 믿지 않습니다.'),
     '6-verified': ('Run the tests from the editor: R2 is verified. R3 stays "not verified": no test covers it.', '에디터에서 테스트를 돌리면 R2 확인됨. R3는 검사가 없어 「미확인」으로 남습니다.'),

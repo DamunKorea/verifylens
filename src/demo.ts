@@ -33,8 +33,9 @@ export function buildSampleRepo(o: DemoOptions = {}): DemoEnv {
   g('commit', '-q', '-m', 'base: login without lockout');
   for (const v of ['a', 'b']) {
     g('checkout', '-q', '-b', `feature/lockout-${v}`, 'main');
-    cpSync(join(sample, v), repo, { recursive: true });
+    // 공통 파일을 먼저, 결과별 파일을 나중에 복사한다. 결과 B 는 AI 가 같이 쓴 자기 테스트를 가진다.
     cpSync(join(sample, 'shared'), repo, { recursive: true });
+    cpSync(join(sample, v), repo, { recursive: true });
     g('add', '-A');
     g('commit', '-q', '-m', `feature: lockout (${v.toUpperCase()})`);
     g('checkout', '-q', 'main');
@@ -45,8 +46,8 @@ export function buildSampleRepo(o: DemoOptions = {}): DemoEnv {
     const dir = join(root, `run-${v}`);
     mkdirSync(dir);
     cpSync(join(sample, 'base'), dir, { recursive: true });
-    cpSync(join(sample, v), dir, { recursive: true });
     cpSync(join(sample, 'shared'), dir, { recursive: true });
+    cpSync(join(sample, v), dir, { recursive: true });
     const out = join(root, `junit-${v}.xml`);
     if (o.node !== null) {
       // node --test 안에서 실행될 때 물려받는 NODE_TEST_CONTEXT 가 있으면 자식이 보고서 파일을 쓰지 않는다.

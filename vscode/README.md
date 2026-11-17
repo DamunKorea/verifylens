@@ -2,7 +2,19 @@
 
 **See per requirement whether an AI-generated change is verified, different, or not yet verified — right next to your code.**
 
-AI tools say "Done, all requirements implemented." VerifyLens checks that claim against your git diff and the tests that actually ran, and shows the result in a side panel, as highlighted lines, and as a lens above the code that decides each requirement.
+The AI says "Done, all requirements implemented", and **every test passes.** The requirement can still be unmet.
+
+```text
+Requirement    Lock the account after 5 consecutive failures
+AI's code      if (user.failures > 5) { user.locked = true }
+AI's test      'locks the account after 5 consecutive failures'  → passes ✓
+VerifyLens     ← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과
+               (R2 · different · acts on the 6th attempt, requirement says 5 · the test passes)
+```
+
+The AI wrote the code and the test with the same misunderstanding. The test is named "after 5 failures" but actually checks after six failed attempts. So **every test passes, and the requirement is still not met.** Running the tests does not show this; computing when the condition fires does.
+
+VerifyLens checks each requirement against your git diff and the tests that actually ran, before you commit, and shows the result in a side panel, as highlighted lines, and as a lens above the code that decides each requirement.
 
 - **No LLM, and your code never leaves your machine.** Static analysis (TypeScript compiler API) + git + your JUnit test results, all local. The only optional network use is *Import requirements*, which reads a PR's or issue's text through your own `gh`.
 - **Unknown stays unknown.** No test or an unresolved call means "not verified", never "looks fine".
@@ -24,10 +36,10 @@ AI tools say "Done, all requirements implemented." VerifyLens checks that claim 
 1. Click the **VerifyLens** icon in the Activity Bar.
 2. Click **샘플로 해 보기** (Run demo).
 
-The demo builds a small sample repo with two AI results for "lock the account after 5 failed logins". Result A uses `failures >= 5`, result B uses `failures > 5`. Both claim to be done. VerifyLens shows:
+The demo builds a small sample repo with two AI results for "lock the account after 5 failed logins". Result A uses `failures >= 5`; result B uses `failures > 5` and comes with a test the AI wrote alongside it. Both claim to be done, and all tests pass in both. VerifyLens shows:
 
 - **Requirements panel:** R1 verified, R2 **different**, R3 not verified, with a badge for how many need attention.
-- **In the editor:** the deciding line gets a status icon and a note at its end, for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`. Hover it for the evidence table and the failing test's message.
+- **In the editor:** the deciding line gets a status icon and a note at its end, for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과` (different: acts on the 6th attempt, the requirement says 5, and the test passes). Hover it for the evidence table and the warning that a passing test disagrees with the computed behavior.
 - **Side by side:** click `A ↔ B 비교` above the line (or the compare icon in the list) to open VS Code's own diff editor at the line where the two results diverge.
 - **Problems panel:** lines that need attention are listed there, so `F8` walks through them.
 - **Report panel:** the full evidence chain. Click any code line in it to jump to that line in the editor.
@@ -70,7 +82,7 @@ If your CI already writes a report, point `verifylens.junitPath` at it (JUnit XM
 ## Limitations
 
 - Comparing two branches looks at committed changes only.
-- The flagship check is numeric: "after 5 failures" against `failures > 5`. Other logic errors are caught only if a linked test fails.
+- The flagship check is numeric: "after 5 failures" against `failures > 5`, reported whether the linked test fails or passes. Other logic errors are caught only if a linked test fails.
 - Requirement ↔ code linking is rule-based and can be wrong; the report shows why each line was picked.
 - TypeScript and JavaScript only.
 

@@ -159,7 +159,7 @@ private class LensGutterIcon(private val project: Project, private val lens: Len
     override fun hashCode(): Int = 31 * lens.reqId.hashCode() + lens.title.hashCode()
 }
 
-/** 근거 줄 끝에 설명을 그린다. 예: ← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패 */
+/** 근거 줄 끝에 설명을 그린다. 예: ← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과 */
 class VerifyLensLinePainter : EditorLinePainter() {
     override fun getLineExtensions(project: Project, file: VirtualFile, lineNumber: Int): Collection<LineExtensionInfo>? {
         val service = project.getServiceIfCreated(VerifyLensService::class.java) ?: return null

@@ -28,7 +28,11 @@ test('demo without Node uses bundled JUnit and gives the same result', () => {
   assert.deepEqual(status(r), { R1: '확인됨', R2: '다름', R3: '미확인' });
   assert.match(r.notes[0], /미리 만들어 둔/);
   const b = r.report.sets.find((s) => s.key === 'B')!;
-  assert.equal(b.perReq.R2.testStatus, '실패');
+  // 결과 B 는 AI 가 같은 오해로 쓴 테스트를 갖고 있어서 테스트는 통과한다. 그래도 조건 값 계산으로 「다름」이다.
+  assert.equal(b.perReq.R2.testStatus, '통과');
+  assert.equal(b.perReq.R2.evidence.boundary!.ok, false);
+  assert.ok(M.passButOff(b.perReq.R2));
+  assert.ok(r.report.sets.every((s) => s.tests.every((t) => t.status === 'pass')), 'every test in the sample passes');
 });
 
 test('lens on result B marks the > 5 line as 6th attempt', () => {
@@ -38,7 +42,7 @@ test('lens on result B marks the > 5 line as 6th attempt', () => {
   assert.ok(r2, 'R2 lens exists');
   assert.equal(r2.overall, '다름');
   assert.match(r2.title, /6번째 시도에 동작 \(요구사항 5회\)/);
-  assert.match(r2.title, /검사 실패/);
+  assert.match(r2.title, /검사는 통과/);
   assert.deepEqual(M.lensesFor(r.report, 'B', 'nope.ts'), []);
   assert.deepEqual(M.lensesFor(r.report, 'Z', 'src/auth.ts'), []);
 });
@@ -52,8 +56,9 @@ test('tree model has one row per requirement with A and B children', () => {
   assert.match(r2.summary, /결과 B: 6번째 시도에 동작/);
   assert.ok(r2.children.every((c) => c.file === 'src/auth.ts' && typeof c.line === 'number'));
   assert.equal(r2.children[1].label, 'B  auth.ts:21');
-  assert.equal(r2.children[1].detail, '6번째 동작 · 검사 실패');
-  assert.match(r2.children[1].tooltip, /결과 B \(feature\/lockout-b\) · src\/auth.ts:21 · 검사 실패 · 6번째 시도에 동작 \(요구사항 5회\)/);
+  assert.equal(r2.children[1].detail, '6번째 동작 · 검사는 통과');
+  assert.match(r2.children[1].tooltip, /결과 B \(feature\/lockout-b\) · src\/auth.ts:21 · 검사는 통과 · 6번째 시도에 동작 \(요구사항 5회\) — 검사는 통과했지만/);
+  assert.equal(r2.summary, '결과 B: 6번째 시도에 동작 (요구사항 5회) — 검사는 통과');
   for (const row of rows) for (const c of row.children) assert.ok(c.label.length + c.detail.length <= 32, `short enough: ${c.label} ${c.detail}`);
   assert.match(M.statusText(r.report), /확인됨 1 · 다름 1 · 실패 0 · 미확인 1/);
 });
@@ -102,7 +107,7 @@ test('lens gives a head for above the line, a note for the end of the line, and 
   const a = M.lensesFor(r.report, 'A', 'src/auth.ts').find((l) => l.reqId === 'R2')!;
   const b = M.lensesFor(r.report, 'B', 'src/auth.ts').find((l) => l.reqId === 'R2')!;
   assert.equal(b.head, 'R2 · 다름');
-  assert.equal(b.note, '6번째 시도에 동작 (요구사항 5회) · 검사 실패 · A와 조건 다름');
+  assert.equal(b.note, '6번째 시도에 동작 (요구사항 5회) · 검사는 통과 · A와 조건 다름');
   assert.equal(b.severity, 'warn');
   assert.equal(a.note, '5번째 시도에 동작 · 검사 통과 · B와 조건 다름');
   assert.equal(a.severity, 'info', 'A itself is right, so it is not a warning');
@@ -114,14 +119,21 @@ test('lens gives a head for above the line, a note for the end of the line, and 
   assert.equal(M.contextLine(r), '샘플 · 결과 A ↔ 결과 B (기준 main)');
 });
 
-test('hover shows the evidence table, the failing test and command links', () => {
+test('hover shows the evidence table, the passing-but-different warning and command links', () => {
   const r = demo(null);
   const md = M.hoverMarkdown(r.report, 'R2')!;
   assert.match(md, /^\*\*VerifyLens · R2 · 다름\*\* — 연속 5회 실패하면 계정을 잠근다\n/);
   assert.ok(md.indexOf('  1  2  3  4  5 [6]') < md.indexOf('| 결과 | 근거 |'), 'the computed strip comes before the table so it is not cut off');
   assert.match(md, /\| A \| `auth\.ts:17` `user\.failures >= 5` \| 5번째 \| 통과 \|/);
-  assert.match(md, /\| B \| `auth\.ts:21` `user\.failures > 5` \| 6번째 ⚠ \(요구 5회\) \| 실패 \|/);
-  assert.match(md, /실패한 검사\n- B · `locks the account on the 5th consecutive failure` — Expected values to be strictly equal/);
+  assert.match(md, /\| B \| `auth\.ts:21` `user\.failures > 5` \| 6번째 ⚠ \(요구 5회\) \| 통과 \|/);
+  assert.match(md, /⚠ 결과 B: 검사는 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다릅니다\./);
+  assert.ok(!/실패한 검사/.test(md), 'nothing failed in the sample');
+  // 검사가 실패하는 경우: 같은 코드에 요구사항대로 쓴 검사 결과(5번째에 잠기는지 보는 검사)를 붙이면 실패 이유가 나온다
+  const failing = M.runRepo({ repo: r.repo, base: 'main', a: 'feature/lockout-b', reqFile: join(ext, 'samples', 'login-lockout', 'requirements.md'), junitA: join(ext, 'test', 'fixtures', 'vitest-junit.xml') });
+  const fmd = M.hoverMarkdown(failing.report, 'R2')!;
+  assert.match(fmd, /\| `auth\.ts:21` `user\.failures > 5` \| 6번째 ⚠ \(요구 5회\) \| 실패 \|/);
+  assert.match(fmd, /실패한 검사\n- `[^`]*locks the account on the 5th consecutive failure` — /);
+  assert.ok(!/검사는 통과했지만/.test(fmd));
   assert.match(md, /\[A ↔ B 비교\]\(command:verifylens\.openDiff\?%5B%22R2%22%5D\)/);
   assert.match(md, /\[판단 기록\]\(command:verifylens\.recordJudgment\?/);
   assert.ok(!/command:/.test(M.hoverMarkdown(r.report, 'R2', false)!), 'no links for the list tooltip');
@@ -181,7 +193,7 @@ test('differentiators up front: verified ratio, reason for 미확인, attempt st
   const r = demo(null);
   assert.equal(M.verifiedLine(r.report), '요구사항 3개 중 1개만 근거와 검사로 확인됨');
   assert.equal(M.verifiedLine(r.report, 'en'), '1 of 3 requirements verified by evidence and tests');
-  assert.match(M.demoHeadline(r.report), /「요구사항 전부 반영, 완료」.*3개 중 1개/);
+  assert.match(M.demoHeadline(r.report), /「요구사항 전부 반영, 완료」라고 답했고, 테스트도 전부 통과했습니다\. 그런데 .*3개 중 1개/);
   const rows = M.treeModel(r.report);
   assert.deepEqual(rows.map((x) => x.reason), ['', '', '검사 없음']);
   assert.deepEqual(M.attemptLines(r.report, 'R2'), [
@@ -208,11 +220,12 @@ test('PR summary: one table a reviewer can trust without redoing the check', () 
   assert.equal(lines[2], '**요구사항 3개 중 1개만 근거와 검사로 확인됨**');
   assert.match(lines[4], /^_AI가 쓴 의견이 아닙니다\./);
   assert.match(ko, /샘플\(가상 사례\) · A `feature\/lockout-a` \(`[0-9a-f]{7}`\) ↔ B `feature\/lockout-b` \(`[0-9a-f]{7}`\) · 기준 `main`/);
-  assert.match(ko, /\| \*\*R2\*\* 연속 5회 실패하면 계정을 잠근다 \| ⚠️ 다름 \| A `src\/auth\.ts:17` `user\.failures >= 5` → 5번째 시도에 동작<br>B `src\/auth\.ts:21` `user\.failures > 5` → 6번째 시도에 동작 \(요구사항 5회\) \| A 통과<br>B 실패 \| \*\*수정\*\* — a \\\| b \|/);
+  assert.match(ko, /\| \*\*R2\*\* 연속 5회 실패하면 계정을 잠근다 \| ⚠️ 다름 \| A `src\/auth\.ts:17` `user\.failures >= 5` → 5번째 시도에 동작<br>B `src\/auth\.ts:21` `user\.failures > 5` → 6번째 시도에 동작 \(요구사항 5회\) \| A 통과<br>B 통과 \| \*\*수정\*\* — a \\\| b \|/);
   assert.match(ko, /\| \*\*R1\*\* [^|]+ \| ✅ 확인됨 \|[^|]+\|[^|]+\| — \|/);
   assert.match(ko, /\| \*\*R3\*\* [^|]+ \| ❔ 미확인 \|[^|]+\|[^|]+\| 미검토 \|/);
   assert.match(ko, /\*\*동작 시점 \(조건 값에서 계산, \[n\] = 동작하는 시도\)\*\*\n```\nR2\n요구사항 /);
-  assert.match(ko, /\*\*실패한 검사\*\*\n- R2 · B · `locks the account on the 5th consecutive failure` — Expected values/);
+  assert.match(ko, /\*\*검사는 통과했지만 계산과 다른 것\*\*\n- R2 · B: 검사가 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다름/);
+  assert.ok(!/실패한 검사/.test(ko), 'nothing failed in the sample');
   assert.match(ko, /\*\*확인되지 않은 것 \(통과로 치지 않음\)\*\*\n- R3: 연결된 검사가 실행되지 않음 \(A, B\)/);
   assert.match(ko, /해석하지 못한 호출 \(B\): `src\/auth\.ts:31`/);
   assert.match(ko, /<sub>VerifyLens 9\.9\.9 · 정적 분석과 실행된 검사 결과만 사용 \(AI 추정 없음\)/);
@@ -227,7 +240,13 @@ test('PR summary: one table a reviewer can trust without redoing the check', () 
   const en = M.prSummary(one, {}, { lang: 'en' });
   assert.match(en, /^## VerifyLens verification summary\n\n\*\*1 of 3 requirements verified by evidence and tests\*\*/);
   assert.match(en, /`feature\/lockout-b` \(`[0-9a-f]{7}`\) ← `main`/);
-  assert.match(en, /⚠️ Different \| `src\/auth\.ts:21` `user\.failures > 5` → acts on attempt 6 \(requirement: 5\) \| Failed \| Not reviewed \|/);
+  assert.match(en, /⚠️ Different \| `src\/auth\.ts:21` `user\.failures > 5` → acts on attempt 6 \(requirement: 5\) \| Passed \| Not reviewed \|/);
+  assert.match(en, /\*\*Tests pass, but the computed behavior differs\*\*\n- R2: the linked test passes, but the attempt computed from the condition differs/);
+  // a failing test is still listed with its reason
+  const failingRun = M.runRepo({ repo: r.repo, base: 'main', a: 'feature/lockout-b', reqFile, junitA: join(ext, 'test', 'fixtures', 'vitest-junit.xml') });
+  const enFail = M.prSummary(failingRun, {}, { lang: 'en' });
+  assert.match(enFail, /acts on attempt 6 \(requirement: 5\) \| Failed \| Not reviewed \|/);
+  assert.match(enFail, /\*\*Failed tests\*\*\n- R2 · `[^`]*locks the account on the 5th consecutive failure`/);
   assert.match(en, /code       1  2  3  4  5 \[6\]  ✗ 1 late/);
   assert.match(en, /- R3: no linked test was run\n/);
   assert.ok(!/[가-힣]/.test(en.replace(/\| \*\*R\d\*\* [^|]+\|/g, '')), 'English summary has no Korean outside the requirement text');

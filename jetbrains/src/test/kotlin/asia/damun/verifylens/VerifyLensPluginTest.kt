@@ -75,7 +75,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("feature/lockout-b ← main", r.context)
         assertEquals(listOf("R1" to "확인됨", "R2" to "다름", "R3" to "미확인"), r.rows.map { it.id to it.overall })
         val r2 = r.rows.first { it.id == "R2" }
-        assertEquals("6번째 시도에 동작 (요구사항 5회)", r2.summary)
+        assertEquals("6번째 시도에 동작 (요구사항 5회) — 검사는 통과", r2.summary)
 
         // 2) 도구 창에 그려지는 줄
         val panel = VerifyLensPanel(project)
@@ -85,7 +85,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("요구사항 3개 중 1개만 근거와 검사로 확인됨", panel.headlineText())
         assertEquals(6, rows.size)
         assertEquals("R2  연속 5회 실패하면 계정을 잠근다   다름", rows[2])
-        assertEquals("auth.ts:21   6번째 시도에 동작 (요구사항 5회) · 검사 실패", rows[3])
+        assertEquals("auth.ts:21   6번째 시도에 동작 (요구사항 5회) · 검사는 통과", rows[3])
         assertEquals("R3  잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다   미확인 · 검사 없음", rows[4])
         shot(panel, 560, 300, "tool-window")
 
@@ -94,13 +94,13 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals(listOf(8 to "R1", 12 to "R3", 21 to "R2"), service.markers.lensesIn(auth).map { it.first to it.second.reqId }.sortedBy { it.first })
         val note = VerifyLensLinePainter().getLineExtensions(project, auth, 20)!!.single().text
         println("[VerifyLens 시험] 21번째 줄 끝 | ${note.trim()}")
-        assertEquals("← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패", note.trim())
+        assertEquals("← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과", note.trim())
         val doc = FileDocumentManager.getInstance().getDocument(auth)!!
         val gutter = DocumentMarkupModel.forDocument(doc, project, false)!!.allHighlighters
             .filter { it.gutterIconRenderer != null && doc.getLineNumber(it.startOffset) == 20 }
         assertEquals(1, gutter.size)
         assertEquals(VerifyLensIcons.gutter("다름"), gutter[0].gutterIconRenderer!!.icon)
-        assertTrue(gutter[0].gutterIconRenderer!!.tooltipText!!.startsWith("VerifyLens R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패"))
+        assertTrue(gutter[0].gutterIconRenderer!!.tooltipText!!.startsWith("VerifyLens R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과"))
         assertNotNull("「다름」 줄은 배경을 칠한다", gutter[0].getTextAttributes(null)?.backgroundColor)
 
         // 4) 줄을 누르면 그 파일의 그 줄로 간다
@@ -145,7 +145,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals(listOf("A", "B"), r.sets.map { it.key })
         val r2 = r.rows.first { it.id == "R2" }
         assertEquals("다름", r2.overall)
-        assertEquals("결과 B: 6번째 시도에 동작 (요구사항 5회)", r2.summary)
+        assertEquals("결과 B: 6번째 시도에 동작 (요구사항 5회) — 검사는 통과", r2.summary)
 
         val panel = VerifyLensPanel(project)
         Disposer.register(testRootDisposable, panel)
@@ -162,7 +162,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals(b.line!! - 1, editor.caretModel.logicalPosition.line)
         val note = VerifyLensLinePainter().getLineExtensions(project, vf, b.line!! - 1)!!.single().text.trim()
         println("[VerifyLens 시험] 샘플 결과 B ${b.line}번째 줄 끝 | $note")
-        assertEquals("← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패 · A와 조건 다름", note)
+        assertEquals("← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과 · A와 조건 다름", note)
     }
 
     /** 요구사항 파일이 없으면 까닭을 알려 주고, 만들기를 누르면 예시가 든 파일을 만든다. */
@@ -290,8 +290,8 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         git(dir, "add", "-A")
         git(dir, "commit", "-q", "-m", "base: login without lockout")
         git(dir, "checkout", "-q", "-b", "feature/lockout-b")
-        copyTree(sample.resolve("b"), dir)
         copyTree(sample.resolve("shared"), dir)
+        copyTree(sample.resolve("b"), dir)
         git(dir, "add", "-A")
         git(dir, "commit", "-q", "-m", "feature: lockout (B)")
         Files.createDirectories(dir.resolve(".verifylens"))

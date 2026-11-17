@@ -14,7 +14,7 @@ This is the JetBrains counterpart of the [VS Code extension](../vscode/README.md
 1. **Tool window "VerifyLens"** (left side). One line on top, for example `요구사항 3개 중 1개만 근거와 검사로 확인됨`, then each requirement with its status (확인됨 / 다름 / 실패 / 미확인) and the evidence line under it. Click a line to jump to that file and line.
 2. **내 변경 확인 (Check my changes).** Compares your working tree, including uncommitted edits and new files, with the base branch. The base is picked for you: the remote default (`origin/HEAD`), otherwise `main` / `master` / `develop` / `dev`.
 3. **Marks on the evidence line.** A status icon next to the line number and a note at the end of the line, for example
-   `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`. Lines that are "different" or "failed" also get a background colour and a mark on the scrollbar.
+   `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`. Lines that are "different" or "failed" also get a background colour and a mark on the scrollbar.
 4. **Re-check on save.** After the first check it re-runs when a source file, the requirements file or the test report is written to disk (JetBrains IDEs save automatically, or press `Ctrl+S`), and after a commit or branch switch. A test report older than the code is not trusted.
 5. **샘플로 해 보기 (Run demo).** Shows the login-lockout example (two AI results, `failures >= 5` and `failures > 5`) without touching your code.
 
@@ -98,7 +98,7 @@ Checked on Windows 11 with Node 24:
 | `./gradlew test` (7 tests in a headless IDE) | pass | pass |
 | `./gradlew runIde` (real window, check run on a copy of a practice repository) | shows the result below | shows the result below |
 
-- The tests open a repository as a project, press **내 변경 확인** and assert the tool window rows, the gutter icon, the line-end note `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`, navigation to line 21, the re-check after saving a file (the old test result is dropped: `미확인 · 검사 오래됨`), the demo, the missing-requirements and missing-Node messages, and that the engine is found inside the installed plugin folder.
+- The tests open a repository as a project, press **내 변경 확인** and assert the tool window rows, the gutter icon, the line-end note `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`, navigation to line 21, the re-check after saving a file (the old test result is dropped: `미확인 · 검사 오래됨`), the demo, the missing-requirements and missing-Node messages, and that the engine is found inside the installed plugin folder.
 - In the real window the tool window showed `요구사항 3개 중 1개만 근거와 검사로 확인됨` with R2 as `다름`, and line 21 of `auth.ts` carried the icon, the background and the note. The check was started by `-PautoRun=check`, not by a mouse click.
 - IntelliJ IDEA was run without a licence (free mode). The plugin is compiled against platform 261 and also builds against 263.
 
@@ -122,6 +122,6 @@ VS Code 확장과 **같은 분석 엔진**을 IntelliJ IDEA · WebStorm 같은 J
 - **설치:** [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.1.0)에서 `verifylens-jetbrains-0.1.0.zip` 을 받아(압축을 풀지 말고) **Settings | Plugins | ⚙ | Install Plugin from Disk…** 에서 고릅니다.
 - **처음 써 보기:** 왼쪽 VerifyLens 도구 창에서 **샘플로 해 보기**를 누르세요.
 - **내 변경 확인:** `.verifylens/requirements.md` 에 요구사항을 한 줄씩 적고 **내 변경 확인**을 누르세요. 커밋하지 않아도 됩니다. 그 뒤로는 파일이 저장될 때마다 스스로 다시 확인합니다.
-- **보이는 것:** 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄(누르면 그 줄로 이동), 근거 줄의 아이콘과 줄 끝 설명(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`).
+- **보이는 것:** 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄(누르면 그 줄로 이동), 근거 줄의 아이콘과 줄 끝 설명(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`).
 - **아직 없는 것:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교, 판단 기록.
 - **확인한 범위:** IntelliJ IDEA 2026.3 과 Android Studio 2026.1.3(같은 IntelliJ 플랫폼)에서 자동 시험 7개와 실제 창으로 확인했습니다. WebStorm 에서는 아직 직접 돌려 보지 못했습니다.

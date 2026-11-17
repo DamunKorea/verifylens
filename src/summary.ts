@@ -15,6 +15,9 @@ export function nextAction(s: ReqSummary, report: Report): string {
   if (s.overall === '다름') {
     const bad = report.sets.filter((x) => x.perReq[s.req.id].evidence.boundary?.ok === false || x.perReq[s.req.id].testStatus === '실패');
     const who = bad.length ? bad.map((x) => x.label).join('·') : '다른 쪽';
+    // 검사가 통과했는데도 계산한 동작 시점이 다르면, 조건만이 아니라 검사도 요구사항과 맞는지 봐야 한다.
+    const passOff = bad.some((x) => x.perReq[s.req.id].testStatus === '통과' && x.perReq[s.req.id].evidence.boundary?.ok === false);
+    if (passOff) return `${who}의 조건과 검사를 함께 확인한다. 검사가 요구사항과 같은 횟수를 보도록 고친 뒤 조건을 수정하고 다시 검사한다.`;
     return `${who}의 조건을 확인·수정한 뒤 같은 기준으로 다시 검사한다.`;
   }
   if (s.overall === '실패') return '실패한 검사의 원인을 확인한다.';
@@ -42,7 +45,8 @@ export function renderSummaryMd(report: Report): string {
       if (u) parts.push(`\`${u.cond?.expr ?? u.text}\` (${where(set, s.req.id)}${u.kind === 'function' ? ', 함수 전체 단위 — 세부 조건은 사람이 확인' : ''})`);
       const b = rr.evidence.boundary;
       if (b && b.attempts !== null) parts.push(`${b.attempts}번째 시도에서 동작${b.ok === false ? ` ← 요구사항은 ${b.required}회` : ''}`);
-      parts.push(`검사 ${rr.testStatus}`);
+      // 검사는 통과했는데 계산한 동작 시점이 요구사항과 다르면, 그 어긋남을 그대로 적는다.
+      parts.push(rr.testStatus === '통과' && b?.ok === false ? '검사는 통과 (검사가 요구사항과 같은 횟수를 확인하는지 볼 것)' : `검사 ${rr.testStatus}`);
       const fail = rr.tests.find((t) => t.status === 'fail');
       if (fail) parts.push(`실패 이유: ${fail.message || fail.name}`);
       out.push('- ' + parts.join(' · '));

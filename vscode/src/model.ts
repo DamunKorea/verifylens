@@ -8,7 +8,7 @@ import { buildSampleRepo } from '../../src/demo.ts';
 import { renderHtml } from '../../src/output.ts';
 import { counts, renderSummaryMd } from '../../src/summary.ts';
 import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
-import type { Overall, Report, ReqSummary, ResultSet } from '../../src/types.ts';
+import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../src/types.ts';
 
 export type RepoParams = {
   repo: string;
@@ -209,10 +209,25 @@ export function verifiedLine(report: Report, lang: 'ko' | 'en' = 'ko'): string {
   return v === n ? `요구사항 ${n}개 모두 근거와 검사로 확인됨` : `요구사항 ${n}개 중 ${v}개만 근거와 검사로 확인됨`;
 }
 
+/**
+ * 검사는 통과했는데, 조건 값에서 계산한 동작 시점이 요구사항과 다른 경우.
+ * 테스트만 돌려서는 보이지 않는 어긋남이다 (코드와 검사가 같은 오해로 쓰였을 때 생긴다).
+ */
+export const passButOff = (rr: ReqResult): boolean => rr.testStatus === '통과' && rr.evidence.boundary?.ok === false;
+/** 검사 결과를 짧게. 위 경우는 「검사는 통과」라고 써서 어긋남이 드러나게 한다. */
+const testWord = (rr: ReqResult): string => (passButOff(rr) ? '검사는 통과' : `검사 ${rr.testStatus}`);
+/** 요구사항 하나에서 위 경우에 해당하는 결과들 */
+export function passButOffSets(report: Report, reqId: string): ResultSet[] {
+  return report.sets.filter((x) => x.perReq[reqId] && passButOff(x.perReq[reqId]));
+}
+export const PASS_BUT_OFF_NOTE = '검사는 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다릅니다. 검사가 요구사항과 같은 횟수를 확인하는지 검사 코드를 보세요.';
+
 /** 샘플을 돌린 직후 보여 줄 말: AI 의 「완료」와 확인된 사실의 차이 */
 export function demoHeadline(report: Report): string {
   const n = report.summaries.length;
   const v = report.summaries.filter((s) => s.overall === '확인됨').length;
+  const allGreen = report.sets.every((s) => s.tests.length > 0 && s.tests.every((t) => t.status !== 'fail'));
+  if (allGreen) return `AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했고, 테스트도 전부 통과했습니다. 그런데 근거와 검사로 확인된 것은 ${n}개 중 ${v}개입니다.`;
   return `AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다. 근거와 검사로 확인된 것은 ${n}개 중 ${v}개입니다.`;
 }
 
@@ -226,7 +241,10 @@ export function summaryLine(report: Report, s: ReqSummary): string {
   const id = s.req.id;
   if (s.overall === '다름') {
     const bad = report.sets.filter((x) => x.perReq[id].evidence.boundary?.ok === false);
-    if (bad.length) return bad.map((x) => (report.sets.length > 1 ? `${x.label}: ` : '') + boundaryText(x, id)).join(' · ');
+    if (bad.length) {
+      const line = bad.map((x) => (report.sets.length > 1 ? `${x.label}: ` : '') + boundaryText(x, id)).join(' · ');
+      return bad.every((x) => passButOff(x.perReq[id])) ? `${line} — 검사는 통과` : line;
+    }
     if (s.relation.kind === '불일치') return `두 결과의 조건이 다름 (${s.relation.detail})`;
     return '결과 사이에 검사 결과가 다름';
   }
@@ -259,8 +277,8 @@ export function treeModel(report: Report): ReqRow[] {
         label: (report.sets.length > 1 ? `${set.key}  ` : '') + (u ? `${u.file.split('/').pop()}:${u.startLine}` : '근거 없음'),
         file: u?.file,
         line: u?.startLine,
-        detail: [when, `검사 ${rr.testStatus}`].filter(Boolean).join(' · '),
-        tooltip: u ? `${who} · ${u.file}:${u.startLine} · 검사 ${rr.testStatus}${bt ? ` · ${bt}` : ''}` : `${who} · 구현 근거를 찾지 못함 · 검사 ${rr.testStatus}`,
+        detail: [when, testWord(rr)].filter(Boolean).join(' · '),
+        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${PASS_BUT_OFF_NOTE}` : ''}` : `${who} · 구현 근거를 찾지 못함 · 검사 ${rr.testStatus}`,
       };
     }),
   }));
@@ -293,11 +311,11 @@ export function allLenses(report: Report): Lens[] {
       const u = rr.evidence.unit;
       if (!u) continue;
       const bt = boundaryText(set, s.req.id);
-      const notes = [bt, `검사 ${rr.testStatus}`].filter(Boolean);
+      const notes = [bt, testWord(rr)].filter(Boolean);
       const other = report.sets.find((x) => x.key !== set.key);
       if (other && s.relation.kind === '불일치') notes.push(`${other.key}와 조건 다름`);
       const bad = rr.testStatus === '실패' || rr.evidence.boundary?.ok === false;
-      const long = [`VerifyLens ${s.req.id} · ${s.overall}`, bt, `검사 ${rr.testStatus}`, other && s.relation.kind === '불일치' ? 'A·B 조건 다름' : ''].filter(Boolean);
+      const long = [`VerifyLens ${s.req.id} · ${s.overall}`, bt, testWord(rr), other && s.relation.kind === '불일치' ? 'A·B 조건 다름' : ''].filter(Boolean);
       out.push({
         setKey: set.key,
         file: u.file,
@@ -330,6 +348,9 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
   if (!s) return null;
   const two = report.sets.length > 1;
   const out: string[] = [`**VerifyLens · ${s.req.id} · ${s.overall}** — ${s.req.text}`, '', summaryLine(report, s)];
+  // 검사는 통과했는데 계산과 다른 경우의 설명은 표보다 위에 둔다 (hover 가 길면 아래쪽이 잘려 보이지 않는다).
+  const off = passButOffSets(report, reqId);
+  if (off.length) out.push('', `⚠ ${two ? `${off.map((x) => x.label).join(' · ')}: ` : ''}${PASS_BUT_OFF_NOTE}`);
   const strip = attemptLines(report, reqId);
   if (strip.length) out.push('', '```', ...strip, '```');
   out.push('', two ? '| 결과 | 근거 | 동작 시점 | 검사 |' : '| 근거 | 동작 시점 | 검사 |', two ? '|---|---|---|---|' : '|---|---|---|');
@@ -629,6 +650,8 @@ const TXT = {
     noEvidence: '근거를 찾지 못함',
     whole: '함수 전체',
     failed: '실패한 검사',
+    passOff: '검사는 통과했지만 계산과 다른 것',
+    passOffLine: '검사가 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다름 — 검사가 요구사항과 같은 횟수를 확인하는지 볼 것',
     open: '확인되지 않은 것 (통과로 치지 않음)',
     notRun: '연결된 검사가 실행되지 않음',
     noImpl: '구현 근거를 찾지 못함',
@@ -653,6 +676,8 @@ const TXT = {
     noEvidence: 'no evidence found',
     whole: 'whole function',
     failed: 'Failed tests',
+    passOff: 'Tests pass, but the computed behavior differs',
+    passOffLine: 'the linked test passes, but the attempt computed from the condition differs from the requirement — check that the test exercises the same count as the requirement',
     open: 'Not verified (not counted as passing)',
     notRun: 'no linked test was run',
     noImpl: 'no implementation evidence found',
@@ -688,6 +713,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   out.push((['확인됨', '다름', '실패', '미확인'] as Overall[]).map((k) => `${t.count[k]} ${c[k]}`).join(' · '), '');
   out.push(`| ${t.cols.join(' | ')} |`, `|${t.cols.map(() => '---').join('|')}|`);
   const failed: string[] = [];
+  const passOff: string[] = [];
   const open: string[] = [];
   for (const s of report.summaries) {
     const id = s.req.id;
@@ -705,6 +731,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
       ev.push(pre + e);
       tests.push(pre + (t.test[rr.testStatus] ?? rr.testStatus));
       if (rr.testStatus === '미실행') notRun.push(set.key);
+      if (passButOff(rr)) passOff.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${t.passOffLine}`);
       if (!u) noImpl = true;
       for (const tc of rr.tests) {
         if (tc.status !== 'fail') continue;
@@ -729,6 +756,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   if (report.testsStale) open.unshift(`- ${t.stale}`);
   if (strips.length) out.push('', `**${t.when}**`, '```', ...strips.slice(0, -1), '```');
   if (failed.length) out.push('', `**${t.failed}**`, ...failed);
+  if (passOff.length) out.push('', `**${t.passOff}**`, ...passOff);
   if (open.length) out.push('', `**${t.open}**`, ...open);
   const autoIds = report.summaries.filter((x) => x.req.auto).map((x) => x.req.id);
   out.push('', `<sub>${autoIds.length ? t.autoLink(autoIds.join(', ')) + '<br>' : ''}${t.footer(opts.version ?? '')}</sub>`, '');

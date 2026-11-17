@@ -4,11 +4,23 @@
 
 [한국어 README](README.ko.md)
 
-AI coding tools say "Done, all requirements implemented." Developers who don't take that on faith end up reading the code backwards to re-verify it. VerifyLens does that tracing for you and shows, per requirement, what is **verified**, what is **different**, and what is **not yet verified** — with links back to the exact code lines and the tests that actually ran.
+The AI says "Done, all requirements implemented", and **every test passes.** The requirement can still be unmet.
+
+```text
+Requirement    Lock the account after 5 consecutive failures
+AI's code      if (user.failures > 5) { user.locked = true }
+AI's test      'locks the account after 5 consecutive failures'  → passes ✓
+VerifyLens     ← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과
+               (R2 · different · acts on the 6th attempt, requirement says 5 · the test passes)
+```
+
+The AI wrote the code and the test with the same misunderstanding. The test is named "after 5 failures" but actually checks after six failed attempts. So **every test passes, and the requirement is still not met.** Running the tests does not show this; computing when the condition fires does.
+
+VerifyLens shows, per requirement, what is **verified**, what is **different**, and what is **not yet verified**, with links back to the exact code lines and the tests that actually ran. It reports failing tests, and it also reports the case above: a passing test next to a numeric condition that does not match the requirement.
 
 ![VerifyLens in VS Code: the AI says "done", VerifyLens shows that only 1 of 3 requirements is verified, the evidence on hover, a side-by-side diff, the result updating by itself after a fix, and the PR summary](docs/demo.gif)
 
-<sub>Recorded from the real extension in VS Code (26 seconds). A Korean-captioned version is in the [Korean README](README.ko.md).</sub>
+<sub>Recorded from the real extension in VS Code (25 seconds). A Korean-captioned version is in the [Korean README](README.ko.md).</sub>
 
 > **Status: v0 prototype.** It works end to end on TypeScript/JavaScript repos, but it is early. The report UI is currently in **Korean** (English UI is planned). Feedback is the main goal of this release — see [Feedback](#feedback).
 
@@ -33,7 +45,7 @@ npm run demo        # builds a sample repo, runs its tests, opens the concept de
 
 Windows users can also double-click `demo-windows.cmd`. If PowerShell says *running scripts is disabled on this system*, use `npm.cmd install` and `npm.cmd run demo` instead.
 
-The demo creates a throwaway git repo with two AI-style results for the same task ("lock the account after 5 failed logins"). Result A uses `failures >= 5`, result B uses `failures > 5`. Both claim to be done. VerifyLens runs the tests and shows that B only locks on the **6th** attempt and that its test fails.
+The demo creates a throwaway git repo with two AI-style results for the same task ("lock the account after 5 failed logins"). Result A uses `failures >= 5`; result B uses `failures > 5` and comes with a test the AI wrote alongside it. Both claim to be done, and **all tests pass in both**. VerifyLens computes the condition and shows that B only locks on the **6th** attempt, even though B's test passes.
 
 Outputs are written to `out/`:
 
@@ -45,7 +57,7 @@ Outputs are written to `out/`:
 
 ## VS Code and Cursor extension (preview)
 
-The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.
+The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.
 
 **Install**
 
@@ -57,7 +69,7 @@ Click the VerifyLens icon in the Activity Bar and choose **Run demo**. To build 
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.5.1.vsix
+npm run package     # builds verifylens-0.5.2.vsix
 ```
 
 See [vscode/README.md](vscode/README.md) for details.

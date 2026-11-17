@@ -121,19 +121,19 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.equal(kids.length, 2);
   assert.deepEqual(kids[1].command.arguments, ['B', 'src/auth.ts', 21]);
   assert.equal(kids[1].label, 'B  auth.ts:21');
-  assert.equal(kids[1].description, '6번째 동작 · 검사 실패');
+  assert.equal(kids[1].description, '6번째 동작 · 검사는 통과');
   assert.equal(reg.status.text, '$(search) VerifyLens  $(pass) 1  $(diff) 1  $(question) 1');
   assert.match(reg.status.tooltip, /다름 1/);
   assert.ok(reg.status.backgroundColor, 'warning color when something differs');
   assert.ok(reg.status.visible);
   assert.deepEqual(reg.view.badge.value, 2, 'badge: R2 and R3 need attention');
   assert.equal(reg.view.message, '요구사항 3개 중 1개만 근거와 검사로 확인됨 · 샘플 · 결과 A ↔ 결과 B (기준 main) · 판단 0/3');
-  assert.ok(log.infos.some((m) => /AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했습니다\. 근거와 검사로 확인된 것은 3개 중 1개입니다/.test(m)), 'demo says what the AI claimed vs what was verified');
+  assert.ok(log.infos.some((m) => /AI는 두 결과 모두 「요구사항 전부 반영, 완료」라고 답했고, 테스트도 전부 통과했습니다\. 그런데 근거와 검사로 확인된 것은 3개 중 1개입니다/.test(m)), 'demo says what the AI claimed vs what was verified');
   assert.equal(reg.tree.getTreeItem(roots[2]).description, '미확인 · 검사 없음', 'the list says why R3 is not verified');
   assert.match(reg.status.tooltip, /AI 추정 없음/);
   const warn = [...reg.diags.map.entries()].find(([k]) => k.includes('/B/src/auth.ts'))[1].find((d) => d.code === 'R2');
   assert.equal(warn.severity, 1, 'B line is a warning in Problems');
-  assert.match(warn.message, /^R2 · 다름 — 6번째 시도에 동작 \(요구사항 5회\) · 검사 실패/);
+  assert.match(warn.message, /^R2 · 다름 — 6번째 시도에 동작 \(요구사항 5회\) · 검사는 통과/);
   const infoA = [...reg.diags.map.entries()].find(([k]) => k.includes('/A/src/auth.ts'))[1].find((d) => d.code === 'R2');
   assert.equal(infoA.severity, 2, 'A line is only information');
   assert.match(reg.panel.webview.html, /nonce="/);
@@ -151,14 +151,14 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   const r2 = lensB.filter((l) => l.command.arguments[0] === 'R2');
   assert.equal(r2[0].range.start.line, 20);
   assert.equal(r2[0].command.title, 'VerifyLens R2 · 다름');
-  assert.match(r2[0].command.tooltip, /6번째 시도에 동작 \(요구사항 5회\) · 검사 실패 · A·B 조건 다름/);
+  assert.match(r2[0].command.tooltip, /6번째 시도에 동작 \(요구사항 5회\) · 검사는 통과 · A·B 조건 다름/);
   assert.deepEqual(r2.map((l) => l.command.command), ['verifylens.focusRequirement', 'verifylens.openDiff', 'verifylens.recordJudgment']);
   // 줄 끝 설명 · 마우스 올리면 근거: 보이는 에디터에 표시를 붙인다
   const edB = editorFor(docB);
   vscode.window.visibleTextEditors = [edB];
   await reg.commands['verifylens.rerun']();
   const noteB = edB.decos.find((d) => d.renderOptions && /R2/.test(d.renderOptions.after.contentText));
-  assert.equal(noteB.renderOptions.after.contentText, '← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사 실패 · A와 조건 다름');
+  assert.equal(noteB.renderOptions.after.contentText, '← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과 · A와 조건 다름');
   assert.equal(noteB.range.start.line, 20);
   assert.ok(noteB.range.start.character > 10, 'note sits at the end of the line');
   const hov = reg.hover.provideHover(docB, new Position(20, 5)).contents[0];
@@ -288,7 +288,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.ok(fs.existsSync(path.join(repo, '.verifylens', 'test-report.xml')));
   assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[0]).description, '확인됨', 'R1 now has a passing test');
   const r2row = reg.tree.getTreeItem(reg.tree.getChildren(reg.tree.getChildren()[1])[0]).description;
-  assert.equal(r2row, '4번째 동작 · 검사 통과', 'the test passes, yet the computed attempt still shows the requirement is not met');
+  assert.equal(r2row, '4번째 동작 · 검사는 통과', 'the test passes, yet the computed attempt still shows the requirement is not met');
   assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[1]).description, '다름');
 
   // 6) 제한 모드: 브랜치 확인은 신뢰를 요청하고 멈추며, 샘플은 그대로 된다

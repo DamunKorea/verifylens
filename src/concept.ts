@@ -252,15 +252,17 @@ function steps(report: Report, infos: SetInfo[], F: ReqSummary, U?: ReqSummary):
   const condTxt = conds.map((x) => `${x.s.label}는 <code>${esc(x.e.unit?.cond?.expr ?? x.e.unit?.text ?? '근거 없음')}</code>`).join(', ');
   const bad = conds.find((x) => x.e.boundary?.ok === false);
   const failed = report.sets.filter((s) => s.perReq[id].testStatus === '실패');
+  const passOff = !!bad && bad.s.perReq[id].testStatus === '통과';
+  const allGreen = report.sets.every((s) => s.tests.length > 0 && s.tests.every((t) => t.status !== 'fail'));
   const maxLines = Math.max(...infos.map(codeLinesAdded));
   const S: Step[] = [];
   S.push({ title: 'VerifyLens 컨셉 시연', body: 'AI가 만든 코드를 쓰기 전, 무엇이 확인됐고 무엇이 다르고 무엇이 아직 확인되지 않았는지를 한 화면에서 봅니다.', side: 'files', chat: 0, term: 'none', focus: '', ov: 'cover' });
   S.push({ title: '개발자가 AI에게 기능을 맡깁니다', body: `"로그인에 연속 5회 실패하면 계정을 잠가 줘." 이 요청 안에는 지켜야 할 요구사항이 ${report.reqs.length}개 있습니다.`, side: 'files', chat: 1, term: 'none', focus: 'chat' });
-  S.push({ title: 'AI는 두 결과 모두 "요구사항 전부 반영, 완료"라고 답합니다', body: `정말 그런지는 AI의 말이 아니라 코드로 확인해야 합니다. 바뀐 코드(${nums})를 사람이 거꾸로 읽어 가며 다시 검증하는 것 — 지금 개발자들이 시간을 쓰는 곳이 여기입니다.`, side: 'files', chat: 3, term: 'diff', diff: 1, focus: 'chat ed term' });
+  S.push({ title: allGreen ? 'AI는 두 결과 모두 "완료"라고 답하고, 테스트도 전부 통과합니다' : 'AI는 두 결과 모두 "요구사항 전부 반영, 완료"라고 답합니다', body: `${allGreen ? '테스트가 통과했다고 요구사항대로라는 뜻은 아닙니다. AI가 코드와 테스트를 같은 오해로 쓰면 둘 다 초록색입니다. ' : ''}정말 그런지는 AI의 말이 아니라 코드로 확인해야 합니다. 바뀐 코드(${nums})를 사람이 거꾸로 읽어 가며 다시 검증하는 것 — 지금 개발자들이 시간을 쓰는 곳이 여기입니다.`, side: 'files', chat: 3, term: 'diff', diff: 1, focus: 'chat ed term' });
   S.push({ title: 'VerifyLens가 요구사항마다 코드와 검사 결과를 맞춰 봅니다', body: `AI는 모두 ✓라고 했지만 결과는 <b class="ok">확인됨 ${c.확인됨}</b> · <b class="diff">다름 ${c.다름}</b> · <b class="unk">미확인 ${c.미확인}</b>입니다. 이 PC 안에서 규칙으로 분석하고, AI가 추정한 내용은 넣지 않습니다.`, side: 'vl', chat: 3, term: 'test', diff: 1, focus: 'side', scan: 1 });
   S.push({ title: '"다름"을 누르면 두 결과가 갈리는 코드 줄로 바로 갑니다', body: `${condTxt}. 바뀐 코드 수십 줄 가운데 연산자 한 글자가 다릅니다. 에디터 안에 요구사항과의 관계가 함께 표시됩니다.`, side: 'vl', chat: 3, term: 'test', diff: 1, focus: 'ed side', show: id, sel: id });
   if (bad?.e.boundary)
-    S.push({ title: `코드 값으로 계산하면, ${bad.s.label}는 ${bad.e.boundary.attempts}번째 시도에서야 잠급니다`, body: `요구사항은 ${bad.e.boundary.required}번째입니다. ${failed.length ? `실제로 돌린 검사도 ${failed.map((s) => s.label).join('·')}에서 실패해 이 차이를 뒷받침합니다. ` : ''}"완료"라던 AI의 말과 다릅니다.`, side: 'vl', chat: 3, term: 'test', diff: 1, focus: 'side term', show: id, sel: id, tl: 1, failhi: 1 });
+    S.push({ title: `코드 값으로 계산하면, ${bad.s.label}는 ${bad.e.boundary.attempts}번째 시도에서야 잠급니다`, body: `요구사항은 ${bad.e.boundary.required}번째입니다. ${failed.length ? `실제로 돌린 검사도 ${failed.map((s) => s.label).join('·')}에서 실패해 이 차이를 뒷받침합니다. ` : passOff ? `그런데 ${bad.s.label}의 검사는 통과했습니다. 검사가 요구사항과 다른 횟수를 확인하고 있어서, 테스트만 돌려서는 보이지 않는 어긋남입니다. ` : ''}"완료"라던 AI의 말과 다릅니다.`, side: 'vl', chat: 3, term: 'test', diff: 1, focus: 'side term', show: id, sel: id, tl: 1, failhi: 1 });
   if (U)
     S.push({ title: '확인되지 않은 것은 "미확인"으로 남깁니다', body: `${U.req.id}는 코드는 찾았지만 연결된 검사가 없어 실제 동작을 확인하지 못했습니다. <code>hooks[event]?.()</code>처럼 무엇이 실행될지 알 수 없는 호출도 따로 표시합니다. 근거가 없는 곳을 안심시키지 않습니다.`, side: 'vl', chat: 3, term: 'test', diff: 1, focus: 'ed side', show: `${U.req.id} dyn`, sel: U.req.id });
   const judge: Record<string, string> = {};
