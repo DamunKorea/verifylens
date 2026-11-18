@@ -55,6 +55,19 @@ Outputs are written to `out/`:
 | `out/report.html` | Full report: per-requirement status, evidence chain, code diff, attempt timeline, flow map |
 | `out/summary.md` | The same findings as plain text |
 
+## Release status
+
+Last checked: 2026-11-19
+
+| Channel | Version | Status |
+|---|---|---|
+| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.8.0) | 0.8.0 | Available |
+| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.8.0 | Available |
+| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.8.0 | Available |
+| Cursor extension search | 0.8.0 | Available |
+| [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1) | 0.4.1 | Available as a zip |
+| JetBrains Marketplace | 0.4.1 | In review |
+
 ## VS Code and Cursor extension (preview)
 
 The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.
