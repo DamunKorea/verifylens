@@ -2,7 +2,10 @@ import type { Requirement } from './types.ts';
 import { tokenize, clip } from './tokens.ts';
 import { conceptsFor } from './glossary.ts';
 import { L } from './i18n.ts';
+import { numbersIn, parseConstraints } from './numeric.ts';
 
+/** 「관리자만」 · only: 다른 경우를 빼는 요구사항 */
+const ONLY_CUE = /[가-힣]만(?=\s|$)|\bonly\b/i;
 const GUARD_CUE = /(않|차단|거부|막|금지|불가|reject|deny|block|forbid|refuse|must not|cannot)/i;
 
 export function parseRequirements(md: string): Requirement[] {
@@ -14,11 +17,12 @@ export function parseRequirements(md: string): Requirement[] {
     const [body, kw] = m[2].split(/\|\s*keywords?\s*:/i);
     const text = body.trim().replace(/\s*\|\s*$/, '');
     const keywords = (kw ?? '').split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
-    const numbers = [...text.matchAll(/(\d+)\s*(?:회|번째|번|개|초|분|건|times?|th|st|nd|rd)?/g)].map((x) => Number(x[1]));
+    const numbers = numbersIn(text);
+    const constraints = parseConstraints(text);
     const auto = !keywords.length;
     const concepts = auto ? conceptsFor(text) : [];
     const tokens = auto ? concepts.flat() : tokenize(keywords.join(' '));
-    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers: [...new Set(numbers)], guardCue: GUARD_CUE.test(text) });
+    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text) });
   }
   return reqs;
 }

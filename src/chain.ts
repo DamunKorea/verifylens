@@ -1,6 +1,7 @@
 import type { Report, ReqSummary } from './types.ts';
 import { ID, ST, esc, evColor, overallColor, testColor, units, wrapText } from './view.ts';
 import { L, wEvidence, wJudge, wTest } from './i18n.ts';
+import { boundaryShort, pick } from './numeric.ts';
 
 type Box = { title: string; lines: string[]; sub?: string; mono?: boolean; color: string; dashed?: boolean; badge?: 'A' | 'B'; judgeOf?: string };
 
@@ -90,9 +91,13 @@ export function renderChain(report: Report, s: ReqSummary): string {
       behLines = [L(`${b.attempts}번째 시도`, `attempt ${b.attempts}`)];
       behSub = L(`요구사항 ${b.required}회 · ${b.ok ? '일치' : '다름'}`, `required ${b.required} · ${b.ok ? 'matches' : 'differs'}`);
       behColor = b.ok ? ST.ok : ST.diff;
+    } else if (b && b.ok !== null) {
+      behLines = wrapText(boundaryShort(b), 11, 2);
+      behSub = wrapText(`${pick(b.want)} · ${b.ok ? L('일치', 'matches') : L('다름', 'differs')}`, 11, 1)[0];
+      behColor = b.ok ? ST.ok : ST.diff;
     } else if (b) {
       behLines = [L('확정 불가', 'undetermined')];
-      behSub = L('증가 순서를 못 찾음', 'increment order unknown');
+      behSub = wrapText(pick(b.want), 11, 1)[0];
     }
     p.push(arrow(COL.test.x + COL.test.w, cy, COL.beh.x));
     p.push(box(COL.beh.x, y, COL.beh.w, LANE_H, { title: L('동작 시점', 'when it acts'), lines: behLines, sub: behSub, color: behColor, dashed: !b }));

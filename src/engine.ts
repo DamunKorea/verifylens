@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import type { Boundary, Evidence, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, TestCase, TestStatus, Unit } from './types.ts';
-import { analyzeFile } from './analyze.ts';
+import type { Boundary, Constraint, Evidence, NumPart, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, TestCase, TestStatus, Unit, UnitKind } from './types.ts';
+import { analyzeFile, resolveRefs } from './analyze.ts';
+import { boundaryNote, judge, matchScale, missingBoundary, partValue, pick } from './numeric.ts';
 import { changedFiles, changedLines, mergeBase, shortSha, showFile, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
 import { parseTestReport } from './tests.ts';
 import { tokenize } from './tokens.ts';
@@ -36,6 +37,14 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
     if (TEST_FILE.test(f)) continue;
     analyses.push(analyzeFile(f, text, lines.get(f) ?? null));
   }
+  // 다른 파일의 상수를 푼다. 바뀌지 않은 파일은 같은 시점의 내용을 읽는다.
+  resolveRefs(analyses, (f) => {
+    try {
+      return read(f);
+    } catch {
+      return null;
+    }
+  });
   const tests: TestCase[] = opts.junit ? parseTestReport(readFileSync(opts.junit, 'utf8')) : [];
   // 커밋 전 변경이 있으면 그 내용의 지문을 남긴다 (같은 커밋이어도 내용이 다르면 다른 결과다).
   let wip: string | undefined;
@@ -62,17 +71,21 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
   };
 }
 
-/**
- * 요구사항이 세는 바로 그것을 숫자와 비교하는 조건인가.
- * 예: 요구사항 「5회 실패하면…」 과 조건 `user.failures > 3`. 숫자가 요구사항과 멀어도, 비교하는 변수 이름이 요구사항의 낱말이면 이 조건이 근거다.
- * (숫자가 한 칸 안일 때만 잇던 것으로는 `> 3` 같은 큰 어긋남을 놓쳤다.)
- */
-function countsOnRequirement(req: Requirement, u: Unit): boolean {
-  const c = u.cond;
-  if (!c || c.lit === undefined || !c.left || !req.numbers.length) return false;
-  const set = new Set(req.tokens);
-  return tokenize(c.left).some((t) => set.has(t));
+/** 파일 내용만으로 결과 하나를 만든다 (git 없이). 시험과 사례 묶음에서 쓴다. */
+export function analyzeFiles(o: { key: 'A' | 'B'; ref: string; sha: string; files: Record<string, string>; tests?: TestCase[] }): ResultSet {
+  const analyses = Object.entries(o.files)
+    .filter(([f]) => CODE_EXT.test(f) && !TEST_FILE.test(f))
+    .map(([f, text]) => analyzeFile(f, text, null));
+  resolveRefs(analyses, (f) => o.files[f] ?? null);
+  return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], perReq: {} };
 }
+
+/** 숫자가 요구사항의 값과 같은가 (단위 환산 포함) */
+const litMatches = (req: Requirement, lit: number | undefined) => lit !== undefined && (req.numbers.some((n) => Math.abs(n - lit) <= 1) || req.constraints.some((c) => matchScale(c, lit) !== null));
+const leftHits = (req: Requirement, left: string) => {
+  const set = new Set(req.tokens);
+  return new Set(tokenize(left).filter((t) => set.has(t))).size;
+};
 
 function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[]; num: boolean } {
   const why: string[] = [];
@@ -83,14 +96,17 @@ function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[]; n
   const hits = req.auto ? req.concepts.filter((c) => c.some((t) => u.tokens.includes(t))).length : shared.length;
   let s = u.kind === 'function' ? Math.min(hits, 1.5) : hits;
   if (shared.length) why.push(L(`겹치는 단어: ${shared.join(', ')}`, `shared words: ${shared.join(', ')}`));
-  if (u.cond && u.cond.lit !== undefined && req.numbers.some((n) => Math.abs(n - u.cond!.lit!) <= 1)) {
+  const parts = u.cond?.parts ?? [];
+  const exact = parts.find((p) => litMatches(req, p.lit));
+  const counted = req.numbers.length ? parts.find((p) => p.lit !== undefined && leftHits(req, p.left) > 0) : undefined;
+  if (exact) {
     s += 2;
     num = true;
-    why.push(L(`숫자 ${u.cond.lit} (요구사항 ${req.numbers.join('·')})`, `number ${u.cond.lit} (requirement: ${req.numbers.join(', ')})`));
-  } else if (countsOnRequirement(req, u)) {
+    why.push(L(`숫자 ${exact.lit} (요구사항 ${req.numbers.join('·')})`, `number ${exact.lit} (requirement: ${req.numbers.join(', ')})`));
+  } else if (counted) {
     s += 2;
     num = true;
-    why.push(L(`숫자 조건 ${u.cond!.left} ↔ ${u.cond!.lit} (요구사항 ${req.numbers.join('·')})`, `numeric condition ${u.cond!.left} ↔ ${u.cond!.lit} (requirement: ${req.numbers.join(', ')})`));
+    why.push(L(`숫자 조건 ${counted.left} ↔ ${counted.lit} (요구사항 ${req.numbers.join('·')})`, `numeric condition ${counted.left} ↔ ${counted.lit} (requirement: ${req.numbers.join(', ')})`));
   }
   if (req.guardCue && u.guard) {
     s += 1;
@@ -107,37 +123,121 @@ function moreSpecific(u: Unit, num: boolean, best: { u: Unit; num: boolean }): b
   return u.endLine - u.startLine < best.u.endLine - best.u.startLine;
 }
 
+/** 값이 달라도 「같은 것을 세는 조건」이라고 볼 수 있는 이름인가. 아니면 다른 조건을 잘못 짚어 「다름」이라고 하게 된다. */
+const SAME_THING: Partial<Record<UnitKind, RegExp>> = {
+  money: /total|price|amount|fee|cost|sum|subtotal|balance|pay/i,
+  age: /age/i,
+  char: /length|len\b|size|chars?/i,
+  day: /day|date|expir|age|ttl|elapsed|since/i,
+  week: /week|day|date|expir|age|ttl|elapsed/i,
+  month: /month|date|expir|age/i,
+  hour: /hour|ms$|sec|time|ttl|age|idle|elapsed|expir|duration/i,
+  min: /min|ms$|sec|time|ttl|age|idle|elapsed|expir|duration/i,
+  sec: /sec|ms$|time|ttl|age|idle|elapsed|expir|duration/i,
+  pct: /rate|percent|ratio|discount|pct/i,
+  cnt: /count|attempt|fail|retr|tries|times|limit|max|request|hits|length|size/i,
+  qty: /length|size|count|qty|quantity|limit|max|num|total|items?|stock/i,
+};
+const sameThing = (c: Constraint, p: NumPart) => (p.source !== 'compare' && p.source !== 'config') || !c.unit || !SAME_THING[c.unit] || SAME_THING[c.unit]!.test(p.left);
+/** 같은 값이 여러 곳에 있으면 실제로 판단하는 비교를 먼저 본다: 비교 > 스키마 > 설정값 */
+const SOURCE_RANK: Record<NumPart['source'], number> = { compare: 200, loop: 200, schema: 100, cap: 100, config: 0 };
+
+type Found = { u: Unit; p: NumPart; score: number };
+
+/** 어느 코드에나 나오는 말. 이 낱말만 겹쳐서는 같은 대상을 말한다고 볼 수 없다 (part.length 와 「비밀번호 길이」). */
+const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'name', 'item', 'data']);
+function sameTarget(req: Requirement, f: Found): boolean {
+  const hits = leftHits(req, f.p.left);
+  if (!hits) return false;
+  const specific = req.tokens.filter((t) => !GENERIC.has(t));
+  const left = new Set(tokenize(f.p.left));
+  // 일반적인 낱말이라도 둘 이상 겹치면(minLength ↔ min, length) 같은 대상으로 본다
+  if (!specific.length || hits >= 2 || specific.some((t) => left.has(t))) return true;
+  // max: 10 처럼 이름이 일반적이면, 그 값이 들어 있는 문장(loginLimit = rateLimit({ … }))을 본다
+  return specific.some((t) => f.u.tokens.includes(t));
+}
+
+/** 숫자 조건마다 코드의 비교를 고르고 판정한다. 값이 같은 비교를 먼저 짝짓고, 남은 조건만 값이 다른 비교와 견준다. */
+function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Unit | null }[] {
+  const all: Found[] = units.flatMap((u) => (u.cond?.parts ?? []).map((p) => ({ u, p, score: scoreUnit(req, u).score })));
+  // 요구사항의 낱말이 더 많이 겹치는 비교가 먼저, 같으면 실제로 판단하는 비교가 먼저
+  const rank = (f: Found) => leftHits(req, f.p.left) * 1000 + SOURCE_RANK[f.p.source] + f.score + (f.u.changed ? 0.1 : 0);
+  const used = new Set<NumPart>();
+  const out = new Map<Constraint, { b: Boundary; u: Unit | null }>();
+  const take = (c: Constraint, f: Found) => {
+    used.add(f.p);
+    out.set(c, { b: judge(c, f.p), u: f.u });
+  };
+  const sameValue = (c: Constraint, f: Found) => {
+    const v = partValue(f.p);
+    return !used.has(f.p) && v !== undefined && matchScale(c, v) !== null;
+  };
+  // 1) 요구사항이 말하는 대상의 비교 가운데 값이 같은 것
+  for (const c of req.constraints) {
+    const exact = all.filter((f) => sameValue(c, f) && sameTarget(req, f)).sort((a, b) => rank(b) - rank(a));
+    if (exact[0]) take(c, exact[0]);
+  }
+  // 2) 같은 대상인데 값이 다른 비교. 값을 아는 비교를 먼저 본다.
+  for (const c of req.constraints) {
+    if (out.has(c)) continue;
+    const others = all
+      .filter((f) => !used.has(f.p) && sameTarget(req, f) && f.p.op !== '!==' && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
+      // length > 0 처럼 비었는지 보는 조건은 이 숫자와 상관없다
+      .filter((f) => f.p.lit === undefined || f.p.source === 'loop' || !(Math.abs(f.p.lit) <= 1 && c.value >= 3))
+      .filter((f) => f.p.lit === undefined || sameThing(c, f.p))
+      .sort((a, b) => Number(b.p.lit !== undefined) - Number(a.p.lit !== undefined) || rank(b) - rank(a));
+    if (others[0]) take(c, others[0]);
+  }
+  // 3) 대상 이름은 안 겹치지만 값이 같고, 줄 자체가 요구사항과 이어지는 비교 (마지막 수단)
+  for (const c of req.constraints) {
+    if (out.has(c)) continue;
+    const loose = all.filter((f) => sameValue(c, f) && f.score >= 3).sort((a, b) => rank(b) - rank(a));
+    if (loose[0]) take(c, loose[0]);
+    else out.set(c, { b: missingBoundary(c), u: null });
+  }
+  return req.constraints.map((c) => out.get(c)!);
+}
+
+const severity = (b: Boundary) => (b.ok === false ? 0 : b.ok === null ? 1 : 2);
+
 function findEvidence(req: Requirement, units: Unit[]): Evidence {
   let best: { u: Unit; score: number; why: string[]; num: boolean } | null = null;
   for (const u of units) {
     const { score, why, num } = scoreUnit(req, u);
     if (!best || score > best.score || (score === best.score && moreSpecific(u, num, best))) best = { u, score, why, num };
   }
-  if (!best || best.score < 1) return { unit: null, score: best?.score ?? 0, status: '미발견', why: [] };
-  const status = best.score >= 2 ? '발견' : '일부 발견';
-  const ev: Evidence = { unit: best.u, score: best.score, status, why: best.why };
-  const c = best.u.cond;
-  if (c && c.lit !== undefined && req.numbers.length) {
-    const required = req.numbers.reduce((a, b) => (Math.abs(b - c.lit!) < Math.abs(a - c.lit!) ? b : a));
-    if (Math.abs(required - c.lit) <= 1 || countsOnRequirement(req, best.u)) {
-      ev.boundary = {
-        required,
-        firstTrue: c.firstTrue,
-        attempts: c.attempts ?? null,
-        ok: c.attempts === undefined || c.attempts === null ? null : c.attempts === required,
-        before: c.incrementBefore ?? null,
-      } satisfies Boundary;
-    }
+  const judged = judgeConstraints(req, units);
+  const worst = [...judged].sort((a, b) => severity(a.b) - severity(b.b))[0];
+  if (!best || best.score < 1) {
+    if (!worst?.u) return { unit: null, score: best?.score ?? 0, status: '미발견', why: [], boundaries: judged.length ? judged.map((j) => j.b) : undefined, boundary: worst?.b };
+  }
+  // 근거 줄은 판정한 숫자 조건이 있는 줄로 맞춘다
+  const unit = worst?.u ?? best!.u;
+  const s = unit === best?.u ? best : { ...scoreUnit(req, unit), u: unit };
+  const status = judged.some((j) => j.u) || s.score >= 2 ? '발견' : '일부 발견';
+  const ev: Evidence = { unit, score: s.score, status, why: s.why };
+  if (judged.length) {
+    ev.boundaries = judged.map((j) => j.b);
+    ev.boundary = worst.b;
+  }
+  // 「관리자만」인데 다른 조건이 함께 걸려 있으면, 그 조건이 거짓일 때는 막지 않는다
+  const terms = unit.cond?.andTerms;
+  if (req.only && unit.guard && terms) {
+    const extra = terms.filter((t) => leftHits(req, t) === 0);
+    if (extra.length) ev.caveat = { ko: `다른 조건(${extra.join(', ')})이 함께 걸려 있어 항상 적용되지 않을 수 있음`, en: `another condition (${extra.join(', ')}) is attached, so this may not always apply` };
   }
   return ev;
 }
 
 const NEGATIVE_TEST = /(reject|den(y|ies|ied)|block|refus|forbid|fail|error|throw|invalid|cannot|can't|does not|doesn't|should not|must not|unauthori|locked out|거부|차단|실패|막|않)/i;
 
+/** 검사 이름의 50,000 을 50000 으로 */
+const plainNumbers = (s: string) => s.replace(/(\d),(?=\d{3}\b)/g, '$1');
+
 function mapTests(req: Requirement, tests: TestCase[]): TestCase[] {
   if (!req.auto) {
     const set = new Set([...req.tokens, ...req.numbers.map(String)]);
-    return tests.filter((t) => new Set(tokenize(t.name).filter((x) => set.has(x))).size >= 2);
+    return tests.filter((t) => new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= 2);
   }
   // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
   // 조건: 요구사항의 개념(숫자 포함) 가운데 3분의 2 이상을 검사 이름이 담고, 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
@@ -145,7 +245,7 @@ function mapTests(req: Requirement, tests: TestCase[]): TestCase[] {
   if (groups.length < 2) return [];
   return tests.filter((t) => {
     if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
-    const names = new Set(tokenize(normalizePhrases(t.name)));
+    const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
     const covered = groups.filter((g) => g.some((x) => names.has(x))).length;
     return covered >= 2 && covered / groups.length >= 2 / 3;
   });
@@ -188,18 +288,20 @@ function summarize(req: Requirement, sets: ResultSet[]): ReqSummary {
   }
   const evs = sets.map((s) => s.perReq[req.id]);
   for (const [i, s] of sets.entries()) {
-    const b = evs[i].evidence.boundary;
-    if (b && b.ok === false) notes.push(L(`${s.label}: 요구사항 ${b.required}회, 코드는 ${b.attempts}회째에 동작`, `${s.label}: the requirement says ${b.required}, the code acts on attempt ${b.attempts}`));
-    if (b && b.ok === null) notes.push(L(`${s.label}: 카운터 증가 순서를 찾지 못해 경계값을 확정할 수 없음`, `${s.label}: could not tell whether the counter is incremented before the comparison, so the boundary is undetermined`));
+    for (const b of evs[i].evidence.boundaries ?? []) if (b.ok !== true) notes.push(boundaryNote(b, s.label));
+    const caveat = evs[i].evidence.caveat;
+    if (caveat) notes.push(`${s.label}: ${pick(caveat)}`);
   }
   const anyFail = evs.some((e) => e.testStatus === '실패');
   const allPass = evs.every((e) => e.testStatus === '통과');
   const allFound = evs.every((e) => e.evidence.status === '발견');
-  const boundaryBad = evs.some((e) => e.evidence.boundary?.ok === false);
+  const boundaryBad = evs.some((e) => e.evidence.boundaries?.some((b) => b.ok === false));
+  // 숫자를 확정하지 못했거나 단서가 붙은 요구사항은 검사가 통과해도 「확인됨」이라고 하지 않는다.
+  const unsettled = evs.some((e) => e.evidence.caveat || e.evidence.boundaries?.some((b) => b.ok === null));
   let overall: Overall;
   if (relation.kind === '불일치' || boundaryBad || (anyFail && !allPass && evs.some((e) => e.testStatus === '통과'))) overall = '다름';
   else if (anyFail) overall = '실패';
-  else if (allFound && allPass) overall = '확인됨';
+  else if (allFound && allPass && !unsettled) overall = '확인됨';
   else overall = '미확인';
   return { req, relation, overall, notes };
 }

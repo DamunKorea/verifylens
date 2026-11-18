@@ -83,7 +83,7 @@ If your CI already writes a report, point `verifylens.junitPath` at it (JUnit XM
 ## Limitations
 
 - Comparing two branches looks at committed changes only.
-- The flagship check is numeric: "after 5 failures" against `failures > 5`, reported whether the linked test fails or passes. Other logic errors are caught only if a linked test fails.
+- Numeric rules are read from the sentence (`at least 8`, `under 14`, `at most 20`, `50,000`, `5만 원`, `30 minutes`) and compared with comparisons, constants (also imported ones), loop counts, schema rules such as `.min(8)` and settings such as `windowMs`. When the sentence or the code does not settle the boundary (`after 7 days` with `days >= 7`, a limit read from `process.env`), the result stays "not verified". Whether the condition sits on the right code path is not proven; other logic errors are caught only if a linked test fails.
 - Requirement ↔ code linking is rule-based and can be wrong; the report shows why each line was picked.
 - TypeScript and JavaScript only.
 

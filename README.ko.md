@@ -69,7 +69,7 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 ```bash
 cd vscode
 npm install
-npm run package     # verifylens-0.6.1.vsix 를 만듭니다
+npm run package     # verifylens-0.7.0.vsix 를 만듭니다
 ```
 
 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
@@ -79,12 +79,12 @@ npm run package     # verifylens-0.6.1.vsix 를 만듭니다
 IntelliJ IDEA · WebStorm 같은 JetBrains IDE용입니다. VS Code 확장과 같은 엔진을 그대로 돌리므로 판정이 같습니다. 왼쪽 **VerifyLens** 도구 창에 한 줄 요약과 요구사항별 상태 · 근거 줄이 나오고(누르면 그 줄로 이동), 근거 줄에는 줄 번호 옆 아이콘과 줄 끝 설명이 붙습니다. **내 변경 확인**은 커밋 전 변경까지 기준 브랜치와 비교하고, 파일이 저장되면 스스로 다시 확인합니다. **샘플로 해 보기**도 있습니다. 화면 글은 IDE 화면 언어를 따라 한국어 · 영어로 나옵니다.
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC의 **Node.js 18 이상**(엔진을 Node로 돌립니다. 없으면 무엇을 설치할지 알려 줍니다), git.
-- **설치:** 아직 Marketplace에는 없습니다. [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.2.1)에서 `verifylens-jetbrains-0.2.1.zip`을 받아(압축을 풀지 말고) IDE의 **Settings → Plugins → ⚙ → Install Plugin from Disk…**에서 고릅니다. 직접 만들려면 아래처럼 합니다.
+- **설치:** 아직 Marketplace에는 없습니다. [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.3.0)에서 `verifylens-jetbrains-0.3.0.zip`을 받아(압축을 풀지 말고) IDE의 **Settings → Plugins → ⚙ → Install Plugin from Disk…**에서 고릅니다. 직접 만들려면 아래처럼 합니다.
 - **한계:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교는 아직 없습니다. IntelliJ IDEA 2026.3과 Android Studio 2026.1(같은 IntelliJ 플랫폼)에서 자동 시험과 실제 창(IntelliJ IDEA, 영어 · 한국어)으로 확인했고, WebStorm에서는 아직 직접 돌려 보지 못했습니다.
 
 ```bash
 cd jetbrains
-./gradlew buildPlugin     # build/distributions/verifylens-jetbrains-0.2.1.zip 을 만듭니다
+./gradlew buildPlugin     # build/distributions/verifylens-jetbrains-0.3.0.zip 을 만듭니다
 ```
 
 빌드에 필요한 것과 확인한 범위는 [jetbrains/README.md](jetbrains/README.md)에 있습니다.
@@ -119,7 +119,7 @@ node src/cli.ts report --repo ../내저장소 --base main --a feature/x [--b fea
 
 - **TypeScript · JavaScript만** 분석합니다.
 - 요구사항 ↔ 코드 연결은 단어 · 숫자 겹침, 거부 문장 ↔ `throw/return` 같은 **규칙**입니다. 틀릴 수 있으니 리포트의 「이 코드를 고른 이유」를 보고 확인해 주세요.
-- 경계값은 `변수 >= 숫자` 꼴 조건과 같은 변수를 1씩 올리는 문장이 있을 때만 계산합니다. 못 찾으면 「확정할 수 없음」으로 표시합니다.
+- 숫자 규칙은 문장(`8자 이상`, `14세 미만`, `최대 20개`, `50,000원`, `5만 원`, `30분`)에서 읽어, 비교식 · 상수(다른 파일에서 가져온 것 포함) · 반복 횟수 · `.min(8)` 같은 스키마 · `windowMs` 같은 설정값과 맞춰 봅니다. 문장이나 코드만으로 경계가 정해지지 않으면(`7일이 지나면`과 `days >= 7`, `process.env`에서 읽는 한도) 「미확인」으로 남깁니다. 그 조건이 실제 실행 경로에 있는지까지 증명하지는 않으며, 다른 논리 오류는 연결된 검사가 실패해야 보입니다.
 - 에디터에서는 코드보다 오래된 테스트 결과를 믿지 않고 버립니다. 테스트를 다시 돌리면 반영됩니다.
 - 흐름 지도는 함수 안의 `if` 중심으로 단순화했고, 반복문 · `switch` · `try`는 한 단계로 묶습니다.
 - `hooks[event]()` 같은 동적 호출은 따라가지 않고 「해석하지 못한 호출」로 알려 줍니다.

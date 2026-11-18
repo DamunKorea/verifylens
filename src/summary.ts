@@ -1,5 +1,6 @@
 import type { Report, ReqSummary, ResultSet } from './types.ts';
 import { L, joinNames, wEvidence, wOverall, wRelation, wTest } from './i18n.ts';
+import { boundaryLine, checkWord } from './numeric.ts';
 
 const where = (s: ResultSet, id: string) => {
   const u = s.perReq[id].evidence.unit;
@@ -17,16 +18,22 @@ export function nextAction(s: ReqSummary, report: Report): string {
     const bad = report.sets.filter((x) => x.perReq[s.req.id].evidence.boundary?.ok === false || x.perReq[s.req.id].testStatus === '실패');
     const who = bad.length ? joinNames(bad.map((x) => x.label)) : L('다른 쪽', 'the other side');
     // 검사가 통과했는데도 계산한 동작 시점이 다르면, 조건만이 아니라 검사도 요구사항과 맞는지 봐야 한다.
-    const passOff = bad.some((x) => x.perReq[s.req.id].testStatus === '통과' && x.perReq[s.req.id].evidence.boundary?.ok === false);
-    if (passOff)
+    const passOff = bad.find((x) => x.perReq[s.req.id].testStatus === '통과' && x.perReq[s.req.id].evidence.boundary?.ok === false);
+    if (passOff) {
+      const b = passOff.perReq[s.req.id].evidence.boundary;
       return L(
-        `${who}의 조건과 검사를 함께 확인한다. 검사가 요구사항과 같은 횟수를 보도록 고친 뒤 조건을 수정하고 다시 검사한다.`,
-        `Check both the condition and the test in ${who}. Make the test exercise the same count as the requirement, then fix the condition and run the tests again.`,
+        `${who}의 조건과 검사를 함께 확인한다. 검사가 요구사항과 같은 ${checkWord(b, 'ko')}을 보도록 고친 뒤 조건을 수정하고 다시 검사한다.`.replace('횟수을', '횟수를'),
+        `Check both the condition and the test in ${who}. Make the test exercise the same ${checkWord(b, 'en')} as the requirement, then fix the condition and run the tests again.`,
       );
+    }
     return L(`${who}의 조건을 확인·수정한 뒤 같은 기준으로 다시 검사한다.`, `Check and fix the condition in ${who}, then run the same tests again.`);
   }
   if (s.overall === '실패') return L('실패한 검사의 원인을 확인한다.', 'Find out why the test fails.');
-  if (s.overall === '미확인') return L('관련 검사를 추가하거나 실행해 구현 근거를 확인한다.', 'Add or run a test for this requirement to confirm the behavior.');
+  if (s.overall === '미확인') {
+    const open = report.sets.some((x) => x.perReq[s.req.id].evidence.boundaries?.some((b) => b.ok === null) || x.perReq[s.req.id].evidence.caveat);
+    if (open) return L('위 주의 사항을 코드와 요구사항에서 직접 확인하고, 필요하면 요구사항 문장을 더 분명하게 고친다.', 'Check the note above in the code and the requirement, and make the requirement wording more precise if needed.');
+    return L('관련 검사를 추가하거나 실행해 구현 근거를 확인한다.', 'Add or run a test for this requirement to confirm the behavior.');
+  }
   return L('확인된 근거를 리포트에 남기고 사람이 판단한다.', 'Keep the evidence in the report; the decision is yours.');
 }
 
@@ -49,11 +56,11 @@ export function renderSummaryMd(report: Report): string {
       const parts = [L(`${set.label}: 구현 근거 ${rr.evidence.status}`, `${set.label}: evidence ${wEvidence(rr.evidence.status)}`)];
       if (u) parts.push(`\`${u.cond?.expr ?? u.text}\` (${where(set, s.req.id)}${u.kind === 'function' ? L(', 함수 전체 단위 — 세부 조건은 사람이 확인', ', whole function — check the exact condition yourself') : ''})`);
       const b = rr.evidence.boundary;
-      if (b && b.attempts !== null) parts.push(L(`${b.attempts}번째 시도에서 동작${b.ok === false ? ` ← 요구사항은 ${b.required}회` : ''}`, `acts on attempt ${b.attempts}${b.ok === false ? ` ← the requirement says ${b.required}` : ''}`));
+      for (const x of rr.evidence.boundaries ?? []) parts.push(boundaryLine(x));
       // 검사는 통과했는데 계산한 동작 시점이 요구사항과 다르면, 그 어긋남을 그대로 적는다.
       parts.push(
         rr.testStatus === '통과' && b?.ok === false
-          ? L('검사는 통과 (검사가 요구사항과 같은 횟수를 확인하는지 볼 것)', 'but the test passes (check that the test exercises the same count as the requirement)')
+          ? L(`검사는 통과 (검사가 요구사항과 같은 ${checkWord(b, 'ko')}을 확인하는지 볼 것)`.replace('횟수을', '횟수를'), `but the test passes (check that the test exercises the same ${checkWord(b, 'en')} as the requirement)`)
           : L(`검사 ${rr.testStatus}`, `tests ${wTest(rr.testStatus)}`),
       );
       const fail = rr.tests.find((t) => t.status === 'fail');

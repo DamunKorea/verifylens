@@ -8,6 +8,7 @@ import { extractFromPrBody } from './requirements.ts';
 import { renderConcept } from './concept.ts';
 import { ID, esc, hl, hlMark } from './view.ts';
 import { JUDGE_LABELS, L, getLang, joinNames, wEvidence, wJudge, wOverall, wRelation, wTest } from './i18n.ts';
+import { boundaryLine, boundaryShort, checkWord } from './numeric.ts';
 
 // ---------------------------------------------------------------- 작은 조각
 const cls = (o: string) => (o === '확인됨' ? 'ok' : o === '다름' ? 'diff' : o === '실패' ? 'fail' : 'unk');
@@ -28,26 +29,32 @@ function headline(report: Report, s: ReqSummary): string {
       const b = x.perReq[id].evidence.boundary!;
       const u = x.perReq[id].evidence.unit!;
       parts.push(
-        L(
-          `${x.label}의 조건 <code>${esc(u.cond?.expr ?? '')}</code>은 <b>${b.attempts}번째 시도</b>에서 동작해 요구사항(${b.required}회)과 다릅니다.`,
-          `The condition <code>${esc(u.cond?.expr ?? '')}</code> in ${x.label} acts on <b>attempt ${b.attempts}</b>, which differs from the requirement (${b.required}).`,
-        ),
+        b.attempts !== null
+          ? L(
+              `${x.label}의 조건 <code>${esc(u.cond?.expr ?? '')}</code>은 <b>${b.attempts}번째 시도</b>에서 동작해 요구사항(${b.required}회)과 다릅니다.`,
+              `The condition <code>${esc(u.cond?.expr ?? '')}</code> in ${x.label} acts on <b>attempt ${b.attempts}</b>, which differs from the requirement (${b.required}).`,
+            )
+          : L(`${x.label}의 조건 <code>${esc(u.cond?.expr ?? '')}</code>: <b>${esc(boundaryLine(b))}</b>.`, `The condition <code>${esc(u.cond?.expr ?? '')}</code> in ${x.label}: <b>${esc(boundaryLine(b))}</b>.`),
       );
     }
     if (!bad.length && s.relation.kind === '불일치') parts.push(L(`두 결과의 조건이 다릅니다 (${esc(s.relation.detail)}).`, `The two results use different conditions (${esc(s.relation.detail)}).`));
     if (failed.length) parts.push(L(`${labels(failed)}에서 연결된 검사가 실패해 이 차이를 뒷받침합니다.`, `A linked test fails in ${labels(failed)}, which supports this difference.`));
     const passOff = bad.filter((x) => x.perReq[id].testStatus === '통과');
-    if (passOff.length)
+    if (passOff.length) {
+      const pb = passOff[0].perReq[id].evidence.boundary;
       parts.push(
         L(
-          `그런데 ${labels(passOff)}에서 연결된 검사는 <b>통과</b>했습니다. 검사가 요구사항과 같은 횟수를 확인하는지 검사 코드를 보세요.`,
-          `Yet the linked test <b>passes</b> in ${labels(passOff)}. Check in the test code that it exercises the same count as the requirement.`,
+          `그런데 ${labels(passOff)}에서 연결된 검사는 <b>통과</b>했습니다. 검사가 요구사항과 같은 ${checkWord(pb, 'ko')}을 확인하는지 검사 코드를 보세요.`.replace('횟수을', '횟수를'),
+          `Yet the linked test <b>passes</b> in ${labels(passOff)}. Check in the test code that it exercises the same ${checkWord(pb, 'en')} as the requirement.`,
         ),
       );
+    }
     return parts.join(' ');
   }
   if (s.overall === '실패') return L(`${labels(failed)}에서 연결된 검사가 실패했습니다. 실패 이유부터 확인하세요.`, `A linked test fails in ${labels(failed)}. Start with the failure message.`);
   if (s.overall === '미확인') {
+    const open = sets.flatMap((x) => (x.perReq[id].evidence.boundaries ?? []).filter((b) => b.ok === null).map((b) => `${sets.length > 1 ? `${x.label}: ` : ''}${boundaryLine(b)}`));
+    if (open.length) return L(`숫자 조건을 확정하지 못했습니다. ${esc(open.join(' / '))}`, `The numeric condition could not be confirmed. ${esc(open.join(' / '))}`);
     const noEv = sets.filter((x) => x.perReq[id].evidence.status === '미발견');
     if (noEv.length) return L(`${labels(noEv)}에서 구현 근거를 찾지 못했습니다. 코드 위치를 사람이 직접 확인해야 합니다.`, `No implementation evidence was found in ${labels(noEv)}. Someone has to locate the code by hand.`);
     return L(
@@ -68,7 +75,7 @@ function matrixCell(set: ResultSet, id: string): string {
   const e = rr.evidence;
   const u = e.unit;
   const loc = u ? ` <code>${esc(u.file.split('/').pop()!)}:${u.startLine}</code>${u.kind === 'function' ? `<em>${L('함수 전체', 'whole function')}</em>` : ''}` : '';
-  const b = e.boundary && e.boundary.attempts !== null ? ` <span class="bd ${e.boundary.ok ? 'ok' : 'diff'}">${L(`${e.boundary.attempts}회째 동작`, `acts on attempt ${e.boundary.attempts}`)}</span>` : '';
+  const b = e.boundary ? ` <span class="bd ${e.boundary.ok ? 'ok' : e.boundary.ok === null ? 'unk' : 'diff'}">${esc(e.boundary.attempts !== null ? L(`${e.boundary.attempts}회째 동작`, `acts on attempt ${e.boundary.attempts}`) : boundaryShort(e.boundary))}</span>` : '';
   return `<div class="mc"><div><span class="mk ${evCls(e.status)}"></span>${L(`근거 ${e.status}`, `evidence ${wEvidence(e.status)}`)}${loc}</div><div><span class="mk ${tsCls(rr.testStatus)}"></span>${L(`검사 ${rr.testStatus}`, `tests ${wTest(rr.testStatus)}`)}${b}</div></div>`;
 }
 
@@ -292,7 +299,7 @@ table.mx{width:100%;border-collapse:separate;border-spacing:0}
 .mx .rq{color:#E6EDF8;font-weight:600;max-width:340px}.mx .rq b{color:#8DB5F4;margin-right:8px}
 .mc{display:flex;flex-direction:column;gap:3px;font-size:12px}.mc em{font-style:normal;color:#FCD34D;font-size:10.5px;margin-left:6px;border:1px solid rgba(251,191,36,.45);border-radius:8px;padding:0 6px}
 .mk{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.mk.ok{background:#34D399}.mk.diff{background:#FBBF24}.mk.fail{background:#F87171}.mk.unk{background:#64748B}
-.bd{font-size:11px;font-weight:700;margin-left:6px}.bd.ok{color:#6EE7B7}.bd.diff{color:#FCD34D}
+.bd{font-size:11px;font-weight:700;margin-left:6px}.bd.ok{color:#6EE7B7}.bd.diff{color:#FCD34D}.bd.unk{color:#CBD5E1}
 .rel{font-size:12px;font-weight:700}.rel.same{color:#6EE7B7}.rel.diffs{color:#FCD34D}
 .jc{color:#7D8FAB;font-size:12px}.jc.done{color:#E6EDF8;font-weight:700}
 .unc{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:12px;color:#AEBBD0}.unc>b{color:#7D8FAB}

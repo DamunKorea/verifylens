@@ -10,6 +10,7 @@ import { counts, renderSummaryMd } from '../../src/summary.ts';
 import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
 import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../src/types.ts';
 import { L, getLang, setLabel, testPhrase, wOverall, wTest } from '../../src/i18n.ts';
+import { boundaryLine, boundaryShort, checkWord, pick } from '../../src/numeric.ts';
 
 export { L, getLang, resolveLang, setLang, wJudge, wOverall } from '../../src/i18n.ts';
 export type { Lang } from '../../src/i18n.ts';
@@ -169,6 +170,8 @@ function shortReason(report: Report, s: ReqSummary): string {
   const id = s.req.id;
   if (s.overall === '미확인') {
     if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return L('근거 없음', 'no evidence');
+    if (report.sets.some((x) => x.perReq[id].evidence.boundaries?.some((b) => b.ok === null))) return L('숫자 미확정', 'number unconfirmed');
+    if (report.sets.some((x) => x.perReq[id].evidence.caveat)) return L('조건이 더 있음', 'extra condition');
     return report.testsStale ? L('검사 오래됨', 'tests out of date') : L('검사 없음', 'no test');
   }
   if (s.overall === '실패') return L('검사 실패', 'a test fails');
@@ -237,8 +240,12 @@ export function passButOffSets(report: Report, reqId: string): ResultSet[] {
   return report.sets.filter((x) => x.perReq[reqId] && passButOff(x.perReq[reqId]));
 }
 export const PASS_BUT_OFF_NOTE = '검사는 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다릅니다. 검사가 요구사항과 같은 횟수를 확인하는지 검사 코드를 보세요.';
-export const passButOffNote = (): string =>
-  L(PASS_BUT_OFF_NOTE, 'The test passes, but the attempt computed from the condition differs from the requirement. Check in the test code that it exercises the same count as the requirement.');
+export const passButOffNote = (rr?: ReqResult): string => {
+  const b = rr?.evidence.boundary;
+  if (b && b.attempts === null)
+    return L(`검사는 통과했지만, 조건의 경계가 요구사항과 다릅니다. 검사가 요구사항과 같은 ${checkWord(b, 'ko')}을 확인하는지 검사 코드를 보세요.`.replace('횟수을', '횟수를'), `The test passes, but the boundary in the condition differs from the requirement. Check in the test code that it exercises the same ${checkWord(b, 'en')} as the requirement.`);
+  return L(PASS_BUT_OFF_NOTE, 'The test passes, but the attempt computed from the condition differs from the requirement. Check in the test code that it exercises the same count as the requirement.');
+};
 
 /** 샘플을 돌린 직후 보여 줄 말: AI 의 「완료」와 확인된 사실의 차이 */
 export function demoHeadline(report: Report): string {
@@ -257,9 +264,7 @@ export function demoHeadline(report: Report): string {
 }
 
 function boundaryText(set: ResultSet, id: string): string {
-  const b = set.perReq[id].evidence.boundary;
-  if (!b || b.attempts === null) return '';
-  return L(`${b.attempts}번째 시도에 동작${b.ok === false ? ` (요구사항 ${b.required}회)` : ''}`, `acts on attempt ${b.attempts}${b.ok === false ? ` (requirement: ${b.required})` : ''}`);
+  return boundaryLine(set.perReq[id].evidence.boundary);
 }
 
 export function summaryLine(report: Report, s: ReqSummary): string {
@@ -276,6 +281,12 @@ export function summaryLine(report: Report, s: ReqSummary): string {
   if (s.overall === '실패') return L('연결된 검사가 실패', 'a linked test fails');
   if (s.overall === '미확인') {
     if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return L('구현 근거를 찾지 못함', 'no implementation evidence found');
+    const open = report.sets.flatMap((x) => {
+      const e = x.perReq[id].evidence;
+      const tag = report.sets.length > 1 ? `${x.label}: ` : '';
+      return [...(e.boundaries ?? []).filter((b) => b.ok === null).map((b) => tag + boundaryLine(b)), ...(e.caveat ? [tag + pick(e.caveat)] : [])];
+    });
+    if (open.length) return open.join(' · ');
     if (report.testsStale) return L('테스트 결과가 코드보다 오래되어 쓰지 않음 — 테스트를 다시 실행해야 함', 'test results are older than the code and were not used — run the tests again');
     return L('연결된 검사가 없어 동작을 확인하지 못함', 'no linked test, so the behavior is not confirmed');
   }
@@ -293,8 +304,7 @@ export function treeModel(report: Report): ReqRow[] {
       const rr = set.perReq[s.req.id];
       const u = rr.evidence.unit;
       const bt = boundaryText(set, s.req.id);
-      const b = rr.evidence.boundary;
-      const when = b && b.attempts !== null ? L(`${b.attempts}번째 동작`, `attempt ${b.attempts}`) : '';
+      const when = boundaryShort(rr.evidence.boundary);
       const who = `${set.label} (${set.ref})`;
       return {
         setKey: set.key,
@@ -303,7 +313,7 @@ export function treeModel(report: Report): ReqRow[] {
         file: u?.file,
         line: u?.startLine,
         detail: [when, testWord(rr)].filter(Boolean).join(' · '),
-        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote()}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhrase(rr.testStatus)}`,
+        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote(rr)}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhrase(rr.testStatus)}`,
       };
     }),
   }));
@@ -365,6 +375,7 @@ export function lensesFor(report: Report, setKey: string, file: string): Lens[] 
 }
 
 const cmdLink = (label: string, command: string, args: unknown[]) => `[${label}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
+const mdCell = (s: string) => s.replace(/\|/g, '\\|');
 const mdCode = (s: string) => '`' + s.replace(/`/g, "'").replace(/\|/g, '\\|') + '`';
 
 /** 코드 줄에 마우스를 올렸을 때 보여 줄 근거 표 (마크다운). links 가 true 면 명령 링크를 붙인다. */
@@ -375,7 +386,7 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
   const out: string[] = [`**VerifyLens · ${s.req.id} · ${wOverall(s.overall)}** — ${s.req.text}`, '', summaryLine(report, s)];
   // 검사는 통과했는데 계산과 다른 경우의 설명은 표보다 위에 둔다 (hover 가 길면 아래쪽이 잘려 보이지 않는다).
   const off = passButOffSets(report, reqId);
-  if (off.length) out.push('', `⚠ ${two ? `${off.map((x) => x.label).join(' · ')}: ` : ''}${passButOffNote()}`);
+  if (off.length) out.push('', `⚠ ${two ? `${off.map((x) => x.label).join(' · ')}: ` : ''}${passButOffNote(off[0].perReq[reqId])}`);
   const strip = attemptLines(report, reqId);
   if (strip.length) out.push('', '```', ...strip, '```');
   const cols = L('| 근거 | 동작 시점 | 검사 |', '| Evidence | Acts on | Tests |');
@@ -386,7 +397,7 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
     const u = rr.evidence.unit;
     const b = rr.evidence.boundary;
     const where = u ? `${mdCode(`${u.file.split('/').pop()}:${u.startLine}`)}${u.cond?.expr ? ' ' + mdCode(u.cond.expr) : u.kind === 'function' ? L(' 함수 전체', ' whole function') : ''}` : L('찾지 못함', 'not found');
-    const when = b && b.attempts !== null ? L(`${b.attempts}번째${b.ok === false ? ` ⚠ (요구 ${b.required}회)` : ''}`, `attempt ${b.attempts}${b.ok === false ? ` ⚠ (required: ${b.required})` : ''}`) : '–';
+    const when = !b ? '–' : b.attempts !== null ? L(`${b.attempts}번째${b.ok === false ? ` ⚠ (요구 ${b.required}회)` : ''}`, `attempt ${b.attempts}${b.ok === false ? ` ⚠ (required: ${b.required})` : ''}`) : `${b.ok === true ? '' : '⚠ '}${mdCell(boundaryLine(b))}`;
     out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${wTest(rr.testStatus)} |`);
     for (const t of rr.tests) {
       if (t.status !== 'fail') continue;
@@ -765,10 +776,13 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
       const pre = two ? `${set.key} ` : '';
       let e = u ? `\`${cell(`${u.file}:${u.startLine}`)}\`${u.cond?.expr ? ` \`${cell(u.cond.expr)}\`` : u.kind === 'function' ? ` ${t.whole}` : ''}` : t.noEvidence;
       if (b && b.attempts !== null) e += ` → ${t.attempt(b.attempts, b.required, b.ok)}`;
+      else if (b) e += ` → ${cell(boundaryLine(b, lang))}`;
       ev.push(pre + e);
       tests.push(pre + (t.test[rr.testStatus] ?? rr.testStatus));
       if (rr.testStatus === '미실행') notRun.push(set.key);
       if (passButOff(rr)) passOff.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${t.passOffLine}`);
+      for (const x of rr.evidence.boundaries ?? []) if (x.ok === null) open.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${boundaryLine(x, lang)}`);
+      if (rr.evidence.caveat) open.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${pick(rr.evidence.caveat, lang)}`);
       if (!u) noImpl = true;
       for (const tc of rr.tests) {
         if (tc.status !== 'fail') continue;

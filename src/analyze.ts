@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import type { CondInfo, DynCall, FileAnalysis, FlowEdge, FlowGraph, FlowNode, Unit } from './types.ts';
+import type { CmpOp, CondInfo, DynCall, FileAnalysis, FlowEdge, FlowGraph, FlowNode, NumPart, Unit } from './types.ts';
 import { clip, tokenize } from './tokens.ts';
 import { L } from './i18n.ts';
 
@@ -35,39 +35,126 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   const isTerminal = (s: ts.Statement) => ts.isThrowStatement(s) || ts.isReturnStatement(s);
   const stmtsOf = (s: ts.Statement): readonly ts.Statement[] => (ts.isBlock(s) ? s.statements : [s]);
 
-  const parseCond = (expr: ts.Expression, ifNode: ts.Node, fnBody: ts.Node | null): CondInfo => {
-    let e = expr;
-    while (ts.isParenthesizedExpression(e)) e = e.expression;
-    const info: CondInfo = { expr: clip(expr.getText(sf), 80) };
-    if (!ts.isBinaryExpression(e)) return info;
-    const k = e.operatorToken.kind;
-    const opText: Record<number, string> = {
-      [ts.SyntaxKind.GreaterThanToken]: '>',
-      [ts.SyntaxKind.GreaterThanEqualsToken]: '>=',
-      [ts.SyntaxKind.LessThanToken]: '<',
-      [ts.SyntaxKind.LessThanEqualsToken]: '<=',
-      [ts.SyntaxKind.EqualsEqualsEqualsToken]: '===',
-      [ts.SyntaxKind.EqualsEqualsToken]: '==',
-    };
-    const flip: Record<string, string> = { '>': '<', '>=': '<=', '<': '>', '<=': '>=', '===': '===', '==': '==' };
-    let op = opText[k];
-    if (!op) return info;
-    let left: ts.Expression = e.left;
-    let right: ts.Expression = e.right;
-    if (ts.isNumericLiteral(left) && !ts.isNumericLiteral(right)) {
-      [left, right] = [right, left];
-      op = flip[op];
+  // ---------------------------------------------------------------- 숫자 상수
+  const constants: Record<string, number> = {};
+  const conflicted = new Set<string>();
+  const imports: FileAnalysis['imports'] = {};
+  const seen = new Set<ts.Node>();
+
+  const unwrap = (e: ts.Expression): ts.Expression => {
+    let x = e;
+    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x) || ts.isNonNullExpression(x) || ts.isTypeAssertionExpression(x)) x = x.expression;
+    return x;
+  };
+  const lookup = (name: string) => (conflicted.has(name) ? undefined : constants[name]);
+  /** 코드만 보고 값을 알 수 있는 숫자 식을 계산한다 (5 * 60 * 1000, MAX_ITEMS, LIMITS.cart …). */
+  const evalNum = (e0: ts.Expression): number | undefined => {
+    const e = unwrap(e0);
+    if (ts.isNumericLiteral(e)) return Number(e.text.replace(/_/g, ''));
+    if (ts.isPrefixUnaryExpression(e)) {
+      const v = evalNum(e.operand);
+      if (v === undefined) return undefined;
+      return e.operator === ts.SyntaxKind.MinusToken ? -v : e.operator === ts.SyntaxKind.PlusToken ? v : undefined;
     }
-    if (!ts.isNumericLiteral(right)) return info;
-    info.op = op;
-    info.lit = Number(right.text);
-    info.left = left.getText(sf);
-    if (op === '>=' || op === '===' || op === '==') info.firstTrue = info.lit;
-    else if (op === '>') info.firstTrue = info.lit + 1;
-    // 같은 변수를 1씩 올리는 문장이 비교 앞에 있는지, 뒤에 있는지
+    if (ts.isBinaryExpression(e)) {
+      const a = evalNum(e.left);
+      const b = evalNum(e.right);
+      if (a === undefined || b === undefined) return undefined;
+      switch (e.operatorToken.kind) {
+        case ts.SyntaxKind.AsteriskToken: return a * b;
+        case ts.SyntaxKind.AsteriskAsteriskToken: return a ** b;
+        case ts.SyntaxKind.PlusToken: return a + b;
+        case ts.SyntaxKind.MinusToken: return a - b;
+        case ts.SyntaxKind.SlashToken: return b ? a / b : undefined;
+        default: return undefined;
+      }
+    }
+    if (ts.isIdentifier(e) || ts.isPropertyAccessExpression(e)) return lookup(e.getText(sf));
+    // Math.pow(1024, 3)
+    if (ts.isCallExpression(e) && e.expression.getText(sf) === 'Math.pow' && e.arguments.length === 2) {
+      const a = evalNum(e.arguments[0]);
+      const b = evalNum(e.arguments[1]);
+      return a === undefined || b === undefined ? undefined : a ** b;
+    }
+    return undefined;
+  };
+  /** 이름 없이 숫자만으로 된 식인가 */
+  const isPureNum = (e0: ts.Expression): boolean => {
+    const e = unwrap(e0);
+    if (ts.isNumericLiteral(e)) return true;
+    if (ts.isPrefixUnaryExpression(e)) return isPureNum(e.operand);
+    return ts.isBinaryExpression(e) && evalNum(e) !== undefined && isPureNum(e.left) && isPureNum(e.right);
+  };
+  const setConst = (name: string, v: number) => {
+    if (name in constants && constants[name] !== v) conflicted.add(name);
+    constants[name] = v;
+  };
+  const setObject = (prefix: string, o: ts.ObjectLiteralExpression) => {
+    for (const p of o.properties) {
+      if (!ts.isPropertyAssignment(p) || (!ts.isIdentifier(p.name) && !ts.isStringLiteral(p.name))) continue;
+      const key = `${prefix}.${p.name.text}`;
+      const init = unwrap(p.initializer);
+      if (ts.isObjectLiteralExpression(init)) setObject(key, init);
+      else {
+        const v = evalNum(init);
+        if (v !== undefined) setConst(key, v);
+      }
+    }
+  };
+  const collectConstants = (n: ts.Node) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ts.getCombinedNodeFlags(n) & ts.NodeFlags.Const) {
+      const init = unwrap(n.initializer);
+      if (ts.isObjectLiteralExpression(init)) setObject(n.name.text, init);
+      else {
+        const v = evalNum(init);
+        if (v !== undefined) setConst(n.name.text, v);
+      }
+    } else if (ts.isPropertyDeclaration(n) && n.initializer && ts.isIdentifier(n.name) && ts.isClassLike(n.parent) && (ts.getCombinedModifierFlags(n) & (ts.ModifierFlags.Readonly | ts.ModifierFlags.Static))) {
+      // 값이 바뀌는 필드(retries = 0)는 상수가 아니다
+      const v = evalNum(n.initializer);
+      if (v !== undefined) {
+        setConst(`this.${n.name.text}`, v);
+        if (n.parent.name) setConst(`${n.parent.name.text}.${n.name.text}`, v);
+      }
+    } else if (ts.isEnumMember(n) && n.initializer && ts.isIdentifier(n.name)) {
+      const v = evalNum(n.initializer);
+      if (v !== undefined) setConst(`${n.parent.name.text}.${n.name.text}`, v);
+    } else if (ts.isParameter(n) && n.initializer && ts.isIdentifier(n.name)) {
+      const v = evalNum(n.initializer);
+      if (v !== undefined) setConst(n.name.text, v);
+    } else if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier) && n.importClause?.namedBindings) {
+      const from = n.moduleSpecifier.text;
+      const b = n.importClause.namedBindings;
+      if (ts.isNamespaceImport(b)) imports[b.name.text] = { from, name: '*' };
+      else for (const el of b.elements) imports[el.name.text] = { from, name: (el.propertyName ?? el.name).text };
+    }
+    ts.forEachChild(n, collectConstants);
+  };
+  // 상수가 다른 상수를 쓸 수 있으므로 두 번 돈다.
+  collectConstants(sf);
+  collectConstants(sf);
+
+  // ---------------------------------------------------------------- 비교 읽기
+  const CMP: Record<number, CmpOp> = {
+    [ts.SyntaxKind.GreaterThanToken]: '>',
+    [ts.SyntaxKind.GreaterThanEqualsToken]: '>=',
+    [ts.SyntaxKind.LessThanToken]: '<',
+    [ts.SyntaxKind.LessThanEqualsToken]: '<=',
+    [ts.SyntaxKind.EqualsEqualsEqualsToken]: '===',
+    [ts.SyntaxKind.EqualsEqualsToken]: '===',
+    [ts.SyntaxKind.ExclamationEqualsEqualsToken]: '!==',
+    [ts.SyntaxKind.ExclamationEqualsToken]: '!==',
+  };
+  const FLIP: Record<CmpOp, CmpOp> = { '>': '<', '>=': '<=', '<': '>', '<=': '>=', '===': '===', '!==': '!==' };
+  const NOT: Record<CmpOp, CmpOp> = { '>': '<=', '>=': '<', '<': '>=', '<=': '>', '===': '!==', '!==': '===' };
+  const isCmp = (n: ts.Node): n is ts.BinaryExpression => ts.isBinaryExpression(n) && CMP[n.operatorToken.kind] !== undefined;
+  const isFnLike = (n: ts.Node) => ts.isFunctionLike(n);
+
+  /** 같은 변수를 1씩 올리는 문장이 비교 앞에 있는지(true), 뒤에만 있는지(false), 없는지(null) */
+  const counterOrder = (target: string, at: ts.Node, fnBody: ts.Node | null): boolean | null => {
+    if (!fnBody) return null;
     let before = false;
     let after = false;
-    const target = info.left;
     const scan = (n: ts.Node) => {
       let hit = false;
       if ((ts.isPostfixUnaryExpression(n) || ts.isPrefixUnaryExpression(n)) && n.operator === ts.SyntaxKind.PlusPlusToken && n.operand.getText(sf) === target) hit = true;
@@ -76,15 +163,129 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
         if (n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isBinaryExpression(n.right) && n.right.operatorToken.kind === ts.SyntaxKind.PlusToken && n.right.left.getText(sf) === target) hit = true;
       }
       if (hit) {
-        if (n.pos < ifNode.pos) before = true;
+        if (n.pos < at.pos) before = true;
         else after = true;
       }
       ts.forEachChild(n, scan);
     };
-    if (fnBody) scan(fnBody);
-    info.incrementBefore = before ? true : after ? false : null;
-    if (info.firstTrue !== undefined) info.attempts = before ? info.firstTrue : after ? info.firstTrue + 1 : null;
-    return info;
+    scan(fnBody);
+    return before ? true : after ? false : null;
+  };
+  const insideCatch = (n: ts.Node): boolean => {
+    for (let p: ts.Node | undefined = n.parent; p && !isFnLike(p); p = p.parent) if (ts.isCatchClause(p)) return true;
+    return false;
+  };
+  const hasCall = (n: ts.Node): boolean => {
+    if (ts.isThrowStatement(n)) return false;
+    if (ts.isCallExpression(n) || ts.isAwaitExpression(n)) return true;
+    return !!ts.forEachChild(n, (c) => (hasCall(c) ? true : undefined));
+  };
+  /** 검사 다음에 다른 호출(실제 동작)이 이어지는가 */
+  const actionFollows = (at: ts.Node): boolean => {
+    let s: ts.Node = at;
+    while (s.parent && !ts.isBlock(s.parent) && !ts.isSourceFile(s.parent)) s = s.parent;
+    const list = s.parent && (ts.isBlock(s.parent) || ts.isSourceFile(s.parent)) ? s.parent.statements : null;
+    if (!list) return false;
+    const i = list.indexOf(s as ts.Statement);
+    return list.slice(i + 1).some(hasCall);
+  };
+  /** 검사 뒤에 같은 목록에 넣는가: cart.length 를 본 다음 cart.push(…) */
+  const addsAfter = (left: string, at: ts.Node, fnBody: ts.Node | null): boolean => {
+    const target = left.replace(/\.(?:length|size|count)(?:\(\))?$/, '');
+    if (target === left || !fnBody) return false;
+    let found = false;
+    const scan = (n: ts.Node) => {
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.pos >= at.pos && n.expression.expression.getText(sf) === target && /^(?:push|unshift|add|set|append|insert)$/.test(n.expression.name.text)) found = true;
+      ts.forEachChild(n, scan);
+    };
+    scan(fnBody);
+    return found;
+  };
+  /** if 의 몸통이 거부하는가: throw, return false / null / 빈 return */
+  const rejects = (s: ts.Statement): boolean =>
+    stmtsOf(s).some((x) => ts.isThrowStatement(x) || (ts.isReturnStatement(x) && (!x.expression || x.expression.kind === ts.SyntaxKind.FalseKeyword || x.expression.kind === ts.SyntaxKind.NullKeyword)));
+
+  /** let n = 5 처럼 시작값이 있고 함수 안에서 1씩 줄이는 변수의 시작값 */
+  const countdownStart = (name: string, fnBody: ts.Node | null): number | undefined => {
+    if (!fnBody) return undefined;
+    let start: number | undefined;
+    let down = false;
+    const scan = (n: ts.Node) => {
+      if (ts.isVariableDeclaration(n) && n.name.getText(sf) === name && n.initializer) start = evalNum(n.initializer);
+      if ((ts.isPostfixUnaryExpression(n) || ts.isPrefixUnaryExpression(n)) && n.operator === ts.SyntaxKind.MinusMinusToken && n.operand.getText(sf) === name) down = true;
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.MinusEqualsToken && n.left.getText(sf) === name && evalNum(n.right) === 1) down = true;
+      ts.forEachChild(n, scan);
+    };
+    scan(fnBody);
+    return down ? start : undefined;
+  };
+
+  type Ctx = { at: ts.Node; fnBody: ts.Node | null; reject: boolean; loopVar?: string; loopStart?: number; inLoopHead?: boolean };
+  const partOf = (e: ts.BinaryExpression, negated: boolean, ctx: Ctx): NumPart | null => {
+    let op = CMP[e.operatorToken.kind];
+    let l = unwrap(e.left);
+    let r = unwrap(e.right);
+    if (isPureNum(l) && isPureNum(r)) return null;
+    // 숫자를 오른쪽으로 모은다: 5 <= x → x >= 5. 양쪽 다 이름이면 오른쪽을 기준값으로 본다.
+    if (isPureNum(l) || (evalNum(r) === undefined && evalNum(l) !== undefined)) {
+      [l, r] = [r, l];
+      op = FLIP[op];
+    }
+    const lit = evalNum(r);
+    let ref: string | undefined;
+    if (lit === undefined) {
+      // 문자열 · true · null 과의 비교는 숫자 조건이 아니다
+      if (op === '===' || op === '!==') return null;
+      if (ts.isStringLiteralLike(r) || r.kind === ts.SyntaxKind.NullKeyword || r.kind === ts.SyntaxKind.TrueKeyword || r.kind === ts.SyntaxKind.FalseKeyword) return null;
+      ref = clip(r.getText(sf), 50);
+    }
+    if (negated) op = NOT[op];
+    // while (n-- > 0) 의 왼쪽은 n 이다
+    if ((ts.isPostfixUnaryExpression(l) || ts.isPrefixUnaryExpression(l)) && l.operator === ts.SyntaxKind.MinusMinusToken) l = l.operand;
+    const left = l.getText(sf);
+    const down = ctx.inLoopHead && ctx.loopVar === undefined ? countdownStart(left, ctx.fnBody) : undefined;
+    const loop = down !== undefined || (ctx.loopVar !== undefined && left === ctx.loopVar);
+    if (down !== undefined) ctx = { ...ctx, loopStart: down };
+    return {
+      expr: clip(e.getText(sf), 80),
+      left,
+      op,
+      lit,
+      ref,
+      line: line(e.getStart(sf)),
+      source: loop ? 'loop' : 'compare',
+      incBefore: loop ? null : counterOrder(left, ctx.at, ctx.fnBody),
+      preAdd: addsAfter(left, ctx.at, ctx.fnBody),
+      inCatch: insideCatch(ctx.at),
+      actionAfter: actionFollows(ctx.at),
+      thenKind: ctx.reject ? 'reject' : null,
+      loopStart: loop ? ctx.loopStart : undefined,
+    };
+  };
+  /** 조건식을 &&, ||, ! 로 나눠 숫자 비교를 모은다. */
+  const collectParts = (e0: ts.Expression, negated: boolean, ctx: Ctx, out: NumPart[]) => {
+    const e = unwrap(e0);
+    seen.add(e);
+    if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken) return collectParts(e.operand, !negated, ctx, out);
+    if (ts.isBinaryExpression(e) && (e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || e.operatorToken.kind === ts.SyntaxKind.BarBarToken)) {
+      collectParts(e.left, negated, ctx, out);
+      collectParts(e.right, negated, ctx, out);
+      return;
+    }
+    if (isCmp(e)) {
+      const p = partOf(e, negated, ctx);
+      if (p) out.push(p);
+    }
+  };
+  const andTermsOf = (e0: ts.Expression): string[] => {
+    const e = unwrap(e0);
+    return ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ? [...andTermsOf(e.left), ...andTermsOf(e.right)] : [e.getText(sf)];
+  };
+  const buildCond = (expr: ts.Expression, ctx: Ctx): CondInfo => {
+    const parts: NumPart[] = [];
+    collectParts(expr, false, ctx, parts);
+    const terms = andTermsOf(expr);
+    return { expr: clip(expr.getText(sf), 80), parts, andTerms: terms.length > 1 ? terms : undefined, single: isCmp(unwrap(expr)) };
   };
 
   const summarize = (stmts: ts.Statement[]): string => {
@@ -181,6 +382,102 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     if (body) flows.push(buildFlow(name, fn as FnNode & { body: ts.Block }));
   };
 
+  const addCond = (n: ts.Node, cur: { name: string } | undefined, text: string, sl: number, el: number, guard: boolean, cond: CondInfo) => {
+    units.push({
+      id: `${file}#c${seq++}`,
+      kind: 'condition',
+      file,
+      fn: cur?.name ?? L('(최상위)', '(top level)'),
+      startLine: sl,
+      endLine: el,
+      text: clip(text, 120),
+      tokens: [...new Set(tokenize(text))],
+      guard,
+      changed: isChanged(sl, el),
+      cond,
+    });
+  };
+  /** 비교가 들어 있는 문장 (변수 선언 · return · 객체의 한 칸 …) */
+  const enclosing = (n: ts.Node): ts.Node => {
+    let p = n;
+    while (p.parent && !ts.isStatement(p) && !ts.isPropertyAssignment(p) && !ts.isSourceFile(p.parent)) p = p.parent;
+    return p;
+  };
+  /** 스키마 값의 이름: password: z.string().min(8) 이면 password */
+  const ownerName = (n: ts.Node): string => {
+    for (let p: ts.Node | undefined = n.parent; p && !ts.isStatement(p); p = p.parent) {
+      if (ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p)) return p.name.getText(sf);
+      if (ts.isVariableDeclaration(p)) return p.name.getText(sf);
+    }
+    return n.getText(sf).split('.')[0];
+  };
+  const SCHEMA_OP: Record<string, CmpOp> = { min: '>=', minLength: '>=', gte: '>=', gt: '>', max: '<=', maxLength: '<=', lte: '<=', lt: '<' };
+  const simplePartBase = (n: ts.Node, left: string, op: CmpOp): NumPart => ({ expr: clip(n.getText(sf), 80), left, op, line: line(n.getStart(sf)), source: 'schema', incBefore: null, preAdd: false, inCatch: false, actionAfter: false, thenKind: null });
+  const simplePart = (n: ts.Node, left: string, op: CmpOp, value: ts.Expression, source: NumPart['source']): NumPart | null => {
+    const lit = evalNum(value);
+    const v = unwrap(value);
+    if (lit === undefined && !ts.isIdentifier(v) && !ts.isPropertyAccessExpression(v)) return null;
+    return { ...simplePartBase(n, left, op), lit, ref: lit === undefined ? clip(v.getText(sf), 50) : undefined, source };
+  };
+  /** 비교문이 아닌 숫자 조건: 스키마(.min(8)), 상한(Math.min, slice) */
+  const callPart = (n: ts.CallExpression): NumPart | null => {
+    if (ts.isIdentifier(n.expression)) {
+      const callee = n.expression.text;
+      // setTimeout(fn, 30000) · sleep(1000)
+      if (/^(?:setTimeout|setInterval)$/.test(callee) && n.arguments.length >= 2) return simplePart(n, `${ownerName(n)} ${callee}`, '===', n.arguments[1], 'config');
+      if (/^(?:sleep|delay|wait)$/.test(callee) && n.arguments.length === 1) return simplePart(n, `${ownerName(n)} ${callee}`, '===', n.arguments[0], 'config');
+      // @MaxLength(15) · @Min(18) 데코레이터
+      const op = SCHEMA_OP[callee[0].toLowerCase() + callee.slice(1)];
+      if (op && ts.isDecorator(n.parent) && n.arguments.length >= 1) return simplePart(n, ownerName(n.parent), op, n.arguments[0], 'schema');
+      return null;
+    }
+    if (!ts.isPropertyAccessExpression(n.expression)) return null;
+    const name = n.expression.name.text;
+    const recv = n.expression.expression;
+    const a = n.arguments;
+    if (ts.isIdentifier(recv) && recv.text === 'Math' && a.length === 2 && (name === 'min' || name === 'max')) {
+      const numeric = evalNum(a[1]) !== undefined ? 1 : evalNum(a[0]) !== undefined ? 0 : -1;
+      if (numeric < 0) return null;
+      return simplePart(n, `${ownerName(n)} ${a[1 - numeric].getText(sf)}`, name === 'min' ? '<=' : '>=', a[numeric], 'cap');
+    }
+    if (name === 'slice' && a.length === 2 && evalNum(a[0]) === 0) return simplePart(n, `${recv.getText(sf)} ${ownerName(n)}`, '<=', a[1], 'cap');
+    if ((name === 'limit' || name === 'take') && a.length === 1) return simplePart(n, `${recv.getText(sf)} ${ownerName(n)}`, '<=', a[0], 'cap');
+    if (SCHEMA_OP[name] && a.length >= 1) return simplePart(n, `${ownerName(n)} ${recv.getText(sf)}`, SCHEMA_OP[name], a[0], 'schema');
+    return null;
+  };
+  /** 설정값: { maxLength: 20, minLength: 8, maxAttempts: 3 } */
+  const CONFIG_NAME = /retr|attempt|timeout|ttl|expire|age|window|delay|interval|duration|limit|size|count|capacity|lifetime/i;
+  /** '1h' · '7d' · '30m' 같은 기간 글을 초로 */
+  const durationSeconds = (e0: ts.Expression): number | undefined => {
+    const e = unwrap(e0);
+    if (!ts.isStringLiteralLike(e)) return undefined;
+    const m = e.text.trim().match(/^(\d+(?:\.\d+)?)\s*(s|sec|secs|m|min|mins|h|hr|hrs|d|day|days|w|week|weeks)$/i);
+    if (!m) return undefined;
+    const unit = m[2][0].toLowerCase();
+    return Number(m[1]) * { s: 1, m: 60, h: 3600, d: 86400, w: 604800 }[unit as 's']!;
+  };
+  const configPart = (n: ts.Node, name: string, value0: ts.Expression): NumPart | null => {
+    if (!CONFIG_NAME.test(name)) return null;
+    // options.max ?? 5, opts.limit || 5: 정해 주지 않았을 때의 기본값을 읽는다
+    let value = unwrap(value0);
+    if (ts.isBinaryExpression(value) && (value.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || value.operatorToken.kind === ts.SyntaxKind.BarBarToken)) value = value.right;
+    const secs = durationSeconds(value);
+    if (secs !== undefined) return { ...simplePartBase(n, name, '==='), lit: secs, source: 'config' };
+    return evalNum(value) === undefined ? null : simplePart(n, name, '===', value, 'config');
+  };
+  const propertyPart = (n: ts.PropertyAssignment): NumPart | null => {
+    const name = n.name.getText(sf).replace(/['"]/g, '');
+    const timeLike = /age|time|wait|duration|delay/i.test(name);
+    if (evalNum(n.initializer) !== undefined && !timeLike) {
+      if (/^min/i.test(name)) return simplePart(n, name, '>=', n.initializer, 'schema');
+      if (/^(?:max|limit$)/i.test(name)) return simplePart(n, name, '<=', n.initializer, 'schema');
+    }
+    return configPart(n, name, n.initializer);
+  };
+
+  const isDefaultAssign = (n: ts.Node): boolean =>
+    ts.isBinaryExpression(n) && (n.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken || n.operatorToken.kind === ts.SyntaxKind.BarBarEqualsToken || n.operatorToken.kind === ts.SyntaxKind.EqualsToken);
+
   const walkNode = (n: ts.Node, fnStack: { name: string; body: ts.Node | null }[]) => {
     const name = ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isArrowFunction(n) || ts.isFunctionExpression(n) ? fnName(n) : null;
     let stack = fnStack;
@@ -190,6 +487,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       stack = [...fnStack, { name, body: f.body ?? null }];
     }
     const cur = stack[stack.length - 1];
+    const fnBody = cur?.body ?? null;
     if (ts.isIfStatement(n) || ts.isConditionalExpression(n)) {
       const cond = ts.isIfStatement(n) ? n.expression : n.condition;
       const consequent = ts.isIfStatement(n) ? stmtsOf(n.thenStatement) : [];
@@ -197,19 +495,47 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       const el = ts.isIfStatement(n) ? line(n.thenStatement.getEnd()) : line(n.getEnd());
       const guard = consequent.some(isTerminal);
       const text = ts.isIfStatement(n) ? n.getText(sf).slice(0, n.thenStatement.getEnd() - n.getStart(sf)) : n.getText(sf);
-      units.push({
-        id: `${file}#c${seq++}`,
-        kind: 'condition',
-        file,
-        fn: cur?.name ?? L('(최상위)', '(top level)'),
-        startLine: sl,
-        endLine: el,
-        text: clip(text, 120),
-        tokens: [...new Set(tokenize(text))],
-        guard,
-        changed: isChanged(sl, el),
-        cond: parseCond(cond, n, cur?.body ?? null),
-      });
+      addCond(n, cur, text, sl, el, guard, buildCond(cond, { at: n, fnBody, reject: ts.isIfStatement(n) && rejects(n.thenStatement) }));
+    } else if (ts.isWhileStatement(n) || ts.isDoStatement(n)) {
+      const sl = line(n.expression.getStart(sf));
+      addCond(n, cur, n.getText(sf), sl, sl, false, buildCond(n.expression, { at: n, fnBody, reject: false, inLoopHead: true }));
+    } else if (ts.isForStatement(n) && n.condition) {
+      // for (let i = 0; i < 3; i++): 몇 번 도는지 계산할 수 있게 시작값을 넘긴다
+      let loopVar: string | undefined;
+      let loopStart: number | undefined;
+      if (n.initializer && ts.isVariableDeclarationList(n.initializer) && n.initializer.declarations.length === 1) {
+        const d = n.initializer.declarations[0];
+        if (ts.isIdentifier(d.name) && d.initializer) {
+          loopVar = d.name.text;
+          loopStart = evalNum(d.initializer);
+        }
+      }
+      if (loopStart === undefined) loopVar = undefined;
+      const sl = line(n.getStart(sf));
+      addCond(n, cur, n.getText(sf), sl, sl, false, buildCond(n.condition, { at: n, fnBody, reject: false, loopVar, loopStart }));
+    } else if (isCmp(n) && !seen.has(n)) {
+      // if 밖의 비교: const ok = age >= 19, return x < 3, (a) => a.days <= 7
+      const cond = buildCond(n, { at: n, fnBody, reject: false });
+      if (cond.parts?.length) {
+        const host = enclosing(n);
+        const sl = line(n.getStart(sf));
+        addCond(n, cur, `${cur?.name ?? ''} ${host.getText(sf)}`, sl, sl, false, cond);
+      }
+    } else if (ts.isCallExpression(n) || ts.isPropertyAssignment(n) || ((ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n)) && n.initializer && ts.isIdentifier(n.name)) || isDefaultAssign(n)) {
+      // const SESSION_TTL_MS = 1800000, options.retries ??= 10, (size = 21) => …, { limit = 20 } 처럼 값만 정해 두는 경우도 설정값으로 읽는다
+      const p = ts.isCallExpression(n)
+        ? callPart(n)
+        : ts.isPropertyAssignment(n)
+          ? propertyPart(n)
+          : ts.isVariableDeclaration(n) || ts.isParameter(n) || ts.isBindingElement(n)
+            ? configPart(n, (n.name as ts.Identifier).text, n.initializer!)
+            : configPart(n, (n as ts.BinaryExpression).left.getText(sf), (n as ts.BinaryExpression).right);
+      if (p) {
+        // 값이 들어 있는 문장 전체를 본다: const loginLimit = rateLimit({ max: 10 }) 의 max 는 login 에 대한 것이다
+        let st: ts.Node = n;
+        while (st.parent && !ts.isStatement(st) && !ts.isClassElement(st) && !ts.isSourceFile(st.parent)) st = st.parent;
+        addCond(n, cur, `${cur?.name ?? ''} ${clip(st.getText(sf), 400)}`, p.line, p.line, false, { expr: p.expr, parts: [p], single: false });
+      }
     }
     if (ts.isCallExpression(n)) {
       const callee = n.expression;
@@ -221,5 +547,73 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   };
 
   walkNode(sf, []);
-  return { file, units, dyn, flows };
+  for (const k of conflicted) delete constants[k];
+  for (const u of units) if (u.cond) syncPrimary(u.cond);
+  return { file, units, dyn, flows, constants, imports };
+}
+
+/** 조건식이 비교 하나뿐이면 그 값을 cond 에 바로 둔다 (두 결과 비교 · 화면 표시에 쓴다). */
+export function syncPrimary(c: CondInfo) {
+  const p = c.single && c.parts?.length === 1 ? c.parts[0] : undefined;
+  if (!p || p.lit === undefined || p.op === '!==') return;
+  c.op = p.op;
+  c.lit = p.lit;
+  c.left = p.left;
+  c.firstTrue = p.op === '>=' || p.op === '===' ? p.lit : p.op === '>' ? p.lit + 1 : undefined;
+  c.incrementBefore = p.incBefore;
+  if (c.firstTrue !== undefined) c.attempts = p.incBefore === null ? null : p.incBefore ? c.firstTrue : c.firstTrue + 1;
+}
+
+const normalizePath = (p: string) => {
+  const out: string[] = [];
+  for (const seg of p.split('/')) {
+    if (seg === '..') out.pop();
+    else if (seg && seg !== '.') out.push(seg);
+  }
+  return out.join('/');
+};
+
+/**
+ * 다른 파일에서 가져온 상수를 푼다: import { CART_MAX } from './limits'.
+ * 바뀌지 않은 파일이면 read 로 읽어 본다. 못 찾으면 값 없음으로 남고, 그 조건은 「확정 불가」가 된다.
+ */
+export function resolveRefs(analyses: FileAnalysis[], read?: (file: string) => string | null) {
+  const known = new Map(analyses.map((a) => [a.file, a]));
+  const load = (file: string): FileAnalysis | null => {
+    if (known.has(file)) return known.get(file)!;
+    const text = read?.(file);
+    if (text === null || text === undefined) return null;
+    const a = analyzeFile(file, text, null);
+    known.set(file, a);
+    return a;
+  };
+  const open = (from: string, spec: string): FileAnalysis | null => {
+    if (!spec.startsWith('.')) return null;
+    const dir = from.split('/').slice(0, -1).join('/');
+    const stem = normalizePath(`${dir}/${spec}`).replace(/\.(?:[cm]?[jt]s|tsx|jsx)$/, '');
+    for (const ext of ['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '/index.ts', '/index.js']) {
+      const a = load(stem + ext);
+      if (a) return a;
+    }
+    return null;
+  };
+  for (const a of analyses) {
+    for (const u of a.units) {
+      if (!u.cond?.parts) continue;
+      for (const p of u.cond.parts) {
+        if (p.lit !== undefined || !p.ref) continue;
+        const [root, ...rest] = p.ref.split('.');
+        const imp = a.imports[root];
+        if (!imp) continue;
+        const target = open(a.file, imp.from);
+        if (!target) continue;
+        const key = imp.name === '*' ? rest.join('.') : [imp.name, ...rest].join('.');
+        if (target.constants[key] !== undefined) {
+          p.lit = target.constants[key];
+          p.ref = undefined;
+        }
+      }
+      syncPrimary(u.cond);
+    }
+  }
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+Numeric rules are now actually checked, not only "after N failures".
+
+Trying VerifyLens on other kinds of code showed a serious gap: in a made-up shop it marked `total > 50000` as verified for "50000 or more". Any number that was not a retry counter was effectively ignored.
+
+- **Amounts, ages, lengths, limits, durations and percentages are compared with the code.** `total > 50000` against "50000 or more" is now `Different`, and so is `age <= 14` against "under 14", or `cart.length > 20` before a `push` against "at most 20".
+- **"Verified" is no longer given when the number could not be confirmed.** If the code reads the limit from `process.env`, no matching comparison exists, or the sentence leaves the boundary open ("after 7 days" with `days >= 7`), the requirement stays `Not verified` and says why.
+- **More ways of writing the rule are understood.** In the sentence: `50,000`, `5만 원`, `다섯 번`, `at least`, `no more than`, `under`, `must not exceed`, `10MB`. In the code: constants (also imported or in objects and readonly fields), `5 * 60 * 1000`, `return x >= 8`, arrow functions, `!(x >= 8)`, `for` / `while` loop counts, countdowns, `.min(8)` / `.max(20)`, `@MaxLength(15)`, `Math.min`, `slice(0, 50)`, and settings such as `windowMs`, `expiresIn: '1h'`, `options.retries ??= 10`, `setTimeout(fn, 30000)`.
+- **"Only admins" with an extra condition** (`role !== 'admin' && amount >= 100000`) is no longer verified.
+- 178 cases now run with the tests, and the rules were tried on real code from validator.js, express-rate-limit, p-retry, ky, helmet and nanoid.
+
 ## 0.6.1
 
 - **On Open VSX.** Cursor (and other editors that use Open VSX) can now install VerifyLens by searching for it in the Extensions view. The install section says so instead of "Not on Open VSX yet".

@@ -1,0 +1,335 @@
+// 요구사항 문장의 숫자 조건을 읽고, 코드의 비교와 맞는지 판정한다.
+// AI 추정이 아니라 고정된 규칙이다. 문장이나 코드만으로 정할 수 없으면 「맞다」고 하지 않고 확정 불가(ok: null)로 둔다.
+import type { Boundary, Constraint, NumPart, NumRelation, Text, UnitKind } from './types.ts';
+import { getLang } from './i18n.ts';
+
+const T = (ko: string, en: string): Text => ({ ko, en });
+export const pick = (t: Text | undefined, lang = getLang()): string => (t ? t[lang] : '');
+
+// ---------------------------------------------------------------- 문장 읽기
+const NATIVE: Record<string, number> = { 한: 1, 하나: 1, 두: 2, 둘: 2, 세: 3, 셋: 3, 네: 4, 넷: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9, 열: 10 };
+const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, twenty: 20, thirty: 30, fifty: 50, hundred: 100 };
+const MAGNITUDE: Record<string, number> = { 억: 1e8, 천만: 1e7, 백만: 1e6, 십만: 1e5, 만: 1e4, 천: 1e3, 백: 100 };
+
+const UNITS: [RegExp, UnitKind][] = [
+  [/^(?:원|달러|dollars?|usd|krw|won)\b|^(?:원|달러)/i, 'money'],
+  [/^(?:세|살)(?![가-힣]*(?:대))|^years?\s+old\b/i, 'age'],
+  [/^(?:글자|자리|자)|^(?:characters?|chars?|letters?|digits?)\b/i, 'char'],
+  [/^(?:개월|달)|^months?\b/i, 'month'],
+  [/^(?:주일|주)(?!년|문)|^weeks?\b/i, 'week'],
+  [/^일(?![가-힣]*(?:부|반|단|괄))|^days?\b/i, 'day'],
+  [/^시간|^(?:hours?|hrs?)\b/i, 'hour'],
+  [/^분|^(?:minutes?|mins?)\b/i, 'min'],
+  [/^초|^(?:seconds?|secs?)\b/i, 'sec'],
+  [/^(?:%|퍼센트|프로)|^percent\b/i, 'pct'],
+  [/^(?:kb|킬로바이트)/i, 'kb'],
+  [/^(?:mb|메가바이트|메가)/i, 'mb'],
+  [/^(?:gb|기가바이트|기가)/i, 'gb'],
+  [/^(?:회|번)(?!째)|^(?:times?|attempts?|tries|retries|failures?|failed)\b/i, 'cnt'],
+  [/^(?:개|건|명|장|점|권|줄)|^(?:items?|members?|users?|people|entries|records|points?|rows?|products?)\b/i, 'qty'],
+];
+
+/** 코드에서 같은 값을 쓸 수 있는 단위 환산 (예: 30분 = 1800초 = 1800000ms) */
+const SCALES: Partial<Record<UnitKind, number[]>> = {
+  week: [1, 7, 168, 10080, 604800, 604800000],
+  day: [1, 24, 1440, 86400, 86400000],
+  hour: [1, 60, 3600, 3600000],
+  min: [1, 60, 60000],
+  sec: [1, 1000],
+  pct: [1, 0.01],
+  kb: [1, 1024, 1000],
+  mb: [1, 1024, 1048576, 1000, 1000000],
+  gb: [1, 1024, 1048576, 1073741824, 1000, 1000000, 1000000000],
+};
+
+const NUM = /(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?:\s*(억|천만|백만|십만|만|천|백)(?![가-힣]*(?:약|명히)))?/g;
+// 「한 번에」 · 「한 번도」 · 「두 번 다시」는 횟수 조건이 아니다
+const NATIVE_RE = /(?<![가-힣])(하나|둘|셋|넷|다섯|여섯|일곱|여덟|아홉|한|두|세|네|열)\s*(?=번(?!\s*(?:에|도|더|씩|쯤|다시))|회|개|명|살|시간|달)/g;
+const WORD_RE = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|fifty|hundred)\b(?=\s+(?:times?|attempts?|tries|retries|failures?|failed|characters?|items?|days?|hours?|minutes?|seconds?|members?|users?|consecutive))/gi;
+
+const BEFORE: [RegExp, NumRelation][] = [
+  [/(?:최대|많아야|at most|up to|no more than|not more than|maximum(?: of)?|max(?:imum)?|within)\s*$/i, 'lte'],
+  [/(?:최소|적어도|at least|no less than|no fewer than|minimum(?: of)?|min)\s*$/i, 'gte'],
+  [/(?:more than|greater than|over|above|exceed(?:s|ing)?)\s*$/i, 'gt'],
+  [/(?:less than|fewer than|under|below)\s*$/i, 'lt'],
+  // 「최소 주문 금액은 10,000원」 · 「the maximum size is 5」
+  [/(?:최대|최고)[^,.]{0,14}(?:은|는|이|가)\s*$|\b(?:maximum|max)\b[^,.]{0,20}\b(?:is|of)\s*$/i, 'lte'],
+  [/(?:최소|최저)[^,.]{0,14}(?:은|는|이|가)\s*$|\b(?:minimum|min)\b[^,.]{0,20}\b(?:is|of)\s*$/i, 'gte'],
+];
+const AFTER: [RegExp, NumRelation][] = [
+  [/^\s*(?:이상|부터|or more|or greater|or over|or above|\+)/i, 'gte'],
+  [/^\s*(?:초과|[을를이가]?\s*넘(?:으면|는|어|게|을|긴|기면))/, 'gt'],
+  [/^\s*(?:이하|이내|까지|안에|or less|or fewer|or under|or below)/i, 'lte'],
+  [/^\s*(?:미만|보다\s*(?:작|적))/, 'lt'],
+  [/^\s*(?:이|가)?\s*(?:지나|경과)|^\s*(?:뒤|후)(?![가-힣]*불)|^\s*동안|^\s*(?:later|ago)\b/i, 'after'],
+  [/^\s*(?:이면|면|일\s*때|인\s*경우)/, 'eq'],
+];
+/** 지켜야 하는 조건을 말하는 문장인가 (허용되는 쪽이 정해진다) */
+const MUST = /(?:이어야|여야|해야|할 수 있|될 수 있|가능|must|should|shall|can\b|at least|at most|최대|최소|까지만?)/i;
+const NEGATIVE = /(?:없다|없음|없어|불가|금지|안\s*된다|않는다|cannot|can't|can not|must not|may not|not allowed)/i;
+
+function readNumber(m: RegExpExecArray): number {
+  return Number(m[1].replace(/,/g, '')) * (m[2] ? MAGNITUDE[m[2]] : 1);
+}
+
+function makeConstraint(text: string, value: number, start: number, end: number): Constraint | null {
+  let rest = text.slice(end);
+  const head = text.slice(Math.max(0, start - 26), start);
+  let unit: UnitKind | null = null;
+  let unitText = '';
+  const trimmed = rest.replace(/^\s+/, '');
+  for (const [re, kind] of UNITS) {
+    const m = trimmed.match(re);
+    if (m) {
+      unit = kind;
+      unitText = m[0];
+      rest = trimmed.slice(m[0].length);
+      break;
+    }
+  }
+  let rel: NumRelation | null = null;
+  // 「최대 3회」처럼 앞말이 있으면 그것을 먼저 쓰고, 없으면 뒷말을 본다. no more than 이 more than 보다 먼저다.
+  for (const [re, r] of BEFORE) if (re.test(head)) { rel = r; break; }
+  if (!rel) for (const [re, r] of AFTER) if (re.test(rest)) { rel = r; break; }
+  if (/\bafter\s*$/i.test(head)) rel = unit === 'cnt' ? 'count' : 'after';
+  if (!rel) {
+    if (unit === 'cnt') rel = 'count';
+    else if (unit) rel = 'value';
+    else return null; // 단위도 관계도 없는 숫자(HTTP 400, 2단계 …)는 조건으로 보지 않는다
+  }
+  if (rel === 'after' && unit === 'cnt') rel = 'count';
+  const scales = (unit && SCALES[unit]) || [1];
+  const negative = NEGATIVE.test(text);
+  let validSide: 'upper' | 'lower' | null = null;
+  if (rel === 'gte' || rel === 'gt' || rel === 'lte' || rel === 'lt') {
+    if (negative) validSide = rel === 'gte' || rel === 'gt' ? 'lower' : 'upper';
+    else if (MUST.test(text)) validSide = rel === 'gte' || rel === 'gt' ? 'upper' : 'lower';
+  }
+  const raw = text.slice(start, end + (text.slice(end).length - text.slice(end).replace(/^\s+/, '').length) + unitText.length).trim();
+  return { value, unit, unitText, rel, scales, validSide, raw };
+}
+
+/** 요구사항 문장에서 숫자 조건을 뽑는다. */
+export function parseConstraints(text: string): Constraint[] {
+  const out: Constraint[] = [];
+  const add = (c: Constraint | null) => {
+    if (c && !out.some((x) => x.value === c.value && x.unit === c.unit && x.rel === c.rel)) out.push(c);
+  };
+  for (const m of text.matchAll(NUM)) {
+    // R2 · v2 · 3D 처럼 낱말에 붙은 숫자는 건너뛴다
+    if (/[A-Za-z]$/.test(text.slice(0, m.index))) continue;
+    add(makeConstraint(text, readNumber(m as RegExpExecArray), m.index!, m.index! + m[0].length));
+  }
+  for (const m of text.matchAll(NATIVE_RE)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
+  for (const m of text.matchAll(WORD_RE)) add(makeConstraint(text, WORDS[m[1].toLowerCase()], m.index!, m.index! + m[0].length));
+  return out;
+}
+
+/** 문장에 나온 숫자들 (쉼표 · 「만」을 풀어서). 단위가 없어도 낸다. */
+export function numbersIn(text: string): number[] {
+  const out = [...text.matchAll(NUM)].filter((m) => !/[A-Za-z]$/.test(text.slice(0, m.index))).map((m) => readNumber(m as RegExpExecArray));
+  for (const m of text.matchAll(NATIVE_RE)) out.push(NATIVE[m[1]]);
+  for (const m of text.matchAll(WORD_RE)) out.push(WORDS[m[1].toLowerCase()]);
+  return [...new Set(out)];
+}
+
+// ---------------------------------------------------------------- 맞는지 보기
+const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+
+/** 코드의 숫자가 요구사항의 값과 같은 단위 환산인가. 맞으면 배율, 없으면 null */
+export function matchScale(c: Constraint, lit: number): number | null {
+  for (const k of c.scales) {
+    const v = c.value * k;
+    if (near(lit, v) || (Number.isInteger(v) && Math.abs(lit - v) <= 1)) return k;
+  }
+  return null;
+}
+
+/** 표시용: 가장 가까운 환산 */
+function closestScale(c: Constraint, lit: number): number {
+  if (!lit || !c.value) return 1;
+  let best = 1;
+  let gap = Infinity;
+  for (const k of c.scales) {
+    const g = Math.abs(Math.log(Math.abs(lit) / (c.value * k)));
+    if (g < gap) [gap, best] = [g, k];
+  }
+  return best;
+}
+
+const round = (n: number) => String(Math.round(n * 1e6) / 1e6);
+const withUnit = (n: number | string, c: Constraint) => {
+  const u = c.unitText;
+  return /^[A-Za-z]/.test(u) ? `${n} ${u}` : `${n}${u}`;
+};
+
+export function constraintText(c: Constraint): Text {
+  const v = withUnit(round(c.value), c);
+  switch (c.rel) {
+    case 'gte': return T(`${v} 이상`, `at least ${v}`);
+    case 'gt': return T(`${v} 초과`, `more than ${v}`);
+    case 'lte': return T(`${v} 이하`, `at most ${v}`);
+    case 'lt': return T(`${v} 미만`, `under ${v}`);
+    case 'after': return T(`${v} 뒤`, `after ${v}`);
+    default: return T(v, v);
+  }
+}
+
+const isCountable = (c: Constraint) => c.unit === 'cnt' || c.unit === 'qty' || c.unit === null;
+const isCapacity = (c: Constraint) => c.rel === 'lte' || c.rel === 'lt';
+
+function base(c: Constraint, p: NumPart | null): Boundary {
+  return { required: c.value, attempts: null, ok: null, before: p?.incBefore ?? null, kind: 'value', want: constraintText(c), line: p?.line };
+}
+
+/** 이 숫자 조건을 뒷받침할 비교를 코드에서 찾지 못했을 때 */
+export function missingBoundary(c: Constraint): Boundary {
+  const t = constraintText(c);
+  return { ...base(c, null), why: 'missing', say: T(`요구사항의 숫자(${t.ko})를 코드에서 찾지 못함`, `could not find the number in the code (${t.en})`) };
+}
+
+/** 반복문이 몇 번 도는가. 반복문이 아니거나 모르면 null */
+export function loopCount(p: NumPart): number | null {
+  if (p.source !== 'loop' || p.loopStart === undefined || p.lit === undefined) return null;
+  const s = p.loopStart;
+  return p.op === '<' ? p.lit - s : p.op === '<=' ? p.lit - s + 1 : p.op === '>' ? s - p.lit : p.op === '>=' ? s - p.lit + 1 : null;
+}
+/** 요구사항의 값과 견줄 코드의 값: 반복문은 도는 횟수, 나머지는 숫자 */
+export const partValue = (p: NumPart): number | undefined => loopCount(p) ?? p.lit;
+
+/** 코드의 비교 하나가 요구사항의 숫자 조건과 맞는지 판정한다. */
+export function judge(c: Constraint, p: NumPart): Boundary {
+  const b = base(c, p);
+  const v = c.value;
+  if (p.lit === undefined) {
+    return { ...b, why: 'unresolved', say: T(`코드의 값을 읽지 못함 (${p.ref ?? p.expr})`, `could not read the value in the code (${p.ref ?? p.expr})`) };
+  }
+  const lit = p.lit;
+  const stopAt = p.op === '>' || p.op === '<=' ? lit + 1 : lit;
+  const limitWanted = c.rel === 'lt' ? v - 1 : v;
+  const limitResult = (total: number): Boundary => ({
+    ...b,
+    kind: 'limit',
+    ok: total === limitWanted,
+    got: total,
+    say: T(`최대 ${withUnit(total, c)} 동작`, `runs at most ${withUnit(total, c)}`),
+  });
+
+  // 반복문: 몇 번 도는지 바로 계산한다
+  if (isCountable(c)) {
+    const n = loopCount(p);
+    if (n !== null) return limitResult(n);
+  }
+
+  // 같은 변수를 1씩 올리는 코드가 있으면 「몇 번째에 동작하는가」로 본다
+  if (p.incBefore !== null && p.source !== 'schema' && p.source !== 'cap' && isCountable(c) && c.rel !== 'eq' && c.rel !== 'value') {
+    if (isCapacity(c)) {
+      const total = !p.incBefore || p.inCatch || !p.actionAfter ? stopAt : stopAt - 1;
+      return limitResult(total);
+    }
+    if (p.op !== '!==') {
+      const attempts = stopAt + (p.incBefore ? 0 : 1);
+      const target = c.rel === 'gt' ? v + 1 : v;
+      return { ...b, kind: 'attempt', firstTrue: stopAt, attempts, ok: attempts === target };
+    }
+  }
+  // 횟수를 세는 요구사항인데 올리는 코드가 안 보이면 몇 번째인지 알 수 없다
+  if (c.rel === 'count') {
+    return { ...b, kind: 'attempt', firstTrue: stopAt, why: 'order', say: T('횟수를 올리는 코드를 찾지 못해 몇 번째에 동작하는지 확정 못함', 'the code that increments the counter was not found, so the attempt is undetermined') };
+  }
+
+  const k = matchScale(c, lit);
+  const shown = k ?? closestScale(c, lit);
+  const n = round(lit / shown);
+  // 설정값(windowMs: 60000, expiresIn: '1h', setTimeout(fn, 5000)): 값이 같은지만 본다
+  if (p.source === 'config') {
+    const set = T(`${withUnit(n, c)}로 설정됨`, `set to ${withUnit(n, c)}`);
+    return { ...b, ok: k !== null, say: set };
+  }
+  const upperStyle = c.rel === 'gte' || c.rel === 'gt' || c.rel === 'after';
+  const closedAtLit = p.op === '>=' || p.op === '<';
+  let say = upperStyle
+    ? closedAtLit ? T(`${withUnit(n, c)}부터 해당`, `applies from ${withUnit(n, c)}`) : T(`${withUnit(n, c)} 초과부터 해당`, `applies above ${withUnit(n, c)}`)
+    : closedAtLit ? T(`${withUnit(n, c)} 미만까지 해당`, `applies below ${withUnit(n, c)}`) : T(`${withUnit(n, c)}까지 해당`, `applies up to ${withUnit(n, c)}`);
+  if (p.op === '===' || p.op === '!==') say = T(`${withUnit(n, c)}일 때 해당`, `applies at ${withUnit(n, c)}`);
+
+  // 여기까지 온 값은 요구사항과 같은 것을 재는 이름이다(엔진이 먼저 거른다). 값이 다르면 다른 것이다.
+  if (c.rel === 'value') return { ...b, ok: k !== null, say: T(`코드의 값 ${withUnit(n, c)}`, `${withUnit(n, c)} in the code`) };
+  if (c.rel === 'eq') {
+    if (p.op === '===' || p.op === '!==') return lit === v ? { ...b, ok: true, say } : { ...b, ok: false, say };
+    const cut = closedAtLit ? lit : lit + 1;
+    if (cut === v + 1) return { ...b, ok: true, say };
+    return Math.abs(lit - v) <= 1 ? { ...b, ok: false, say } : { ...b, why: 'missing', say };
+  }
+  // 넣기 전에 room.length === 10 을 막으면 10개에서 멈춘다: >= 10 과 같다
+  if (p.op === '===' && p.preAdd && isCapacity(c)) {
+    const total = lit;
+    const allowed = c.rel === 'lt' ? v - 1 : v;
+    return { ...b, ok: total === allowed, say: T(`최대 ${withUnit(total, c)}까지 들어감`, `allows up to ${withUnit(total, c)}`) };
+  }
+  if (p.op === '===' || p.op === '!==') return { ...b, why: 'missing', say };
+
+  // 단위를 바꾼 값(분 → ms 등)은 연속된 값이라 경계 하나 차이는 따지지 않는다
+  const scaled = k !== null && k !== 1;
+  if (scaled) return { ...b, ok: true, say };
+
+  const cut = closedAtLit ? lit : lit + 1;
+  if (c.rel === 'after') {
+    if (cut === v || cut === v + 1) {
+      const exact = withUnit(round(v), c);
+      return { ...b, why: 'ambiguous', say: T(`${say.ko}. 요구사항 문장만으로는 정확히 ${exact}째가 포함되는지 정해지지 않음`, `${say.en}. The requirement does not say whether exactly ${exact} counts`) };
+    }
+    return { ...b, ok: false, say };
+  }
+  let wanted = c.rel === 'gte' || c.rel === 'lt' ? v : v + 1;
+  if (p.preAdd && isCapacity(c)) {
+    wanted -= 1;
+    say = T(`최대 ${withUnit(cut, c)}까지 들어감`, `allows up to ${withUnit(cut, c)}`);
+    if (c.rel === 'lt') say = T(`${withUnit(cut, c)}까지 들어감`, `allows up to ${withUnit(cut, c)}`);
+  }
+  // 「3번까지」인데 입력 변수만 보이면(entryCount >= 3) 그 값에 이번 것이 포함됐는지 알 수 없어 경계 하나 차이는 정할 수 없다.
+  // 목록의 길이(.length)는 지금 개수가 분명하므로 그대로 판정한다.
+  if (isCapacity(c) && (c.unit === 'cnt' || c.unit === 'qty') && p.source === 'compare' && !p.preAdd && /count|hits|used|entries|requests|sent/i.test(p.left) && !/\.(?:length|size)$/.test(p.left) && (cut === wanted || cut === wanted - 1)) {
+    return { ...b, why: 'ambiguous', say: T(`${say.ko}. 이 값에 이번 요청이 포함되는지 코드만으로 정해지지 않음`, `${say.en}. The code does not show whether this count includes the current one`) };
+  }
+  if (p.thenKind === 'reject' && c.validSide) {
+    const trueSide = p.op === '>' || p.op === '>=' ? 'upper' : 'lower';
+    if (trueSide === c.validSide) return { ...b, ok: false, why: 'inverted', say: T(`${say.ko}: 허용해야 할 쪽을 막고 있음`, `${say.en}: it rejects the side that should be allowed`) };
+  }
+  return { ...b, ok: cut === wanted, say };
+}
+
+// ---------------------------------------------------------------- 보여 줄 글
+/** 긴 설명: 줄 끝 · 요약에 쓴다 */
+export function boundaryLine(b: Boundary | undefined, lang = getLang()): string {
+  if (!b) return '';
+  const ko = lang === 'ko';
+  if (b.kind === 'attempt' && b.attempts !== null) {
+    return ko ? `${b.attempts}번째 시도에 동작${b.ok === false ? ` (요구사항 ${b.required}회)` : ''}` : `acts on attempt ${b.attempts}${b.ok === false ? ` (requirement: ${b.required})` : ''}`;
+  }
+  const say = pick(b.say, lang);
+  if (b.ok !== false) return say;
+  return ko ? `${say} (요구사항: ${pick(b.want, lang)})` : `${say} (requirement: ${pick(b.want, lang)})`;
+}
+
+/** 짧은 설명: 좁은 목록에 쓴다 */
+export function boundaryShort(b: Boundary | undefined, lang = getLang()): string {
+  if (!b) return '';
+  const ko = lang === 'ko';
+  if (b.kind === 'attempt' && b.attempts !== null) return ko ? `${b.attempts}번째 동작` : `attempt ${b.attempts}`;
+  if (b.ok === null) return ko ? '숫자 미확정' : 'number unconfirmed';
+  return pick(b.say, lang);
+}
+
+/** 검사가 무엇을 확인해야 하는지 말할 때 쓰는 낱말 */
+export function checkWord(b: Boundary | undefined, lang = getLang()): string {
+  const counted = !b || b.kind === 'attempt' || b.kind === 'limit';
+  return lang === 'ko' ? (counted ? '횟수' : '값') : counted ? 'count' : 'value';
+}
+
+/** 문제 목록의 주의 글 */
+export function boundaryNote(b: Boundary, label: string, lang = getLang()): string {
+  const ko = lang === 'ko';
+  if (b.kind === 'attempt' && b.ok === false) return ko ? `${label}: 요구사항 ${b.required}회, 코드는 ${b.attempts}회째에 동작` : `${label}: the requirement says ${b.required}, the code acts on attempt ${b.attempts}`;
+  return `${label}: ${boundaryLine(b, lang)}`;
+}
