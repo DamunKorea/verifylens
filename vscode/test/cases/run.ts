@@ -4,6 +4,10 @@ import { parseRequirements } from '../../../src/requirements.ts';
 import { CASES, type Case, type Variant } from './corpus.ts';
 import { HOLDOUT } from './holdout.ts';
 import { HOLDOUT2 } from './holdout2.ts';
+import { HOLDOUT3 } from './holdout3.ts';
+import { HOLDOUT4 } from './holdout4.ts';
+import { HOLDOUT5 } from './holdout5.ts';
+import { HOLDOUT6 } from './holdout6.ts';
 
 export type Row = { c: Case; v: Variant; got: string; note: string };
 
@@ -18,7 +22,7 @@ export function runVariant(c: Case, v: Variant, withKeywords = true): { got: str
 }
 
 export const allRows = (withKeywords = true, cases: Case[] = CASES): Row[] => cases.flatMap((c) => c.variants.map((v) => ({ c, v, ...runVariant(c, v, withKeywords) })));
-export { CASES, HOLDOUT, HOLDOUT2 };
+export { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6 };
 
 export function score(rows: Row[]) {
   const bads = rows.filter((r) => r.v.expect === '다름');

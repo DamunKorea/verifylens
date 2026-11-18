@@ -43,7 +43,7 @@ export type CondInfo = {
 export type UnitKind = 'money' | 'age' | 'char' | 'month' | 'week' | 'day' | 'hour' | 'min' | 'sec' | 'pct' | 'cnt' | 'qty' | 'kb' | 'mb' | 'gb';
 export type NumRelation = 'gte' | 'gt' | 'lte' | 'lt' | 'count' | 'after' | 'eq' | 'value';
 /** 요구사항 문장의 숫자 조건 */
-export type Constraint = { value: number; unit: UnitKind | null; unitText: string; rel: NumRelation; scales: number[]; validSide: 'upper' | 'lower' | null; raw: string };
+export type Constraint = { value: number; unit: UnitKind | null; unitText: string; rel: NumRelation; scales: number[]; validSide: 'upper' | 'lower' | null; raw: string; /** 끝값 포함 여부가 문장에 없음 */ soft?: boolean };
 
 export type Unit = {
   id: string;
@@ -84,6 +84,8 @@ export type FileAnalysis = {
   constants: Record<string, number>;
   /** 가져온 이름 → 어느 파일의 무슨 이름인지 */
   imports: Record<string, { from: string; name: string }>;
+  /** 다른 파일에서 그대로 내보내는 것: export * from · export { A as B } from */
+  reexports: { all: string[]; named: Record<string, { from: string; name: string }> };
 };
 
 export type TestCase = { name: string; status: 'pass' | 'fail' | 'skip'; message: string };

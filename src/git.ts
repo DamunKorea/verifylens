@@ -23,6 +23,11 @@ export function changedLines(repo: string, base: string, head: string): Map<stri
 
 const list = (out: string) => out.split('\n').map((s) => s.trim()).filter(Boolean);
 
+/** 그 시점의 저장소 파일 목록 (경로 별칭으로 가져온 파일을 찾을 때 쓴다) */
+export function trackedFiles(repo: string, ref: string): string[] {
+  return list(git(repo, ['ls-tree', '-r', '--name-only', ref]));
+}
+
 /** base 와 갈라진 지점. 작업 폴더(커밋 전 변경 포함)를 이 커밋과 비교한다. */
 export function mergeBase(repo: string, base: string, head = 'HEAD'): string {
   return git(repo, ['merge-base', base, head]).trim();

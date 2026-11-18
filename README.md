@@ -70,7 +70,7 @@ Click the VerifyLens icon in the Activity Bar and choose **Try the sample**. The
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.7.0.vsix
+npm run package     # builds verifylens-0.8.0.vsix
 ```
 
 See [vscode/README.md](vscode/README.md) for details.
@@ -79,7 +79,7 @@ See [vscode/README.md](vscode/README.md) for details.
 
 For IntelliJ IDEA and other JetBrains IDEs (platform 2026.1 or newer). It runs the same engine as the VS Code extension through your local Node.js (18+), so the verdicts are the same: a tool window with the status of each requirement, a gutter icon and a note on the evidence line, and a re-check when a file is saved. The UI is in English or Korean, following the IDE language. Running tests, importing requirements, the PR summary and the report view are not in this preview.
 
-Download `verifylens-jetbrains-0.3.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.3.0) and install it with **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Checked on IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried. See [jetbrains/README.md](jetbrains/README.md).
+Download `verifylens-jetbrains-0.4.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.0) and install it with **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Checked on IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried. See [jetbrains/README.md](jetbrains/README.md).
 
 ## Use it on your own repo
 

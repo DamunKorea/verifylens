@@ -39,6 +39,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   const constants: Record<string, number> = {};
   const conflicted = new Set<string>();
   const imports: FileAnalysis['imports'] = {};
+  const reexports: FileAnalysis['reexports'] = { all: [], named: {} };
   const seen = new Set<ts.Node>();
 
   const unwrap = (e: ts.Expression): ts.Expression => {
@@ -127,6 +128,13 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       const b = n.importClause.namedBindings;
       if (ts.isNamespaceImport(b)) imports[b.name.text] = { from, name: '*' };
       else for (const el of b.elements) imports[el.name.text] = { from, name: (el.propertyName ?? el.name).text };
+    } else if (ts.isExportDeclaration(n) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) {
+      const from = n.moduleSpecifier.text;
+      if (!n.exportClause) {
+        if (!reexports.all.includes(from)) reexports.all.push(from);
+      } else if (ts.isNamedExports(n.exportClause)) {
+        for (const el of n.exportClause.elements) reexports.named[el.name.text] = { from, name: (el.propertyName ?? el.name).text };
+      }
     }
     ts.forEachChild(n, collectConstants);
   };
@@ -446,7 +454,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     return null;
   };
   /** 설정값: { maxLength: 20, minLength: 8, maxAttempts: 3 } */
-  const CONFIG_NAME = /retr|attempt|timeout|ttl|expire|age|window|delay|interval|duration|limit|size|count|capacity|lifetime/i;
+  const CONFIG_NAME = /retr|attempt|timeout|ttl|expire|age|window|delay|interval|duration|limit|size|count|capacity|lifetime|max|length|quota|threshold|period|day|hour|minute|second(?!ary)|week|month|year/i;
   /** '1h' · '7d' · '30m' 같은 기간 글을 초로 */
   const durationSeconds = (e0: ts.Expression): number | undefined => {
     const e = unwrap(e0);
@@ -456,8 +464,10 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     const unit = m[2][0].toLowerCase();
     return Number(m[1]) * { s: 1, m: 60, h: 3600, d: 86400, w: 604800 }[unit as 's']!;
   };
+  /** HOUR · ONE_DAY · MS_PER_DAY · SECONDS_IN_HOUR 는 단위를 환산하는 상수이지 설정값이 아니다 */
+  const UNIT_CONSTANT = /^(?:one_?|(?:ms|msecs?|millis(?:econds)?|secs?|seconds?)_?(?:per|in)_?)?(?:second|minute|hour|day|week|month|year)s?(?:_?(?:in_?)?(?:ms|msecs?|millis(?:econds)?|secs?|seconds?))?$/i;
   const configPart = (n: ts.Node, name: string, value0: ts.Expression): NumPart | null => {
-    if (!CONFIG_NAME.test(name)) return null;
+    if (!CONFIG_NAME.test(name) || UNIT_CONSTANT.test(name.split('.').pop()!)) return null;
     // options.max ?? 5, opts.limit || 5: 정해 주지 않았을 때의 기본값을 읽는다
     let value = unwrap(value0);
     if (ts.isBinaryExpression(value) && (value.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || value.operatorToken.kind === ts.SyntaxKind.BarBarToken)) value = value.right;
@@ -549,7 +559,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   walkNode(sf, []);
   for (const k of conflicted) delete constants[k];
   for (const u of units) if (u.cond) syncPrimary(u.cond);
-  return { file, units, dyn, flows, constants, imports };
+  return { file, units, dyn, flows, constants, imports, reexports };
 }
 
 /** 조건식이 비교 하나뿐이면 그 값을 cond 에 바로 둔다 (두 결과 비교 · 화면 표시에 쓴다). */
@@ -577,8 +587,9 @@ const normalizePath = (p: string) => {
  * 다른 파일에서 가져온 상수를 푼다: import { CART_MAX } from './limits'.
  * 바뀌지 않은 파일이면 read 로 읽어 본다. 못 찾으면 값 없음으로 남고, 그 조건은 「확정 불가」가 된다.
  */
-export function resolveRefs(analyses: FileAnalysis[], read?: (file: string) => string | null) {
+export function resolveRefs(analyses: FileAnalysis[], read?: (file: string) => string | null, allFiles: string[] = []) {
   const known = new Map(analyses.map((a) => [a.file, a]));
+  const everyFile = [...new Set([...allFiles, ...known.keys()])];
   const load = (file: string): FileAnalysis | null => {
     if (known.has(file)) return known.get(file)!;
     const text = read?.(file);
@@ -587,15 +598,45 @@ export function resolveRefs(analyses: FileAnalysis[], read?: (file: string) => s
     known.set(file, a);
     return a;
   };
+  const EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '/index.ts', '/index.js'];
   const open = (from: string, spec: string): FileAnalysis | null => {
-    if (!spec.startsWith('.')) return null;
-    const dir = from.split('/').slice(0, -1).join('/');
-    const stem = normalizePath(`${dir}/${spec}`).replace(/\.(?:[cm]?[jt]s|tsx|jsx)$/, '');
-    for (const ext of ['.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs', '/index.ts', '/index.js']) {
-      const a = load(stem + ext);
-      if (a) return a;
+    if (spec.startsWith('.')) {
+      const dir = from.split('/').slice(0, -1).join('/');
+      const stem = normalizePath(`${dir}/${spec}`).replace(/\.(?:[cm]?[jt]s|tsx|jsx)$/, '');
+      for (const ext of EXTS) {
+        const a = load(stem + ext);
+        if (a) return a;
+      }
+      return null;
+    }
+    // 경로 별칭: @/x, ~/x, #/x, @services/x. 저장소에서 그 경로로 끝나는 파일이 하나뿐일 때만 잇는다.
+    const m = spec.match(/^(?:[@~#]\/|[@~#]([\w-]+)\/)(.+)$/);
+    if (!m) return null;
+    const tail = (m[1] ? `${m[1]}/${m[2]}` : m[2]).replace(/\.(?:[cm]?[jt]s|tsx|jsx)$/, '');
+    for (const t of m[1] ? [tail, m[2].replace(/\.(?:[cm]?[jt]s|tsx|jsx)$/, '')] : [tail]) {
+      const hits = EXTS.flatMap((ext) => everyFile.filter((f) => f === t + ext || f.endsWith(`/${t}${ext}`)));
+      if (hits.length === 1) return load(hits[0]);
+      if (hits.length > 1) return null;
     }
     return null;
+  };
+  /** 파일에서 이름의 값을 찾는다. 다시 내보낸 것이면 따라간다. */
+  const valueOf = (a: FileAnalysis, key: string, depth = 0): number | undefined => {
+    if (a.constants[key] !== undefined) return a.constants[key];
+    if (depth >= 4) return undefined;
+    const [root, ...rest] = key.split('.');
+    const via = a.reexports.named[root] ?? a.imports[root];
+    if (via) {
+      const t = open(a.file, via.from);
+      const v = t && valueOf(t, [via.name, ...rest].join('.'), depth + 1);
+      if (v !== undefined && v !== null) return v;
+    }
+    for (const from of a.reexports.all) {
+      const t = open(a.file, from);
+      const v = t && valueOf(t, key, depth + 1);
+      if (v !== undefined && v !== null) return v;
+    }
+    return undefined;
   };
   for (const a of analyses) {
     for (const u of a.units) {
@@ -608,8 +649,9 @@ export function resolveRefs(analyses: FileAnalysis[], read?: (file: string) => s
         const target = open(a.file, imp.from);
         if (!target) continue;
         const key = imp.name === '*' ? rest.join('.') : [imp.name, ...rest].join('.');
-        if (target.constants[key] !== undefined) {
-          p.lit = target.constants[key];
+        const v = valueOf(target, key);
+        if (v !== undefined) {
+          p.lit = v;
           p.ref = undefined;
         }
       }

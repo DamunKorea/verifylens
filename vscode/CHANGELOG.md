@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0
+
+Range wording is read correctly, and many more requirements can be judged without keywords.
+
+- **Range wording in English and Korean.** `up to and including`, `up to but not including`, `no more than`, `not less than`, `must not exceed`, `3 to 20`, `between 1 and 10 inclusive`, `from 1 to 10`, `1~10`, `1부터 10까지`, `positive`, `non-negative`, `양수`. In 0.7.0 several of these were misread, so a wrong boundary could be marked Verified. `between 1 and 10` without "inclusive" is not called Different when the code leaves out the edges, because the sentence does not settle them. That case stays Unverified.
+- **Keywords are needed less often.** Forms of a word now meet (`retry` / `retried` / `retries`, `reserve` / `reserved`), the Korean glossary covers more everyday nouns, and a test is linked when the number in the code was confirmed and the test name gives the same number and the same subject.
+- **A limit is judged where it is used.** `MAX_SIZE = 8 MB` alone no longer settles "up to 8 MB" when the code says `size >= MAX_SIZE`. Constants imported through path aliases (`@/...`, `@services/...`) and re-exports are followed. Unit constants such as `HOUR` are not treated as settings.
+- **Narrow checks are caught.** `count === 1` against "any positive count" is Different, and limits in bytes and percent compare `>` and `>=` strictly.
+- **Still Unverified on purpose:** wording that leaves the edge open ("every 90 days"), and "after 5 failed logins" when the code that counts the failures is not visible.
+- 378 cases now run with the tests. On 33 new cases written after these changes, without keywords, 0.7.0 gave the expected verdict for 23 and 0.8.0 for 32. Wrong code marked Verified went from 1 to 0. We wrote these cases ourselves, so read them as a regression check rather than a benchmark.
+
 ## 0.7.0
 
 Numeric rules are now actually checked, not only "after N failures".

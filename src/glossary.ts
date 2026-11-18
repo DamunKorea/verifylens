@@ -1,4 +1,4 @@
-import { tokenize } from './tokens.ts';
+import { stem, tokenize } from './tokens.ts';
 
 /**
  * 한국어 요구사항을 키워드 없이도 코드(영어 식별자)와 잇기 위한 용어집.
@@ -25,7 +25,8 @@ const GLOSSARY: [RegExp, string][] = [
   [/할인율/, 'rate'],
   [/관리자/, 'admin administrator'],
   [/권한|역할/, 'permission role authorize authorization access'],
-  [/인증/, 'auth authenticate authentication verify'],
+  [/인증/, 'auth authenticate authentication verify verification'],
+  [/인증\s*(?:번호|코드)|\botp\b/i, 'code otp'],
   [/토큰/, 'token'],
   [/세션/, 'session'],
   [/이메일|메일/, 'email mail'],
@@ -50,8 +51,11 @@ const GLOSSARY: [RegExp, string][] = [
   [/연속|반복|거듭/, 'consecutive repeated repeat streak'],
   [/시도|재시도|다시\s*시도/, 'attempt retry try'],
   [/횟수|번\s*이상|회\s*이상|카운트/, 'count counter times'],
-  [/제한|한도|상한|최대/, 'limit max maximum cap'],
-  [/최소|하한/, 'min minimum'],
+  [/제한|한도|상한|최대|\b(?:max|maximum|limit(?:s|ed)?|capped|at most|up to)\b/i, 'limit max maximum cap'],
+  [/최소|하한|\b(?:min|minimum|at least)\b/i, 'min minimum'],
+  [/양수|\bpositive\b/i, 'positive'],
+  [/음수|\bnegative\b/i, 'negative'],
+  [/\blasts?\b|\bvalid for\b|유지/i, 'ttl expire age duration'],
   [/시간\s*초과|타임아웃/, 'timeout'],
   [/대기|지연/, 'wait delay'],
   [/분\s*(?:동안|간|뒤|후)|시간\s*(?:동안|뒤|후)|초\s*(?:동안|뒤|후)|기간/, 'duration minute second hour window period'],
@@ -91,15 +95,74 @@ const GLOSSARY: [RegExp, string][] = [
   [/길이|글자\s*수|자\s*이상|자\s*이하/, 'length size'],
   [/비어|빈\s*값|필수/, 'empty required blank'],
   [/형식|포맷/, 'format pattern'],
+  [/이름|성명/, 'name'],
+  [/제목/, 'title subject'],
+  [/내용|본문/, 'content body text'],
+  [/설명/, 'description'],
+  [/태그/, 'tag'],
+  [/첨부/, 'attachment attach'],
+  [/동영상|영상|비디오/, 'video'],
+  [/프로필/, 'profile avatar'],
+  [/폴더/, 'folder directory'],
+  [/주소/, 'address'],
+  [/카테고리|분류/, 'category'],
+  [/메시지|쪽지/, 'message'],
+  [/채팅방|대화방/, 'room chat channel'],
+  [/채널/, 'channel'],
+  [/친구/, 'friend'],
+  [/좋아요/, 'like'],
+  [/리뷰|후기/, 'review'],
+  [/별점|평점/, 'rating score'],
+  // 사람 · 모임
+  [/인원|\d+\s*명|참가자|참석자|구성원|멤버/, 'member participant attendee people headcount user'],
+  [/그룹|모임/, 'group'],
+  [/팀/, 'team'],
+  [/회사|조직/, 'company organization org'],
+  [/초대/, 'invite invitation'],
+  [/응모|신청/, 'entry apply application'],
+  [/들어오|입장|참여|참가/, 'join enter'],
+  [/학생/, 'student'],
+  [/수업|강의/, 'lesson course class'],
+  [/시험/, 'exam test'],
+  [/점수/, 'score'],
+  // 예약 · 일정
+  [/예약/, 'reserve reservation book booking'],
+  [/좌석/, 'seat'],
+  [/티켓|입장권/, 'ticket'],
+  [/일정/, 'schedule'],
+  [/회의/, 'meeting'],
+  [/출석/, 'attendance'],
+  // 상품 · 돈
+  [/상품|제품|물건/, 'product item goods'],
+  [/구독/, 'subscription subscribe'],
+  [/요금제|플랜/, 'plan'],
+  [/잔액/, 'balance'],
+  [/송금|이체/, 'transfer'],
+  [/출금/, 'withdraw withdrawal'],
+  [/입금/, 'deposit'],
+  [/수수료/, 'fee'],
+  [/세금/, 'tax'],
+  [/청구|인보이스/, 'invoice bill'],
+  // 시스템
+  [/작업|할\s*일/, 'job task'],
+  [/실행/, 'run execute'],
+  [/동시/, 'concurrent concurrency parallel'],
+  [/대기열/, 'queue'],
+  [/캐시/, 'cache'],
+  [/연결/, 'connection connect'],
+  [/프로젝트/, 'project'],
+  [/백업/, 'backup'],
 ];
 
-/** 영어 요구사항에서 뜻이 약해 연결에 쓰지 않는 말 */
+/** 영어 요구사항에서 뜻이 약해 연결에 쓰지 않는 말. 범위를 나타내는 말은 숫자 조건에서 따로 읽는다. */
 const WEAK = new Set([
   'should', 'must', 'shall', 'can', 'could', 'may', 'will', 'would', 'be', 'able', 'when', 'then', 'that', 'it', 'are', 'was', 'were', 'has',
   'have', 'had', 'with', 'without', 'by', 'at', 'after', 'before', 'into', 'than', 'they', 'their', 'them', 'you', 'your', 'we', 'our', 'do',
   'does', 'done', 'so', 'only', 'even', 'also', 'any', 'all', 'each', 'every', 'more', 'most', 'need', 'make', 'sure', 'ensure', 'please',
   'no', 'there', 'which', 'who', 'what', 'user',
-]);
+  'up', 'least', 'less', 'fewer', 'greater', 'larger', 'smaller', 'over', 'under', 'above', 'below', 'between', 'through', 'including',
+  'inclusive', 'exclusive', 'exceed', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+].map(stem));
 
 /** 두 낱말로 쓴 영어 표현을 코드에서 쓰는 한 낱말로 맞춘다 ("log in" → login). */
 export function normalizePhrases(text: string): string {

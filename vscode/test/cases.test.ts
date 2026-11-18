@@ -1,9 +1,10 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
+import { stem } from '../../src/tokens.ts';
 
 const wrong = (rows: ReturnType<typeof allRows>) => rows.filter((r) => r.got !== r.v.expect).map((r) => `${r.c.id} / ${r.v.name}: 기대 ${r.v.expect}, 결과 ${r.got}`);
 
@@ -14,14 +15,42 @@ test('cases with keywords: every verdict is the expected one', () => {
 test('unseen cases with keywords: every verdict is the expected one', () => {
   assert.deepEqual(wrong(allRows(true, HOLDOUT)), []);
   assert.deepEqual(wrong(allRows(true, HOLDOUT2)), []);
+  assert.deepEqual(wrong(allRows(true, HOLDOUT3)), []);
+  assert.deepEqual(wrong(allRows(true, HOLDOUT4)), []);
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
   }
+});
+
+// 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
+test('the latest unseen batches never call wrong code verified when keywords are given', () => {
+  for (const cases of [HOLDOUT5, HOLDOUT6]) {
+    const s = score(allRows(true, cases));
+    assert.equal(s.falseVerified, 0);
+    assert.equal(s.falseAlarm, 0);
+  }
+});
+
+test('word forms of the same word meet', () => {
+  for (const group of [['retry', 'retries', 'retried', 'retrying'], ['reserve', 'reserves', 'reserved', 'reserving'], ['delete', 'deleted', 'deleting'], ['run', 'running'], ['stop', 'stopped']]) {
+    assert.equal(new Set(group.map(stem)).size, 1, group.join(', '));
+  }
+});
+
+test('range wording is read in both languages', () => {
+  const rel = (s: string) => parseConstraints(s).map((c) => `${c.value}:${c.rel}`);
+  assert.deepEqual(rel('up to and including 8mb'), ['8:lte']);
+  assert.deepEqual(rel('up to but not including 8mb'), ['8:lt']);
+  assert.deepEqual(rel('must not exceed 8mb'), ['8:lte']);
+  assert.deepEqual(rel('Nicknames must be 3 to 20 characters'), ['3:gte', '20:lte']);
+  assert.deepEqual(rel('from 1 to 10 items'), ['1:gte', '10:lte']);
+  assert.deepEqual(rel('수량은 1~10개다'), ['1:gte', '10:lte']);
+  assert.deepEqual(rel('수량은 양수여야 한다'), ['0:gt']);
 });
 
 test('numbers in requirements are read the way people write them', () => {

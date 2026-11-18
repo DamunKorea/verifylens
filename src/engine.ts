@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import type { Boundary, Constraint, Evidence, NumPart, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, TestCase, TestStatus, Unit, UnitKind } from './types.ts';
 import { analyzeFile, resolveRefs } from './analyze.ts';
 import { boundaryNote, judge, matchScale, missingBoundary, partValue, pick } from './numeric.ts';
-import { changedFiles, changedLines, mergeBase, shortSha, showFile, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
+import { changedFiles, changedLines, mergeBase, shortSha, showFile, trackedFiles, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
 import { parseTestReport } from './tests.ts';
-import { tokenize } from './tokens.ts';
+import { tokenize, stem } from './tokens.ts';
 import { normalizePhrases } from './glossary.ts';
 import { L, setLabel } from './i18n.ts';
 
@@ -38,13 +38,23 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
     analyses.push(analyzeFile(f, text, lines.get(f) ?? null));
   }
   // 다른 파일의 상수를 푼다. 바뀌지 않은 파일은 같은 시점의 내용을 읽는다.
-  resolveRefs(analyses, (f) => {
-    try {
-      return read(f);
-    } catch {
-      return null;
-    }
-  });
+  let allFiles: string[] = [];
+  try {
+    allFiles = trackedFiles(repo, opts.worktree ? 'HEAD' : ref);
+  } catch {
+    /* 파일 목록을 못 읽으면 상대 경로만 따라간다 */
+  }
+  resolveRefs(
+    analyses,
+    (f) => {
+      try {
+        return read(f);
+      } catch {
+        return null;
+      }
+    },
+    allFiles,
+  );
   const tests: TestCase[] = opts.junit ? parseTestReport(readFileSync(opts.junit, 'utf8')) : [];
   // 커밋 전 변경이 있으면 그 내용의 지문을 남긴다 (같은 커밋이어도 내용이 다르면 다른 결과다).
   let wip: string | undefined;
@@ -76,7 +86,7 @@ export function analyzeFiles(o: { key: 'A' | 'B'; ref: string; sha: string; file
   const analyses = Object.entries(o.files)
     .filter(([f]) => CODE_EXT.test(f) && !TEST_FILE.test(f))
     .map(([f, text]) => analyzeFile(f, text, null));
-  resolveRefs(analyses, (f) => o.files[f] ?? null);
+  resolveRefs(analyses, (f) => o.files[f] ?? null, Object.keys(o.files));
   return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], perReq: {} };
 }
 
@@ -145,7 +155,7 @@ const SOURCE_RANK: Record<NumPart['source'], number> = { compare: 200, loop: 200
 type Found = { u: Unit; p: NumPart; score: number };
 
 /** 어느 코드에나 나오는 말. 이 낱말만 겹쳐서는 같은 대상을 말한다고 볼 수 없다 (part.length 와 「비밀번호 길이」). */
-const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'name', 'item', 'data']);
+const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'item', 'data'].map(stem));
 function sameTarget(req: Requirement, f: Found): boolean {
   const hits = leftHits(req, f.p.left);
   if (!hits) return false;
@@ -160,17 +170,25 @@ function sameTarget(req: Requirement, f: Found): boolean {
 /** 숫자 조건마다 코드의 비교를 고르고 판정한다. 값이 같은 비교를 먼저 짝짓고, 남은 조건만 값이 다른 비교와 견준다. */
 function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Unit | null }[] {
   const all: Found[] = units.flatMap((u) => (u.cond?.parts ?? []).map((p) => ({ u, p, score: scoreUnit(req, u).score })));
-  // 요구사항의 낱말이 더 많이 겹치는 비교가 먼저, 같으면 실제로 판단하는 비교가 먼저
-  const rank = (f: Found) => leftHits(req, f.p.left) * 1000 + SOURCE_RANK[f.p.source] + f.score + (f.u.changed ? 0.1 : 0);
+  // 요구사항의 낱말이 더 많이 겹치는 비교가 먼저, 그다음 이번에 바뀐 줄, 그다음 실제로 판단하는 비교
+  const rank = (f: Found) => leftHits(req, f.p.left) * 1000 + (f.u.changed ? 500 : 0) + SOURCE_RANK[f.p.source] + f.score;
   const used = new Set<NumPart>();
   const out = new Map<Constraint, { b: Boundary; u: Unit | null }>();
-  const take = (c: Constraint, f: Found) => {
-    used.add(f.p);
-    out.set(c, { b: judge(c, f.p), u: f.u });
-  };
   const sameValue = (c: Constraint, f: Found) => {
     const v = partValue(f.p);
     return !used.has(f.p) && v !== undefined && matchScale(c, v) !== null;
+  };
+  // 설정값은 「얼마」만 말한다. 그 이름을 실제로 비교하는 줄이 있으면 경계(이하 · 미만)는 그 줄로 판정한다.
+  const decidingLine = (c: Constraint, f: Found): Found => {
+    if (f.p.source !== 'config') return f;
+    const name = f.p.left.split('.').pop()!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const uses = new RegExp(`(^|[^\\w$])${name}($|[^\\w$])`);
+    return all.filter((g) => (g.p.source === 'compare' || g.p.source === 'loop') && sameValue(c, g) && uses.test(g.p.expr)).sort((a, b) => rank(b) - rank(a))[0] ?? f;
+  };
+  const take = (c: Constraint, found: Found) => {
+    const f = decidingLine(c, found);
+    used.add(f.p);
+    out.set(c, { b: judge(c, f.p), u: f.u });
   };
   // 1) 요구사항이 말하는 대상의 비교 가운데 값이 같은 것
   for (const c of req.constraints) {
@@ -234,18 +252,36 @@ const NEGATIVE_TEST = /(reject|den(y|ies|ied)|block|refus|forbid|fail|error|thro
 /** 검사 이름의 50,000 을 50000 으로 */
 const plainNumbers = (s: string) => s.replace(/(\d),(?=\d{3}\b)/g, '$1');
 
-function mapTests(req: Requirement, tests: TestCase[]): TestCase[] {
+const WORD_NUMBER: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' };
+/** 검사 이름에 나온 숫자 (one ~ ten 포함) */
+const namedNumbers = (name: string) =>
+  [...plainNumbers(name).replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (w) => WORD_NUMBER[w.toLowerCase()]).matchAll(/\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+/** 한도 · 단위를 말할 뿐 무엇의 한도인지는 말해 주지 않는 낱말 */
+const BROAD = new Set([...GENERIC, ...['maximum', 'cap', 'minimum', 'counter', 'time', 'day', 'minute', 'hour', 'second', 'sec', 'ms', 'duration', 'window', 'period'].map(stem)]);
+
+function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[] {
+  // 코드에서 숫자 조건이 이미 맞다고 판정됐으면, 같은 숫자와 같은 대상을 말하는 검사는 이 규칙의 검사로 본다.
+  const settled = !!ev.boundaries?.length && ev.boundaries.every((b) => b.ok === true);
+  const sameRule = (t: TestCase) => {
+    if (!settled) return false;
+    const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
+    const nums = namedNumbers(t.name);
+    return req.constraints.some((c) => nums.some((n) => matchScale(c, n) !== null)) && req.concepts.some((g) => g.some((x) => !BROAD.has(x) && names.has(x)));
+  };
   if (!req.auto) {
     const set = new Set([...req.tokens, ...req.numbers.map(String)]);
-    return tests.filter((t) => new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= 2);
+    // 키워드가 하나뿐이면 그 낱말 하나로 잇는다 (둘을 요구하면 영영 이어지지 않는다)
+    const need = Math.min(2, set.size);
+    return tests.filter((t) => sameRule(t) || new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= need);
   }
   // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
   // 조건: 요구사항의 개념(숫자 포함) 가운데 3분의 2 이상을 검사 이름이 담고, 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
   const groups = [...req.concepts, ...req.numbers.map((n) => [String(n)])];
-  if (groups.length < 2) return [];
   return tests.filter((t) => {
-    if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
+    if (sameRule(t)) return true;
     const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
+    if (groups.length < 2) return false;
+    if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
     const covered = groups.filter((g) => g.some((x) => names.has(x))).length;
     return covered >= 2 && covered / groups.length >= 2 / 3;
   });
@@ -260,8 +296,9 @@ function testStatus(ts: TestCase[]): TestStatus {
 export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, base: string): Report {
   for (const s of sets) {
     for (const r of reqs) {
-      const mapped = mapTests(r, s.tests);
-      const rr: ReqResult = { evidence: findEvidence(r, s.units), tests: mapped, testStatus: testStatus(mapped) };
+      const evidence = findEvidence(r, s.units);
+      const mapped = mapTests(r, s.tests, evidence);
+      const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped) };
       s.perReq[r.id] = rr;
     }
   }

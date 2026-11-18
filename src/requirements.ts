@@ -20,7 +20,8 @@ export function parseRequirements(md: string): Requirement[] {
     const numbers = numbersIn(text);
     const constraints = parseConstraints(text);
     const auto = !keywords.length;
-    const concepts = auto ? conceptsFor(text) : [];
+    // 키워드를 적어도 문장의 개념은 뽑아 둔다 (검사 이름과 이을 때 쓴다)
+    const concepts = conceptsFor(text);
     const tokens = auto ? concepts.flat() : tokenize(keywords.join(' '));
     reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text) });
   }

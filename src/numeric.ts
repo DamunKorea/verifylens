@@ -8,7 +8,7 @@ export const pick = (t: Text | undefined, lang = getLang()): string => (t ? t[la
 
 // ---------------------------------------------------------------- 문장 읽기
 const NATIVE: Record<string, number> = { 한: 1, 하나: 1, 두: 2, 둘: 2, 세: 3, 셋: 3, 네: 4, 넷: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9, 열: 10 };
-const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, twenty: 20, thirty: 30, fifty: 50, hundred: 100 };
+const WORDS: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, twenty: 20, thirty: 30, fifty: 50, hundred: 100 };
 const MAGNITUDE: Record<string, number> = { 억: 1e8, 천만: 1e7, 백만: 1e6, 십만: 1e5, 만: 1e4, 천: 1e3, 백: 100 };
 
 const UNITS: [RegExp, UnitKind][] = [
@@ -45,50 +45,78 @@ const SCALES: Partial<Record<UnitKind, number[]>> = {
 const NUM = /(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?:\s*(억|천만|백만|십만|만|천|백)(?![가-힣]*(?:약|명히)))?/g;
 // 「한 번에」 · 「한 번도」 · 「두 번 다시」는 횟수 조건이 아니다
 const NATIVE_RE = /(?<![가-힣])(하나|둘|셋|넷|다섯|여섯|일곱|여덟|아홉|한|두|세|네|열)\s*(?=번(?!\s*(?:에|도|더|씩|쯤|다시))|회|개|명|살|시간|달)/g;
-const WORD_RE = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|fifty|hundred)\b(?=\s+(?:times?|attempts?|tries|retries|failures?|failed|characters?|items?|days?|hours?|minutes?|seconds?|members?|users?|consecutive))/gi;
+const WORD_RE = /\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|fifty|hundred)\b(?=\s+(?:times?|attempts?|tries|retries|failures?|failed|characters?|items?|days?|hours?|minutes?|seconds?|members?|users?|files?|consecutive))/gi;
 
+const MORE = 'more|greater|larger|bigger|longer|higher';
+const LESS = 'less|fewer|smaller|shorter|lower';
+/** 숫자 앞에 오는 말. 긴 표현이 먼저다: no more than 이 more than 보다, up to but not including 이 up to 보다 먼저. */
 const BEFORE: [RegExp, NumRelation][] = [
-  [/(?:최대|많아야|at most|up to|no more than|not more than|maximum(?: of)?|max(?:imum)?|within)\s*$/i, 'lte'],
-  [/(?:최소|적어도|at least|no less than|no fewer than|minimum(?: of)?|min)\s*$/i, 'gte'],
-  [/(?:more than|greater than|over|above|exceed(?:s|ing)?)\s*$/i, 'gt'],
-  [/(?:less than|fewer than|under|below)\s*$/i, 'lt'],
-  // 「최소 주문 금액은 10,000원」 · 「the maximum size is 5」
-  [/(?:최대|최고)[^,.]{0,14}(?:은|는|이|가)\s*$|\b(?:maximum|max)\b[^,.]{0,20}\b(?:is|of)\s*$/i, 'lte'],
-  [/(?:최소|최저)[^,.]{0,14}(?:은|는|이|가)\s*$|\b(?:minimum|min)\b[^,.]{0,20}\b(?:is|of)\s*$/i, 'gte'],
+  [/(?:up to but (?:not including|excluding))\s*$/i, 'lt'],
+  [new RegExp(`(?:(?:no|not)\\s+(?:${MORE})\\s+than|(?:${LESS})\\s+than\\s+or\\s+equal\\s+to)\\s*$`, 'i'), 'lte'],
+  [new RegExp(`(?:(?:no|not)\\s+(?:${LESS})\\s+than|(?:${MORE})\\s+than\\s+or\\s+equal\\s+to)\\s*$`, 'i'), 'gte'],
+  [/(?:(?:not|never|cannot|can't|can not|must not|may not|shall not|should not|does not|doesn't|do not|don't|won't|will not)\s+(?:be\s+)?(?:exceed(?:ing)?|over|above|beyond))\s*$/i, 'lte'],
+  [/(?:최대|많아야|up to and including|up to|through|at most|maximum(?: of)?|max(?:imum)?:?|limited to|capped at|cap of|limit of|within)\s*$/i, 'lte'],
+  [/(?:최소|적어도|at least|minimum(?: of)?|min(?:imum)?:?|starting (?:at|from)|from)\s*$/i, 'gte'],
+  [new RegExp(`(?:(?:${MORE})\\s+than|over|above|beyond|exceed(?:s|ing)?)\\s*$`, 'i'), 'gt'],
+  [new RegExp(`(?:(?:${LESS})\\s+than|under|below)\\s*$`, 'i'), 'lt'],
+  // 「최소 주문 금액은 10,000원」 · 「the maximum size is 5」 · 「Max file size: 8mb」
+  [/(?:최대|최고)[^,.]{0,14}(?:은|는|이|가)\s*$|\b(?:maximum|max)\b[^,.]{0,20}(?:\b(?:is|of)|:)\s*$/i, 'lte'],
+  [/(?:최소|최저)[^,.]{0,14}(?:은|는|이|가)\s*$|\b(?:minimum|min)\b[^,.]{0,20}(?:\b(?:is|of)|:)\s*$/i, 'gte'],
 ];
+/** 숫자(와 단위) 뒤에 오는 말 */
 const AFTER: [RegExp, NumRelation][] = [
-  [/^\s*(?:이상|부터|or more|or greater|or over|or above|\+)/i, 'gte'],
-  [/^\s*(?:초과|[을를이가]?\s*넘(?:으면|는|어|게|을|긴|기면))/, 'gt'],
-  [/^\s*(?:이하|이내|까지|안에|or less|or fewer|or under|or below)/i, 'lte'],
-  [/^\s*(?:미만|보다\s*(?:작|적))/, 'lt'],
-  [/^\s*(?:이|가)?\s*(?:지나|경과)|^\s*(?:뒤|후)(?![가-힣]*불)|^\s*동안|^\s*(?:later|ago)\b/i, 'after'],
+  [/^\s*[을를이가]?\s*넘(?:지\s*(?:않|말|못)|을\s*수\s*없|으면\s*안|어서는\s*안)/, 'lte'],
+  [/^\s*(?:이상|부터|or more|or greater|or larger|or bigger|or longer|or higher|or over|or above|\+)/i, 'gte'],
+  [/^\s*(?:초과|[을를이가]?\s*넘(?:으면|는|어|게|을|긴|기면)|보다\s*(?:크|커|많|높|길))/, 'gt'],
+  [/^\s*(?:이하|이내|까지|안에|or less|or fewer|or smaller|or shorter|or lower|or under|or below)/i, 'lte'],
+  [/^\s*(?:미만|보다\s*(?:작|적|낮|짧))/, 'lt'],
+  [/^\s*(?:이|가)?\s*(?:지나|경과)|^\s*(?:뒤|후)(?![가-힣]*불)|^\s*(?:동안|마다)|^\s*(?:later|ago)\b/i, 'after'],
   [/^\s*(?:이면|면|일\s*때|인\s*경우)/, 'eq'],
 ];
 /** 지켜야 하는 조건을 말하는 문장인가 (허용되는 쪽이 정해진다) */
-const MUST = /(?:이어야|여야|해야|할 수 있|될 수 있|가능|must|should|shall|can\b|at least|at most|최대|최소|까지만?)/i;
-const NEGATIVE = /(?:없다|없음|없어|불가|금지|안\s*된다|않는다|cannot|can't|can not|must not|may not|not allowed)/i;
+const MUST = /(?:이어야|여야|해야|할 수 있|될 수 있|가능|must|should|shall|can\b|at least|at most|accepted|allowed|최대|최소|까지만?)/i;
+const NEGATIVE = /(?:없다|없음|없어|불가|금지|안\s*된다|않는다|cannot|can't|can not|must not|may not|not allowed|rejected|denied|blocked)/i;
+
+const ABSORBED = new RegExp(`(?:not|never|cannot|can't|can not|must not|may not|shall not|should not|does not|doesn't|do not|don't|won't|will not)\\s+(?:be\\s+)?(?:exceed(?:ing)?|over|above|beyond|below|under|(?:${MORE}|${LESS})\\s+than)|넘지\\s*(?:않|말|못)[가-힣]*|넘을\\s*수\\s*없[가-힣]*|넘으면\\s*안[가-힣\\s]*|넘어서는\\s*안[가-힣\\s]*`, 'gi');
 
 function readNumber(m: RegExpExecArray): number {
   return Number(m[1].replace(/,/g, '')) * (m[2] ? MAGNITUDE[m[2]] : 1);
 }
 
-function makeConstraint(text: string, value: number, start: number, end: number): Constraint | null {
-  let rest = text.slice(end);
-  const head = text.slice(Math.max(0, start - 26), start);
-  let unit: UnitKind | null = null;
-  let unitText = '';
-  const trimmed = rest.replace(/^\s+/, '');
+function readUnit(text: string): { unit: UnitKind | null; unitText: string; rest: string; skip: number } {
+  const trimmed = text.replace(/^\s+/, '');
+  const skip = text.length - trimmed.length;
   for (const [re, kind] of UNITS) {
     const m = trimmed.match(re);
-    if (m) {
-      unit = kind;
-      unitText = m[0];
-      rest = trimmed.slice(m[0].length);
-      break;
-    }
+    if (m) return { unit: kind, unitText: m[0], rest: trimmed.slice(m[0].length), skip };
   }
+  return { unit: null, unitText: '', rest: text, skip: 0 };
+}
+
+function finish(text: string, value: number, unit: UnitKind | null, unitText: string, rel: NumRelation, raw: string, soft = false): Constraint {
+  const scales = (unit && SCALES[unit]) || [1];
+  // 「must not exceed」 · 「넘을 수 없다」는 이미 「이하」로 읽었으므로 부정으로 다시 뒤집지 않는다
+  const negative = NEGATIVE.test(text.replace(ABSORBED, ' '));
+  let validSide: 'upper' | 'lower' | null = null;
+  if (rel === 'gte' || rel === 'gt' || rel === 'lte' || rel === 'lt') {
+    if (negative) validSide = rel === 'gte' || rel === 'gt' ? 'lower' : 'upper';
+    else if (MUST.test(text)) validSide = rel === 'gte' || rel === 'gt' ? 'upper' : 'lower';
+  }
+  return { value, unit, unitText, rel, scales, validSide, raw, soft };
+}
+
+/** 뒤따르는 inclusive / exclusive 로 경계를 바로잡는다 */
+function applyEdgeWord(rel: NumRelation, rest: string): NumRelation {
+  if (/^[\s(,]*(?:exclusive|제외)/i.test(rest)) return rel === 'lte' ? 'lt' : rel === 'gte' ? 'gt' : rel;
+  if (/^[\s(,]*(?:inclusive|포함)/i.test(rest)) return rel === 'lt' ? 'lte' : rel === 'gt' ? 'gte' : rel;
+  return rel;
+}
+
+function makeConstraint(text: string, value: number, start: number, end: number): Constraint | null {
+  const head = text.slice(Math.max(0, start - 30), start);
+  const { unit, unitText, rest, skip } = readUnit(text.slice(end));
   let rel: NumRelation | null = null;
-  // 「최대 3회」처럼 앞말이 있으면 그것을 먼저 쓰고, 없으면 뒷말을 본다. no more than 이 more than 보다 먼저다.
+  // 「최대 3회」처럼 앞말이 있으면 그것을 먼저 쓰고, 없으면 뒷말을 본다.
   for (const [re, r] of BEFORE) if (re.test(head)) { rel = r; break; }
   if (!rel) for (const [re, r] of AFTER) if (re.test(rest)) { rel = r; break; }
   if (/\bafter\s*$/i.test(head)) rel = unit === 'cnt' ? 'count' : 'after';
@@ -98,15 +126,52 @@ function makeConstraint(text: string, value: number, start: number, end: number)
     else return null; // 단위도 관계도 없는 숫자(HTTP 400, 2단계 …)는 조건으로 보지 않는다
   }
   if (rel === 'after' && unit === 'cnt') rel = 'count';
-  const scales = (unit && SCALES[unit]) || [1];
-  const negative = NEGATIVE.test(text);
-  let validSide: 'upper' | 'lower' | null = null;
-  if (rel === 'gte' || rel === 'gt' || rel === 'lte' || rel === 'lt') {
-    if (negative) validSide = rel === 'gte' || rel === 'gt' ? 'lower' : 'upper';
-    else if (MUST.test(text)) validSide = rel === 'gte' || rel === 'gt' ? 'upper' : 'lower';
+  rel = applyEdgeWord(rel, rest);
+  return finish(text, value, unit, unitText, rel, text.slice(start, end + skip + unitText.length).trim());
+}
+
+const NUM_SRC = '(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)(?:\\s*(억|천만|백만|십만|만|천|백))?';
+const RANGES: { re: RegExp; soft?: boolean }[] = [
+  { re: new RegExp(`\\bbetween\\s+${NUM_SRC}\\s*[a-z%]*\\s+and\\s+${NUM_SRC}`, 'gi'), soft: true },
+  { re: new RegExp(`\\bfrom\\s+${NUM_SRC}\\s*[a-z%]*\\s+(?:to|through)\\s+${NUM_SRC}`, 'gi') },
+  { re: new RegExp(`\\b${NUM_SRC}\\s+(?:to|through)\\s+${NUM_SRC}`, 'gi') },
+  { re: new RegExp(`${NUM_SRC}\\s*(?:~|〜|–|—)\\s*${NUM_SRC}`, 'g') },
+  { re: new RegExp(`${NUM_SRC}[가-힣%]{0,3}\\s*(?:에서|부터)\\s*${NUM_SRC}`, 'g') },
+];
+
+/** 범위 표현(1~10개, between 1 and 10, 1부터 10까지)을 두 조건으로 읽는다. 읽은 자리는 돌려준다. */
+function parseRanges(text: string): { found: Constraint[]; spans: [number, number][] } {
+  const found: Constraint[] = [];
+  const spans: [number, number][] = [];
+  for (const { re, soft } of RANGES) {
+    for (const m of text.matchAll(re)) {
+      const start = m.index!;
+      const end = start + m[0].length;
+      if (spans.some(([a, b]) => start < b && end > a)) continue;
+      const lo = Number(m[1].replace(/,/g, '')) * (m[2] ? MAGNITUDE[m[2]] : 1);
+      const hi = Number(m[3].replace(/,/g, '')) * (m[4] ? MAGNITUDE[m[4]] : 1);
+      if (!(hi > lo)) continue;
+      const { unit, unitText, rest } = readUnit(text.slice(end));
+      const edge = /^[\s(,]*(?:inclusive|포함)/i.test(rest);
+      const exclusive = /^[\s(,]*(?:exclusive|제외)/i.test(rest);
+      const raw = text.slice(start, end).trim();
+      found.push(finish(text, lo, unit, unitText, exclusive ? 'gt' : 'gte', raw, !!soft && !edge && !exclusive));
+      found.push(finish(text, hi, unit, unitText, exclusive ? 'lt' : 'lte', raw, !!soft && !edge && !exclusive));
+      spans.push([start, end]);
+    }
   }
-  const raw = text.slice(start, end + (text.slice(end).length - text.slice(end).replace(/^\s+/, '').length) + unitText.length).trim();
-  return { value, unit, unitText, rel, scales, validSide, raw };
+  return { found, spans };
+}
+
+/** 숫자 없이 말로 쓴 경계: 양수 → 0 초과, 음수가 아님 → 0 이상 */
+function wordBoundaries(text: string): Constraint[] {
+  const out: Constraint[] = [];
+  if (/\bnon[-\s]?negative\b|\bzero or more\b|음수가\s*아니|음수\s*불가/i.test(text)) {
+    out.push(finish(text, 0, null, '', 'gte', 'non-negative'));
+  } else if (/\b(?:any|must be|should be|be|is|are|only)\s+(?:a\s+)?positive\b|\bpositive\s+(?:count|number|integer|value|amount|quantity|size)\b|양수/i.test(text) && !/\bnon[-\s]?positive\b/i.test(text)) {
+    out.push(finish(text, 0, null, '', 'gt', 'positive'));
+  }
+  return out;
 }
 
 /** 요구사항 문장에서 숫자 조건을 뽑는다. */
@@ -115,13 +180,17 @@ export function parseConstraints(text: string): Constraint[] {
   const add = (c: Constraint | null) => {
     if (c && !out.some((x) => x.value === c.value && x.unit === c.unit && x.rel === c.rel)) out.push(c);
   };
+  const { found, spans } = parseRanges(text);
+  found.forEach(add);
+  const inRange = (i: number) => spans.some(([a, b]) => i >= a && i < b);
   for (const m of text.matchAll(NUM)) {
     // R2 · v2 · 3D 처럼 낱말에 붙은 숫자는 건너뛴다
-    if (/[A-Za-z]$/.test(text.slice(0, m.index))) continue;
+    if (/[A-Za-z]$/.test(text.slice(0, m.index)) || inRange(m.index!)) continue;
     add(makeConstraint(text, readNumber(m as RegExpExecArray), m.index!, m.index! + m[0].length));
   }
   for (const m of text.matchAll(NATIVE_RE)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
   for (const m of text.matchAll(WORD_RE)) add(makeConstraint(text, WORDS[m[1].toLowerCase()], m.index!, m.index! + m[0].length));
+  wordBoundaries(text).forEach(add);
   return out;
 }
 
@@ -254,7 +323,13 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   if (p.op === '===' || p.op === '!==') say = T(`${withUnit(n, c)}일 때 해당`, `applies at ${withUnit(n, c)}`);
 
   // 여기까지 온 값은 요구사항과 같은 것을 재는 이름이다(엔진이 먼저 거른다). 값이 다르면 다른 것이다.
-  if (c.rel === 'value') return { ...b, ok: k !== null, say: T(`코드의 값 ${withUnit(n, c)}`, `${withUnit(n, c)} in the code`) };
+  if (c.rel === 'value') {
+    const shownValue = T(`코드의 값 ${withUnit(n, c)}`, `${withUnit(n, c)} in the code`);
+    if (k === null) return { ...b, ok: false, say: shownValue };
+    if (p.source !== 'compare') return { ...b, ok: true, say: shownValue };
+    // 값은 같아도 요구사항에 방향(이상 · 이하)이 없으면 >= 와 > 중 무엇이 맞는지 말할 수 없다
+    return { ...b, why: 'ambiguous', say: T(`${say.ko}. 요구사항에 「이상 · 이하」 같은 방향이 없어 경계를 확정할 수 없음`, `${say.en}. The requirement does not say which side of ${withUnit(round(v), c)} is meant`) };
+  }
   if (c.rel === 'eq') {
     if (p.op === '===' || p.op === '!==') return lit === v ? { ...b, ok: true, say } : { ...b, ok: false, say };
     const cut = closedAtLit ? lit : lit + 1;
@@ -267,11 +342,21 @@ export function judge(c: Constraint, p: NumPart): Boundary {
     const allowed = c.rel === 'lt' ? v - 1 : v;
     return { ...b, ok: total === allowed, say: T(`최대 ${withUnit(total, c)}까지 들어감`, `allows up to ${withUnit(total, c)}`) };
   }
+  // 「0 초과면 받는다」인데 === 1 만 받으면 범위를 좁힌 것이다
+  if (p.op === '===' && (c.rel === 'gt' || c.rel === 'gte') && p.thenKind !== 'reject') return { ...b, ok: false, say: T(`${withUnit(n, c)}일 때만 해당`, `applies only at ${withUnit(n, c)}`) };
   if (p.op === '===' || p.op === '!==') return { ...b, why: 'missing', say };
 
   // 단위를 바꾼 값(분 → ms 등)은 연속된 값이라 경계 하나 차이는 따지지 않는다
   const scaled = k !== null && k !== 1;
-  if (scaled) return { ...b, ok: true, say };
+  const timeUnit = c.unit === 'sec' || c.unit === 'min' || c.unit === 'hour' || c.unit === 'day' || c.unit === 'week';
+  if (scaled && (timeUnit || c.rel === 'after')) return { ...b, ok: true, say };
+  // 바이트 · 비율은 환산해도 경계가 그대로 뜻을 가진다: 8MB 를 포함하는지는 > 와 >= 로 갈린다
+  if (scaled) {
+    const base = v * k!;
+    const wantClosed = c.rel === 'gte' || c.rel === 'lt';
+    const same = near(lit, base) ? closedAtLit === wantClosed : (closedAtLit ? lit : lit + 1) === (wantClosed ? base : base + 1);
+    return { ...b, ok: same, say };
+  }
 
   const cut = closedAtLit ? lit : lit + 1;
   if (c.rel === 'after') {
@@ -296,6 +381,8 @@ export function judge(c: Constraint, p: NumPart): Boundary {
     const trueSide = p.op === '>' || p.op === '>=' ? 'upper' : 'lower';
     if (trueSide === c.validSide) return { ...b, ok: false, why: 'inverted', say: T(`${say.ko}: 허용해야 할 쪽을 막고 있음`, `${say.en}: it rejects the side that should be allowed`) };
   }
+  // between 1 and 10 은 끝값 포함 여부가 문장에 없다
+  if (c.soft && Math.abs(cut - wanted) === 1) return { ...b, why: 'ambiguous', say: T(`${say.ko}. 「${c.raw}」의 끝값 포함 여부가 문장에 없음`, `${say.en}. "${c.raw}" does not say whether the end value counts`) };
   return { ...b, ok: cut === wanted, say };
 }
 
