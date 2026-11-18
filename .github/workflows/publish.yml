@@ -1,0 +1,51 @@
+# Publishes the .vsix attached to a GitHub release to the VS Code Marketplace and Open VSX.
+# It uses trusted publishing (OIDC), so no access token is stored anywhere.
+# JetBrains previews (tags starting with jetbrains-v) stay on GitHub Releases only.
+name: Publish to extension stores
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.8.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TAG: ${{ inputs.tag || github.event.release.tag_name }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  vscode-marketplace:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Download the release file
+        run: |
+          case "$TAG" in v[0-9]*) ;; *) echo "Not a VS Code release tag: $TAG"; exit 1 ;; esac
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "verifylens-${TAG#v}.vsix"
+      - name: Publish
+        run: npx --yes @vscode/vsce@4.1.1 publish --packagePath "verifylens-${TAG#v}.vsix" --oidc --skip-duplicate
+
+  open-vsx:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Download the release file
+        run: |
+          case "$TAG" in v[0-9]*) ;; *) echo "Not a VS Code release tag: $TAG"; exit 1 ;; esac
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "verifylens-${TAG#v}.vsix"
+      - name: Publish
+        run: npx --yes ovsx@1.4.0 publish "verifylens-${TAG#v}.vsix" --trusted-publishing --skip-duplicate
