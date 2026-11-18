@@ -70,9 +70,7 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
         tree.showsRootHandles = true
         tree.cellRenderer = Renderer()
         ToolTipManager.sharedInstance().registerComponent(tree)
-        tree.emptyText.text = "아직 확인한 결과가 없습니다"
-        tree.emptyText.appendLine("내 변경 확인", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) { service.start(VerifyLensService.Job.CHECK) }
-        tree.emptyText.appendLine("샘플로 해 보기", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) { service.start(VerifyLensService.Job.DEMO) }
+        setEmptyText()
         object : ClickListener() {
             override fun onClick(event: MouseEvent, clickCount: Int): Boolean {
                 val path = tree.getPathForLocation(event.x, event.y) ?: return false
@@ -106,12 +104,26 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
         refresh()
     }
 
+    /** 결과가 없을 때 목록 자리에 보이는 글과 링크 (화면 언어가 바뀌면 다시 만든다) */
+    private fun setEmptyText() {
+        tree.emptyText.clear()
+        tree.emptyText.text = I18n.t("아직 확인한 결과가 없습니다", "Nothing checked yet")
+        tree.emptyText.appendLine(I18n.t("내 변경 확인", "Check my changes"), SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) { service.start(VerifyLensService.Job.CHECK) }
+        tree.emptyText.appendLine(I18n.t("샘플로 해 보기", "Try the sample"), SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) { service.start(VerifyLensService.Job.DEMO) }
+    }
+
     private fun refresh() {
         val r = service.result
         val problem = service.lastProblem
+        setEmptyText()
         if (r == null) {
-            headline.text = html("<b>AI가 고친 코드가 요구사항대로 됐는지 확인합니다</b>")
-            context.text = html("코드의 근거 줄과 실제로 돌린 테스트 결과로만 판정합니다. AI 추정은 없고, 코드는 이 PC 밖으로 나가지 않습니다." + busyText())
+            headline.text = html("<b>" + I18n.t("AI가 고친 코드가 요구사항대로 됐는지 확인합니다", "Checks whether the code the AI changed does what the requirements say") + "</b>")
+            context.text = html(
+                I18n.t(
+                    "코드의 근거 줄과 실제로 돌린 테스트 결과로만 판정합니다. AI 추정은 없고, 코드는 이 PC 밖으로 나가지 않습니다.",
+                    "Every verdict comes from a line of code and the tests that actually ran. No AI inference, and your code never leaves this machine.",
+                ) + busyText(),
+            )
         } else {
             headline.text = html("<b>${esc(r.headline)}</b>")
             context.text = html(esc("${r.context} · ${r.status}") + busyText())
@@ -136,7 +148,7 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
         TreeUtil.expandAll(tree)
     }
 
-    private fun busyText() = if (service.busy) " · 확인하는 중…" else ""
+    private fun busyText() = if (service.busy) I18n.t(" · 확인하는 중…", " · checking…") else ""
 
     private fun navigate(node: Any?): Boolean {
         val ev = when (val o = (node as? DefaultMutableTreeNode)?.userObject) {
@@ -158,6 +170,15 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
 
     fun headlineText(): String = StringUtil.removeHtmlTags(headline.text ?: "")
 
+    /** 위쪽 글 전부와 각 줄의 말풍선 글 (시험용) */
+    fun allTexts(): List<String> {
+        val tips = (0 until tree.rowCount).mapNotNull { i ->
+            val node = tree.getPathForRow(i).lastPathComponent
+            (tree.cellRenderer.getTreeCellRendererComponent(tree, node, false, tree.isExpanded(i), model.isLeaf(node), i, false) as ColoredTreeCellRenderer).toolTipText
+        }
+        return listOf(headline.text, context.text, notes.text).map { StringUtil.removeHtmlTags(it ?: "") } + rowTexts() + tips.map { StringUtil.removeHtmlTags(it) }
+    }
+
     override fun dispose() {
         ToolTipManager.sharedInstance().unregisterComponent(tree)
     }
@@ -169,7 +190,8 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
                     icon = VerifyLensIcons.status(o.overall)
                     append(o.id, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                     append("  ${o.text}")
-                    val state = if (o.reason.isNotEmpty()) "${o.overall} · ${o.reason}" else o.overall
+                    val word = I18n.overall(o.overall)
+                    val state = if (o.reason.isNotEmpty()) "$word · ${o.reason}" else word
                     append("   $state", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, Colors.text(o.overall)))
                     toolTipText = reqTooltip(o)
                 }
@@ -179,7 +201,7 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
                     else FileTypeManager.getInstance().getFileTypeByFileName(name).takeIf { it !is UnknownFileType }?.icon ?: AllIcons.FileTypes.Text
                     append(o.row.label, if (name != null) SimpleTextAttributes.REGULAR_ATTRIBUTES else SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     append("   ${o.detail}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                    toolTipText = html(esc(o.row.tooltip) + if (name != null) " — 눌러서 코드로 이동" else "")
+                    toolTipText = html(esc(o.row.tooltip) + if (name != null) I18n.t(" — 눌러서 코드로 이동", " — click to go to the code") else "")
                 }
             }
         }
@@ -187,9 +209,9 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
 
     private fun reqTooltip(row: ReqRow): String {
         val strip = service.result?.strips?.get(row.id)
-        val sb = StringBuilder("<b>VerifyLens · ${esc(row.id)} · ${esc(row.overall)}</b> — ${esc(row.text)}<br>${esc(row.summary)}")
+        val sb = StringBuilder("<b>VerifyLens · ${esc(row.id)} · ${esc(I18n.overall(row.overall))}</b> — ${esc(row.text)}<br>${esc(row.summary)}")
         if (!strip.isNullOrEmpty()) sb.append("<pre>").append(strip.joinToString("\n") { esc(it) }).append("</pre>") else sb.append("<br>")
-        sb.append("<i>출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음</i>")
+        sb.append("<i>").append(I18n.t("출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음", "Source: the condition comes from code analysis · the attempt is computed · tests come from the executed report (JUnit) — no AI inference")).append("</i>")
         return html(sb.toString())
     }
 

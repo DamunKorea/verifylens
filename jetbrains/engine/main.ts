@@ -27,6 +27,7 @@ function args(argv: string[]): { cmd: string; opts: Record<string, string> } {
 }
 
 const fail = (code: string, error: string, extra: Partial<Fail> = {}): Fail => ({ ok: false, protocol: PROTOCOL, code, error, ...extra });
+const L = M.L;
 
 /** 화면에 그리는 데 필요한 것만 담는다. rows 는 treeModel, lenses 는 allLenses 그대로다. */
 function present(run: M.Run, extra: Record<string, unknown> = {}) {
@@ -71,9 +72,9 @@ function reqPath(repo: string, opt?: string): string {
 }
 
 function findRepo(dir: string | undefined): string | Fail {
-  if (!dir) return fail('usage', '--repo 폴더가 필요합니다.');
+  if (!dir) return fail('usage', L('--repo 폴더가 필요합니다.', '--repo <folder> is required.'));
   const start = resolve(dir);
-  if (!existsSync(start)) return fail('no-folder', `폴더가 없습니다: ${start}`);
+  if (!existsSync(start)) return fail('no-folder', L(`폴더가 없습니다: ${start}`, `The folder does not exist: ${start}`));
   let root: string | null;
   try {
     root = M.gitRoot(start);
@@ -81,7 +82,7 @@ function findRepo(dir: string | undefined): string | Fail {
     return gitFail(e);
   }
   // gitRoot 는 git 이 없을 때도 null 을 돌려주므로, git 자체가 있는지 따로 본다.
-  if (!root) return hasGit() ? fail('no-repo', '열린 폴더에서 git 저장소를 찾지 못했습니다. git 저장소 폴더를 연 뒤 다시 실행하세요.') : gitFail({ code: 'ENOENT' });
+  if (!root) return hasGit() ? fail('no-repo', L('열린 폴더에서 git 저장소를 찾지 못했습니다. git 저장소 폴더를 연 뒤 다시 실행하세요.', 'No git repository was found in the open folder. Open a repository folder and run this again.')) : gitFail({ code: 'ENOENT' });
   return resolve(root);
 }
 
@@ -95,29 +96,30 @@ function hasGit(): boolean {
 
 function gitFail(e: unknown): Fail {
   const err = e as { code?: string; stderr?: string | Buffer; message?: string };
-  if (err?.code === 'ENOENT') return fail('no-git', 'git 을 찾지 못했습니다. git 을 설치하고 PATH 에 넣은 뒤 IDE 를 다시 시작하세요.');
+  if (err?.code === 'ENOENT') return fail('no-git', L('git 을 찾지 못했습니다. git 을 설치하고 PATH 에 넣은 뒤 IDE 를 다시 시작하세요.', 'git was not found. Install git, put it on PATH, and restart the IDE.'));
   const text = String(err?.stderr ?? '').trim() || (err?.message ?? String(e));
-  return fail('error', text.split('\n').map((x) => x.trim()).filter(Boolean)[0] ?? '분석에 실패했습니다.');
+  return fail('error', text.split('\n').map((x) => x.trim()).filter(Boolean)[0] ?? L('분석에 실패했습니다.', 'The analysis failed.'));
 }
 
 function check(opts: Record<string, string>) {
   const repo = findRepo(opts.repo);
   if (typeof repo !== 'string') return repo;
   const current = M.currentBranch(repo);
-  if (current === 'HEAD') return fail('detached', '브랜치에 있지 않습니다(detached HEAD). 브랜치를 체크아웃한 뒤 실행하세요.', { repo });
+  if (current === 'HEAD') return fail('detached', L('브랜치에 있지 않습니다(detached HEAD). 브랜치를 체크아웃한 뒤 실행하세요.', 'You are not on a branch (detached HEAD). Check out a branch and run this again.'), { repo });
   const base = (opts.base ?? '').trim() || M.defaultBase(repo, current);
   if (!base) {
     const others = M.orderBases(M.localBranches(repo), current);
     return fail(
       'no-base',
       others.length
-        ? `비교할 기준 브랜치를 정하지 못했습니다. main · master · develop 가운데 하나가 있어야 합니다. (있는 브랜치: ${others.slice(0, 6).join(', ')})`
-        : `비교할 기준 브랜치가 없습니다. 지금 브랜치(${current}) 말고 main 같은 브랜치가 있어야 합니다.`,
+        ? L(`비교할 기준 브랜치를 정하지 못했습니다. main · master · develop 가운데 하나가 있어야 합니다. (있는 브랜치: ${others.slice(0, 6).join(', ')})`, `Could not decide which base branch to compare against. One of main, master or develop is needed. (Branches: ${others.slice(0, 6).join(', ')})`)
+        : L(`비교할 기준 브랜치가 없습니다. 지금 브랜치(${current}) 말고 main 같은 브랜치가 있어야 합니다.`, `There is no base branch to compare against. A branch such as main is needed besides the current one (${current}).`),
       { repo },
     );
   }
   const reqFile = reqPath(repo, opts.requirements);
-  if (!existsSync(reqFile)) return fail('no-requirements', `요구사항 파일(${relative(repo, reqFile).split('\\').join('/')})이 없습니다.`, { repo, requirements: reqFile });
+  const relReq = relative(repo, reqFile).split('\\').join('/');
+  if (!existsSync(reqFile)) return fail('no-requirements', L(`요구사항 파일(${relReq})이 없습니다.`, `There is no requirements file (${relReq}).`), { repo, requirements: reqFile });
   const setting = (opts.report ?? '').trim();
   const run = M.runRepo({ repo, base, a: current, reqFile, junitA: M.findReport(repo, setting), workingRef: current, worktree: true });
   // 저장할 때 다시 볼지 정하는 데 쓰는 파일들: 요구사항 파일과 테스트 결과 후보.
@@ -125,10 +127,10 @@ function check(opts: Record<string, string>) {
 }
 
 function demo(opts: Record<string, string>) {
-  if (!opts.samples) return fail('usage', '--samples 폴더가 필요합니다.');
+  if (!opts.samples) return fail('usage', L('--samples 폴더가 필요합니다.', '--samples <folder> is required.'));
   const samples = resolve(opts.samples);
   const sampleDir = join(samples, 'login-lockout');
-  if (!existsSync(sampleDir)) return fail('no-samples', `샘플 폴더가 없습니다: ${sampleDir}`);
+  if (!existsSync(sampleDir)) return fail('no-samples', L(`샘플 폴더가 없습니다: ${sampleDir}`, `The sample folder does not exist: ${sampleDir}`));
   // 샘플의 테스트는 TypeScript 라서 Node 22.18 이상에서만 직접 돌린다. 아니면 미리 만들어 둔 결과를 쓴다.
   const node = M.nodeSupportsTs(process.execPath) ? process.execPath : null;
   const run = M.runDemo({ sampleDir, node, fallbackJunit: { a: join(samples, 'junit', 'junit-a.xml'), b: join(samples, 'junit', 'junit-b.xml') } });
@@ -153,7 +155,7 @@ function initRequirements(opts: Record<string, string>) {
   if (!existsSync(file)) {
     mkdirSync(dirname(file), { recursive: true });
     // VS Code 확장의 안내 줄 가운데 VS Code 명령을 가리키는 줄은 뺀다 (이 판에는 아직 가져오기가 없다).
-    writeFileSync(file, M.REQ_TEMPLATE.split('\n').filter((l) => !/Import requirements/.test(l)).join('\n'), 'utf8');
+    writeFileSync(file, M.reqTemplate().split('\n').filter((l) => !/Import requirements/.test(l)).join('\n'), 'utf8');
     created = true;
   }
   return { ok: true, protocol: PROTOCOL, repo, requirements: file, created };
@@ -161,13 +163,15 @@ function initRequirements(opts: Record<string, string>) {
 
 function main(argv: string[]) {
   const { cmd, opts } = args(argv);
+  // 글의 언어: 플러그인이 IDE 언어를 보고 --lang ko|en 을 넘긴다. 없으면 한국어.
+  if (opts.lang === 'en' || opts.lang === 'ko') M.setLang(opts.lang);
   let out: unknown;
   try {
     if (cmd === 'check') out = check(opts);
     else if (cmd === 'demo') out = demo(opts);
     else if (cmd === 'init-requirements') out = initRequirements(opts);
     else if (cmd === 'version') out = { ok: true, protocol: PROTOCOL, node: process.version };
-    else out = fail('usage', '쓰는 법: check --repo 폴더 [--base 브랜치] [--requirements 파일] [--report 파일] | demo --samples 폴더 | init-requirements --repo 폴더 | version');
+    else out = fail('usage', 'usage: check --repo <folder> [--base <branch>] [--requirements <file>] [--report <file>] | demo --samples <folder> | init-requirements --repo <folder> | version   (all take [--lang ko|en])');
   } catch (e) {
     const err = e as { code?: string; stderr?: unknown };
     out = err?.code === 'ENOENT' || err?.stderr !== undefined ? gitFail(e) : fail('error', e instanceof Error ? e.message : String(e));

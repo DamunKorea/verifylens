@@ -36,24 +36,25 @@ object Engine {
 
     /** 엔진 명령을 실행한다. 오래 걸릴 수 있으니 화면 스레드에서 부르지 않는다. 실패도 EngineResult(ok = false)로 돌려준다. */
     fun run(node: String, vararg args: String, timeoutMs: Int = 120_000): EngineResult {
-        val script = script() ?: return EngineResult.failure("no-engine", "분석 엔진 파일을 찾지 못했습니다. 플러그인을 다시 설치해 주세요.")
+        val script = script() ?: return EngineResult.failure("no-engine", I18n.t("분석 엔진 파일을 찾지 못했습니다. 플러그인을 다시 설치해 주세요.", "The analysis engine file was not found. Please reinstall the plugin."))
         return try {
-            val cmd = GeneralCommandLine(node, script.toString(), *args)
+            // 엔진이 만드는 글(요약 · 줄 끝 설명 · 알림)도 같은 언어로 나오게 언어를 넘긴다.
+            val cmd = GeneralCommandLine(node, script.toString(), *args, "--lang", I18n.lang())
                 .withCharset(StandardCharsets.UTF_8)
                 .withWorkDirectory(script.parent.toString())
             val out = CapturingProcessHandler(cmd).runProcess(timeoutMs)
-            if (out.isTimeout) return EngineResult.failure("timeout", "분석이 ${timeoutMs / 1000}초 안에 끝나지 않아 중단했습니다.")
+            if (out.isTimeout) return EngineResult.failure("timeout", I18n.t("분석이 ${timeoutMs / 1000}초 안에 끝나지 않아 중단했습니다.", "The analysis did not finish within ${timeoutMs / 1000} seconds and was stopped."))
             val text = out.stdout.trim()
             if (!text.startsWith("{")) {
-                val why = out.stderr.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: "종료 코드 ${out.exitCode}"
+                val why = out.stderr.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: I18n.t("종료 코드 ${out.exitCode}", "exit code ${out.exitCode}")
                 LOG.warn("VerifyLens engine failed: exit=${out.exitCode} stderr=${out.stderr.take(2000)}")
-                return EngineResult.failure("engine-failed", "분석 엔진을 실행하지 못했습니다 ($why). Node.js 18 이상인지 확인해 주세요. 쓴 Node: $node")
+                return EngineResult.failure("engine-failed", I18n.t("분석 엔진을 실행하지 못했습니다 ($why). Node.js 18 이상인지 확인해 주세요. 쓴 Node: $node", "Could not run the analysis engine ($why). Check that Node.js is 18 or newer. Node used: $node"))
             }
             val res = Gson().fromJson(text, EngineResult::class.java)
-            if (res.protocol != PROTOCOL) EngineResult.failure("protocol", "플러그인과 분석 엔진의 판이 맞지 않습니다. 플러그인을 다시 설치해 주세요.") else res
+            if (res.protocol != PROTOCOL) EngineResult.failure("protocol", I18n.t("플러그인과 분석 엔진의 판이 맞지 않습니다. 플러그인을 다시 설치해 주세요.", "The plugin and the analysis engine do not match. Please reinstall the plugin.")) else res
         } catch (e: Exception) {
             LOG.warn("VerifyLens engine failed", e)
-            EngineResult.failure("engine-failed", "분석 엔진을 실행하지 못했습니다: ${e.message ?: e.javaClass.simpleName}")
+            EngineResult.failure("engine-failed", I18n.t("분석 엔진을 실행하지 못했습니다: ", "Could not run the analysis engine: ") + (e.message ?: e.javaClass.simpleName))
         }
     }
 }

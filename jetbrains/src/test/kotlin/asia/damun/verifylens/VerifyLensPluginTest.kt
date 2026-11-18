@@ -25,6 +25,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 import javax.swing.JComponent
@@ -50,10 +51,18 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         return dir
     }
 
+    override fun setUp() {
+        super.setUp()
+        // 아래 시험들은 한국어 화면을 본다. 영어 화면 시험은 저마다 언어를 바꾼다.
+        System.setProperty("verifylens.lang", "ko")
+    }
+
     override fun tearDown() {
         val temp = repo.parent.toFile() // super.tearDown() 이 시험 클래스의 필드를 비우므로 먼저 꺼내 둔다
         try {
             System.clearProperty("verifylens.node")
+            System.clearProperty("verifylens.lang")
+            I18n.setting = I18n.AUTO
         } finally {
             super.tearDown()
         }
@@ -206,9 +215,14 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals(VerifyLensToolWindowFactory::class.java.name, ep.factoryClass)
 
         val group = ActionManager.getInstance().getAction("VerifyLens.Toolbar") as DefaultActionGroup
-        val texts = group.getChildren(ActionManager.getInstance()).map { it.templatePresentation.text }
-        assertEquals(listOf("내 변경 확인", "샘플로 해 보기", "다시 확인"), texts)
+        val actions = group.getChildren(ActionManager.getInstance()).toList()
+        // plugin.xml 의 이름은 영어 기본값이고, 화면에는 화면 언어의 이름이 나온다.
+        assertEquals(listOf("Check My Changes", "Try the Sample", "Check Again"), actions.map { it.templatePresentation.text })
+        assertEquals(listOf("내 변경 확인", "샘플로 해 보기", "다시 확인"), actions.map { shownText(it) })
+        System.setProperty("verifylens.lang", "en")
+        assertEquals(listOf("Check my changes", "Try the sample", "Check again"), actions.map { shownText(it) })
         assertNotNull(ActionManager.getInstance().getAction("VerifyLens.Menu"))
+        assertNotNull(ActionManager.getInstance().getAction("VerifyLens.SetLanguage"))
     }
 
     /** Node.js 를 찾지 못하면 무엇을 설치해야 하는지 알려 준다. */
@@ -218,7 +232,81 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         pressRaw("VerifyLens.RunDemo")
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         assertNull(service.result)
-        assertEquals(VerifyLensService.NO_NODE, service.lastProblem)
+        assertEquals(VerifyLensService.noNode(), service.lastProblem)
+        assertTrue(service.lastProblem!!.startsWith("Node.js 를 찾지 못했습니다."))
+    }
+
+    // ---------------------------------------------------------------- 영어 화면
+
+    /** 화면 언어: 정해 두지 않으면 IDE 언어를 따른다 (한국어 IDE 면 한국어, 그 밖에는 영어). */
+    fun testLanguageFollowsTheIde() {
+        assertEquals("ko", I18n.resolve(I18n.AUTO, Locale.KOREAN))
+        assertEquals("ko", I18n.resolve(I18n.AUTO, Locale.KOREA))
+        assertEquals("en", I18n.resolve(I18n.AUTO, Locale.ENGLISH))
+        assertEquals("en", I18n.resolve(I18n.AUTO, Locale.JAPANESE))
+        assertEquals("en", I18n.resolve(null, null))
+        assertEquals("ko", I18n.resolve("ko", Locale.ENGLISH))
+        assertEquals("en", I18n.resolve("en", Locale.KOREAN))
+    }
+
+    /** 영어 화면: 도구 창 · 줄 끝 설명 · 알림이 영어로 나오고, 판정은 한국어 화면과 같다. */
+    fun testEnglishUi() {
+        System.setProperty("verifylens.lang", "en")
+        val service = VerifyLensService.getInstance(project)
+        // 영어로 적은 요구사항 (샘플의 requirements.en.md 와 같다)
+        Files.copy(engineDir.resolve("samples/login-lockout/requirements.en.md"), repo.resolve(".verifylens/requirements.md"), StandardCopyOption.REPLACE_EXISTING)
+        val r = press("VerifyLens.CheckChanges")
+        println("[VerifyLens 시험] 영어 | ${r.headline} · ${r.context} · ${r.status}")
+        assertEquals("1 of 3 requirements verified by evidence and tests", r.headline)
+        assertEquals("Verified 1 · Different 1 · Failed 0 · Not verified 1", r.status)
+        assertEquals(listOf("R1" to "확인됨", "R2" to "다름", "R3" to "미확인"), r.rows.map { it.id to it.overall })
+        assertEquals("acts on attempt 6 (requirement: 5) — but the test passes", r.rows.first { it.id == "R2" }.summary)
+
+        val panel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, panel)
+        val rows = panel.rowTexts()
+        rows.forEach { println("[VerifyLens 시험] 영어 도구 창 | $it") }
+        assertEquals("R2  Lock the account after 5 consecutive failures   Different", rows[2])
+        assertEquals("auth.ts:21   acts on attempt 6 (requirement: 5) · but the test passes", rows[3])
+        assertEquals("R3  A locked account cannot log in even with the right password   Not verified · no test", rows[4])
+        assertNoKorean(panel.allTexts(), "tool window")
+        shot(panel, 620, 300, "tool-window-en")
+
+        val auth = file("src/auth.ts")
+        val note = VerifyLensLinePainter().getLineExtensions(project, auth, 20)!!.single().text.trim()
+        println("[VerifyLens 시험] 영어 21번째 줄 끝 | $note")
+        assertEquals("← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes", note)
+        val doc = FileDocumentManager.getInstance().getDocument(auth)!!
+        val tips = DocumentMarkupModel.forDocument(doc, project, false)!!.allHighlighters.mapNotNull { it.gutterIconRenderer?.tooltipText }
+        assertNoKorean(tips, "gutter tooltips")
+        service.open("A", "src/auth.ts", 21)
+        shot((FileEditorManager.getInstance(project).selectedTextEditor as EditorEx).component, 1100, 520, "editor-en")
+
+        // 샘플도 영어 요구사항으로 나온다
+        val d = press("VerifyLens.RunDemo")
+        assertEquals("Lock the account after 5 consecutive failures", d.rows.first { it.id == "R2" }.text)
+        assertEquals("Result B: acts on attempt 6 (requirement: 5) — but the test passes", d.rows.first { it.id == "R2" }.summary)
+        assertEquals("The AI said \"all requirements implemented, done\" for both results, and every test passes. Yet only 1 of 3 requirements are verified by evidence and tests.", d.demoHeadline)
+        val b = d.rows.first { it.id == "R2" }.children.first { it.setKey == "B" }
+        service.open("B", b.file!!, b.line!!)
+        assertEquals("Result B · auth.ts", FileDocumentManager.getInstance().getFile(FileEditorManager.getInstance(project).selectedTextEditor!!.document)!!.name)
+        val demoPanel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, demoPanel)
+        assertNoKorean(demoPanel.allTexts(), "demo tool window")
+        assertTrue(VerifyLensService.noNode().startsWith("Node.js was not found."))
+    }
+
+    /** 화면 언어를 바꾸면 마지막 확인을 그 언어로 다시 한다. */
+    fun testSwitchingLanguageRedoesTheResult() {
+        System.clearProperty("verifylens.lang")
+        I18n.setting = "ko"
+        val service = VerifyLensService.getInstance(project)
+        assertEquals("요구사항 3개 중 1개만 근거와 검사로 확인됨", press("VerifyLens.RunDemo").headline)
+        applyLanguage(project, "en")
+        PlatformTestUtil.waitWithEventsDispatching("언어를 바꾼 뒤 다시 만들어지지 않았습니다", { !service.busy && service.result?.headline?.startsWith("1 of 3") == true }, 120)
+        assertEquals("Different", I18n.overall("다름"))
+        applyLanguage(project, I18n.AUTO)
+        assertEquals(I18n.AUTO, I18n.setting)
     }
 
     // ---------------------------------------------------------------- 도우미
@@ -244,6 +332,19 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
     }
 
     private fun row(service: VerifyLensService, id: String) = service.result?.rows?.firstOrNull { it.id == id }
+
+    /** 동작이 화면에 보여 주는 이름 (update 를 거친 뒤의 이름) */
+    private fun shownText(action: com.intellij.openapi.actionSystem.AnAction): String {
+        val event = TestActionEvent.createTestEvent(action, SimpleDataContext.getProjectContext(project))
+        action.update(event)
+        return event.presentation.text
+    }
+
+    private fun assertNoKorean(texts: List<String>, what: String) {
+        val hangul = Regex("[가-힣]")
+        val bad = texts.filter { hangul.containsMatchIn(it) }
+        assertTrue("$what still has Korean: $bad", bad.isEmpty())
+    }
 
     private fun file(rel: String): VirtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(repo.resolve(rel))!!
 

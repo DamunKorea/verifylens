@@ -7,13 +7,16 @@
 <p><b>See per requirement whether an AI-generated change is verified, different, or not yet verified, before you commit.</b></p>
 <p>AI tools say "Done, all requirements implemented." VerifyLens checks that claim against your working tree and the tests that actually ran,
 and shows the result in a tool window and next to the code line that decides each requirement,
-for example <code>← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과</code>.</p>
+for example <code>← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes</code>.</p>
+<p>The tests can all pass and the requirement can still be unmet: when the AI writes the code and the test with the same misunderstanding.
+VerifyLens computes when a numeric condition fires, so it catches that case too.</p>
 <ul>
 <li><b>No LLM, and your code never leaves your machine.</b> Static analysis + git + your JUnit test results, all local. No telemetry.</li>
 <li><b>Unknown stays unknown.</b> No test or an unresolved call means "not verified", never "looks fine".</li>
 <li><b>Same engine as the VS Code extension</b>, so both editors give the same verdict.</li>
 </ul>
-<p>Preview. Analyzes <b>TypeScript and JavaScript</b>. Needs <b>Node.js 18+</b> and git on this machine. The UI text is currently Korean.</p>
+<p>Preview. Analyzes <b>TypeScript and JavaScript</b>. Needs <b>Node.js 18+</b> and git on this machine.
+The UI is in <b>English or Korean</b> and follows the IDE language (Tools | VerifyLens | Language… changes it).</p>
 <p>AI가 「완료」라고 한 변경이 요구사항마다 확인됨 · 다름 · 미확인인지, 커밋하기 전에 에디터에서 보여 줍니다.
 AI 판정 없이 코드 분석과 실제로 돌린 테스트 결과만 쓰고, 코드는 PC 밖으로 나가지 않습니다.</p>
 ]]></description>
@@ -31,27 +34,37 @@ AI 판정 없이 코드 분석과 실제로 돌린 테스트 결과만 쓰고, �
 
     <actions>
         <action id="VerifyLens.CheckChanges" class="asia.damun.verifylens.CheckChangesAction"
-                text="내 변경 확인" description="작업 폴더(커밋 전 변경 포함)를 기준 브랜치와 비교해 요구사항마다 확인합니다"
+                text="Check My Changes" description="Checks each requirement against your working tree (uncommitted changes included) and the base branch"
                 icon="AllIcons.Actions.Find">
             <synonym text="VerifyLens: Check my changes"/>
+            <synonym text="VerifyLens: 내 변경 확인"/>
         </action>
         <action id="VerifyLens.RunDemo" class="asia.damun.verifylens.RunDemoAction"
-                text="샘플로 해 보기" description="내 코드 없이 로그인 잠금 예로 VerifyLens 를 봅니다"
+                text="Try the Sample" description="Shows VerifyLens on a login-lockout example, without touching your code"
                 icon="AllIcons.Actions.Execute">
             <synonym text="VerifyLens: Run demo"/>
+            <synonym text="VerifyLens: 샘플로 해 보기"/>
         </action>
         <action id="VerifyLens.Recheck" class="asia.damun.verifylens.RecheckAction"
-                text="다시 확인" description="마지막에 한 확인을 다시 합니다"
+                text="Check Again" description="Runs the last check again"
                 icon="AllIcons.Actions.Refresh">
             <synonym text="VerifyLens: Re-check"/>
+            <synonym text="VerifyLens: 다시 확인"/>
         </action>
         <action id="VerifyLens.CreateRequirements" class="asia.damun.verifylens.CreateRequirementsAction"
-                text="요구사항 파일 만들기" description=".verifylens/requirements.md 를 예시와 함께 만들고 엽니다">
+                text="Create Requirements File" description="Creates .verifylens/requirements.md with two example lines and opens it">
             <synonym text="VerifyLens: Create requirements file"/>
+            <synonym text="VerifyLens: 요구사항 파일 만들기"/>
         </action>
         <action id="VerifyLens.SetNodePath" class="asia.damun.verifylens.SetNodePathAction"
-                text="Node 위치 지정…" description="분석 엔진을 돌릴 Node.js 실행 파일을 고릅니다">
+                text="Set Node.js Path…" description="Chooses the Node.js executable that runs the analysis engine">
             <synonym text="VerifyLens: Set Node.js path"/>
+            <synonym text="VerifyLens: Node 위치 지정"/>
+        </action>
+        <action id="VerifyLens.SetLanguage" class="asia.damun.verifylens.SetLanguageAction"
+                text="Language…" description="Chooses the language of VerifyLens">
+            <synonym text="VerifyLens: Language"/>
+            <synonym text="VerifyLens: 화면 언어"/>
         </action>
 
         <group id="VerifyLens.Toolbar">
@@ -67,6 +80,7 @@ AI 판정 없이 코드 분석과 실제로 돌린 테스트 결과만 쓰고, �
             <separator/>
             <reference ref="VerifyLens.CreateRequirements"/>
             <reference ref="VerifyLens.SetNodePath"/>
+            <reference ref="VerifyLens.SetLanguage"/>
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </group>
     </actions>

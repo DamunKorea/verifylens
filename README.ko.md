@@ -74,17 +74,17 @@ npm run package     # verifylens-0.6.1.vsix 를 만듭니다
 
 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
 
-## JetBrains IDE 플러그인 (첫 미리 보기)
+## JetBrains IDE 플러그인 (미리 보기)
 
-IntelliJ IDEA · WebStorm 같은 JetBrains IDE용입니다. VS Code 확장과 같은 엔진을 그대로 돌리므로 판정이 같습니다. 왼쪽 **VerifyLens** 도구 창에 한 줄 요약과 요구사항별 상태 · 근거 줄이 나오고(누르면 그 줄로 이동), 근거 줄에는 줄 번호 옆 아이콘과 줄 끝 설명이 붙습니다. **내 변경 확인**은 커밋 전 변경까지 기준 브랜치와 비교하고, 파일이 저장되면 스스로 다시 확인합니다. **샘플로 해 보기**도 있습니다.
+IntelliJ IDEA · WebStorm 같은 JetBrains IDE용입니다. VS Code 확장과 같은 엔진을 그대로 돌리므로 판정이 같습니다. 왼쪽 **VerifyLens** 도구 창에 한 줄 요약과 요구사항별 상태 · 근거 줄이 나오고(누르면 그 줄로 이동), 근거 줄에는 줄 번호 옆 아이콘과 줄 끝 설명이 붙습니다. **내 변경 확인**은 커밋 전 변경까지 기준 브랜치와 비교하고, 파일이 저장되면 스스로 다시 확인합니다. **샘플로 해 보기**도 있습니다. 화면 글은 IDE 화면 언어를 따라 한국어 · 영어로 나옵니다.
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC의 **Node.js 18 이상**(엔진을 Node로 돌립니다. 없으면 무엇을 설치할지 알려 줍니다), git.
-- **설치:** 아직 Marketplace에는 없습니다. [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.1.0)에서 `verifylens-jetbrains-0.1.0.zip`을 받아(압축을 풀지 말고) IDE의 **Settings → Plugins → ⚙ → Install Plugin from Disk…**에서 고릅니다. 직접 만들려면 아래처럼 합니다.
-- **한계:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교는 아직 없습니다. IntelliJ IDEA 2026.3과 Android Studio 2026.1(같은 IntelliJ 플랫폼)에서 자동 시험과 실제 창으로 확인했고, WebStorm에서는 아직 직접 돌려 보지 못했습니다.
+- **설치:** 아직 Marketplace에는 없습니다. [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.2.0)에서 `verifylens-jetbrains-0.2.0.zip`을 받아(압축을 풀지 말고) IDE의 **Settings → Plugins → ⚙ → Install Plugin from Disk…**에서 고릅니다. 직접 만들려면 아래처럼 합니다.
+- **한계:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교는 아직 없습니다. IntelliJ IDEA 2026.3과 Android Studio 2026.1(같은 IntelliJ 플랫폼)에서 자동 시험으로 확인했고(실제 창은 0.1.0에서), WebStorm에서는 아직 직접 돌려 보지 못했습니다.
 
 ```bash
 cd jetbrains
-./gradlew buildPlugin     # build/distributions/verifylens-jetbrains-0.1.0.zip 을 만듭니다
+./gradlew buildPlugin     # build/distributions/verifylens-jetbrains-0.2.0.zip 을 만듭니다
 ```
 
 빌드에 필요한 것과 확인한 범위는 [jetbrains/README.md](jetbrains/README.md)에 있습니다.

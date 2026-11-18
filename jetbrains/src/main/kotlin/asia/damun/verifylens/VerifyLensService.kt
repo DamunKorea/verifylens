@@ -69,13 +69,18 @@ class VerifyLensService(private val project: Project) : Disposable {
     fun start(job: Job, silent: Boolean = false) {
         if (project.isDisposed) return
         if (job == Job.CHECK && !silent && !TrustedProjects.isProjectTrusted(project)) {
-            problem("이 프로젝트는 아직 신뢰하지 않은 상태(안전 모드)입니다. 내 변경을 확인하려면 프로젝트를 신뢰해야 합니다. 샘플은 지금도 해 볼 수 있습니다.")
+            problem(
+                I18n.t(
+                    "이 프로젝트는 아직 신뢰하지 않은 상태(안전 모드)입니다. 내 변경을 확인하려면 프로젝트를 신뢰해야 합니다. 샘플은 지금도 해 볼 수 있습니다.",
+                    "This project is not trusted yet (safe mode). Checking your changes needs a trusted project. The sample works as it is.",
+                ),
+            )
             return
         }
         val node = NodeLocator.find(project)
         if (node == null) {
             if (!silent) {
-                lastProblem = NO_NODE
+                lastProblem = noNode()
                 Notify.noNode(project)
                 publish()
             }
@@ -94,7 +99,8 @@ class VerifyLensService(private val project: Project) : Disposable {
             }
             return
         }
-        val title = if (job == Job.DEMO) "VerifyLens: 샘플(로그인 잠금 가상 사례) 분석" else "VerifyLens: 내 변경 확인"
+        val title = if (job == Job.DEMO) I18n.t("VerifyLens: 샘플(로그인 잠금 가상 사례) 분석", "VerifyLens: analyzing the sample (a made-up login-lockout case)")
+        else I18n.t("VerifyLens: 내 변경 확인", "VerifyLens: checking my changes")
         object : Task.Backgroundable(project, title, false) {
             private var r: EngineResult? = null
 
@@ -103,21 +109,24 @@ class VerifyLensService(private val project: Project) : Disposable {
                 r = compute(job, node)
             }
 
-            override fun onFinished() = finish(job, r ?: EngineResult.failure("engine-failed", "분석이 중단되었습니다."), false)
+            override fun onFinished() = finish(job, r ?: EngineResult.failure("engine-failed", I18n.t("분석이 중단되었습니다.", "The analysis was interrupted.")), false)
         }.queue()
     }
 
-    /** 마지막에 한 것을 다시 한다. 아직 아무것도 안 했으면 내 변경을 확인한다. */
-    fun rerun() = start(lastJob ?: Job.CHECK)
+    /** 마지막에 한 것을 다시 한다. 아직 아무것도 안 했으면 내 변경을 확인한다. silent 는 알림 없이(화면 언어를 바꿨을 때). */
+    fun rerun(silent: Boolean = false) = start(lastJob ?: Job.CHECK, silent)
+
+    /** 결과는 그대로 두고 화면만 다시 그린다 (화면 언어를 바꿨을 때). */
+    fun refreshView() = publish()
 
     private fun compute(job: Job, node: String): EngineResult = when (job) {
         Job.CHECK -> {
             val dir = project.basePath
-            if (dir == null) EngineResult.failure("no-repo", "열린 프로젝트의 폴더를 알 수 없습니다.") else Engine.run(node, "check", "--repo", dir)
+            if (dir == null) EngineResult.failure("no-repo", I18n.t("열린 프로젝트의 폴더를 알 수 없습니다.", "The folder of the open project is unknown.")) else Engine.run(node, "check", "--repo", dir)
         }
         Job.DEMO -> {
             val samples = Engine.samples()
-            if (samples == null) EngineResult.failure("no-engine", "샘플 파일을 찾지 못했습니다. 플러그인을 다시 설치해 주세요.")
+            if (samples == null) EngineResult.failure("no-engine", I18n.t("샘플 파일을 찾지 못했습니다. 플러그인을 다시 설치해 주세요.", "The sample files were not found. Please reinstall the plugin."))
             else Engine.run(node, "demo", "--samples", samples.toString())
         }
     }
@@ -139,10 +148,10 @@ class VerifyLensService(private val project: Project) : Disposable {
             // 저장 도중처럼 잠깐 읽을 수 없는 상태일 수 있다. 기록만 하고 이전 결과를 둔다.
             LOG.info("VerifyLens re-check failed: ${r.code} ${r.error}")
         } else if (r.code == "no-requirements") {
-            lastProblem = "${r.error} 이번 작업의 요구사항을 한 줄씩 적어 두면, 코드의 근거 줄과 이어서 확인합니다."
-            Notify.warn(project, lastProblem!!, "요구사항 파일 만들기" to { createRequirements() })
+            lastProblem = "${r.error} " + I18n.t("이번 작업의 요구사항을 한 줄씩 적어 두면, 코드의 근거 줄과 이어서 확인합니다.", "Write the requirements of this change one per line, and each one is checked against the line of code that decides it.")
+            Notify.warn(project, lastProblem!!, I18n.t("요구사항 파일 만들기", "Create requirements file") to { createRequirements() })
         } else {
-            lastProblem = r.error ?: "분석에 실패했습니다."
+            lastProblem = r.error ?: I18n.t("분석에 실패했습니다.", "The analysis failed.")
             Notify.error(project, lastProblem!!)
         }
         publish()
@@ -165,9 +174,9 @@ class VerifyLensService(private val project: Project) : Disposable {
             ApplicationManager.getApplication().invokeLater({
                 if (file != null) {
                     OpenFileDescriptor(project, file).navigate(true)
-                    Notify.info(project, "요구사항을 한 줄씩 적은 뒤 「내 변경 확인」을 누르세요. 적혀 있는 두 줄은 예시입니다.")
+                    Notify.info(project, I18n.t("요구사항을 한 줄씩 적은 뒤 「내 변경 확인」을 누르세요. 적혀 있는 두 줄은 예시입니다.", "Write the requirements one per line, then click \"Check my changes\". The two lines in the file are examples."))
                 } else {
-                    Notify.error(project, r.error ?: "요구사항 파일을 만들지 못했습니다.")
+                    Notify.error(project, r.error ?: I18n.t("요구사항 파일을 만들지 못했습니다.", "Could not create the requirements file."))
                 }
             }, project.disposed)
         }
@@ -176,7 +185,7 @@ class VerifyLensService(private val project: Project) : Disposable {
     /** 근거가 된 파일의 그 줄을 연다. */
     fun open(setKey: String, file: String, line: Int) {
         val r = result ?: return
-        val vf = markers.fileFor(r, setKey, file) ?: return Notify.warn(project, "파일을 찾지 못했습니다: $file")
+        val vf = markers.fileFor(r, setKey, file) ?: return Notify.warn(project, I18n.t("파일을 찾지 못했습니다: ", "File not found: ") + file)
         OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
     }
 
@@ -212,8 +221,12 @@ class VerifyLensService(private val project: Project) : Disposable {
         private val LOG = Logger.getInstance(VerifyLensService::class.java)
         private val CODE_FILE = Regex("""\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$""")
         private const val RECHECK_DELAY_MS = 800
-        const val NO_NODE = "Node.js 를 찾지 못했습니다. VerifyLens 는 분석 엔진을 이 PC 의 Node.js 로 돌립니다. " +
-            "nodejs.org 에서 Node.js(LTS, 18 이상)를 설치한 뒤 IDE 를 다시 시작하거나, 이미 설치돼 있다면 node 실행 파일의 위치를 알려 주세요."
+        fun noNode(): String = I18n.t(
+            "Node.js 를 찾지 못했습니다. VerifyLens 는 분석 엔진을 이 PC 의 Node.js 로 돌립니다. " +
+                "nodejs.org 에서 Node.js(LTS, 18 이상)를 설치한 뒤 IDE 를 다시 시작하거나, 이미 설치돼 있다면 node 실행 파일의 위치를 알려 주세요.",
+            "Node.js was not found. VerifyLens runs its analysis engine with the Node.js on this machine. " +
+                "Install Node.js (LTS, 18 or newer) from nodejs.org and restart the IDE, or, if it is already installed, tell VerifyLens where the node executable is.",
+        )
 
         fun getInstance(project: Project): VerifyLensService = project.getService(VerifyLensService::class.java)
     }
