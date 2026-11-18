@@ -21,6 +21,11 @@ The UI is in <b>English or Korean</b> and follows the IDE language (Tools | Veri
 AI 판정 없이 코드 분석과 실제로 돌린 테스트 결과만 쓰고, 코드는 PC 밖으로 나가지 않습니다.</p>
 ]]></description>
 
+    <change-notes><![CDATA[
+<p><b>0.4.1</b>: first version for JetBrains Marketplace. Adds the plugin icon. The analysis is the same as 0.4.0.</p>
+<p><b>0.4.0</b>: reads range wording such as "up to and including", "must not exceed", "3 to 20" and "1~10", and judges more requirements without keywords.</p>
+]]></change-notes>
+
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">

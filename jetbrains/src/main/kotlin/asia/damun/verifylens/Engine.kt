@@ -2,14 +2,14 @@ package asia.damun.verifylens
 
 import com.google.gson.Gson
 import com.intellij.execution.configurations.GeneralCommandLine
-import com.intellij.execution.configurations.PathEnvironmentVariableUtil
 import com.intellij.execution.process.CapturingProcessHandler
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.util.PropertiesComponent
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.util.EnvironmentUtil
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -26,8 +26,9 @@ object Engine {
     /** 엔진과 샘플이 있는 폴더. 시험에서는 시스템 속성으로 바꿔 끼운다. */
     fun dir(): Path? {
         System.getProperty("verifylens.engine.dir")?.takeIf { it.isNotBlank() }?.let { return Path.of(it) }
-        val plugin = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID)) ?: return null
-        return plugin.pluginPath?.resolve("engine")
+        // 플러그인 폴더는 이 클래스가 든 jar(<플러그인>/lib/….jar)의 위쪽에 있다.
+        val jar = PathManager.getJarPathForClass(Engine::class.java) ?: return null
+        return generateSequence(Path.of(jar).parent) { it.parent }.take(3).map { it.resolve("engine") }.firstOrNull { Files.isDirectory(it) }
     }
 
     fun script(): Path? = dir()?.resolve("verifylens-engine.cjs")?.takeIf { Files.isRegularFile(it) }
@@ -72,7 +73,12 @@ object NodeLocator {
         customPath?.let { if (isFile(it)) return it }
         ideInterpreter(project)?.let { return it }
         val exe = if (SystemInfo.isWindows) "node.exe" else "node"
-        PathEnvironmentVariableUtil.findInPath(exe)?.let { return it.absolutePath }
+        // IDE 를 바탕화면에서 켜도 터미널과 같은 PATH 를 보도록 EnvironmentUtil 로 읽는다.
+        EnvironmentUtil.getValue("PATH")?.split(File.pathSeparator).orEmpty()
+            .filter { it.isNotBlank() }
+            .map { File(it.trim().trim('"'), exe) }
+            .firstOrNull { it.isFile }
+            ?.let { return it.absolutePath }
         val spots = if (SystemInfo.isWindows) {
             listOfNotNull(System.getenv("ProgramFiles"), System.getenv("ProgramFiles(x86)"), System.getenv("LOCALAPPDATA")?.let { "$it\\Programs" })
                 .map { "$it\\nodejs\\node.exe" }

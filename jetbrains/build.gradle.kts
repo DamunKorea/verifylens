@@ -31,6 +31,7 @@ dependencies {
     intellijPlatform {
         if (localIde != null) local(localIde) else intellijIdea(providers.gradleProperty("platformVersion").get())
         testFramework(TestFrameworkType.Platform)
+        pluginVerifier()
     }
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.opentest4j:opentest4j:1.3.0")
@@ -60,6 +61,13 @@ intellijPlatform {
     buildSearchableOptions = false
     instrumentCode = false
     if (outDir != null) sandboxContainer = layout.buildDirectory.dir("idea-sandbox")
+
+    // 장터가 올릴 때마다 돌리는 호환성 검사를 미리 돌린다: gradlew verifyPlugin -PverifyIde=<설치된 IDE 폴더>
+    pluginVerification {
+        ides {
+            providers.gradleProperty("verifyIde").orNull?.let { local(file(it)) }
+        }
+    }
 
     pluginConfiguration {
         ideaVersion {
