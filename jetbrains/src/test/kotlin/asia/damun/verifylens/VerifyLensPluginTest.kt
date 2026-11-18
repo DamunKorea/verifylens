@@ -93,9 +93,9 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         rows.forEach { println("[VerifyLens 시험] 도구 창 | $it") }
         assertEquals("요구사항 3개 중 1개만 근거와 검사로 확인됨", panel.headlineText())
         assertEquals(6, rows.size)
-        assertEquals("R2  연속 5회 실패하면 계정을 잠근다   다름", rows[2])
+        assertEquals("R2  다름   연속 5회 실패하면 계정을 잠근다", rows[2])
         assertEquals("auth.ts:21   6번째 시도에 동작 (요구사항 5회) · 검사는 통과", rows[3])
-        assertEquals("R3  잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다   미확인 · 검사 없음", rows[4])
+        assertEquals("R3  미확인 · 검사 없음   잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다", rows[4])
         shot(panel, 560, 300, "tool-window")
 
         // 3) 근거 줄: 줄 번호 옆 아이콘과 줄 끝 설명
@@ -266,11 +266,12 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         Disposer.register(testRootDisposable, panel)
         val rows = panel.rowTexts()
         rows.forEach { println("[VerifyLens 시험] 영어 도구 창 | $it") }
-        assertEquals("R2  Lock the account after 5 consecutive failures   Different", rows[2])
+        assertEquals("R2  Different   Lock the account after 5 consecutive failures", rows[2])
         assertEquals("auth.ts:21   acts on attempt 6 (requirement: 5) · but the test passes", rows[3])
-        assertEquals("R3  A locked account cannot log in even with the right password   Not verified · no test", rows[4])
+        assertEquals("R3  Not verified · no test   A locked account cannot log in even with the right password", rows[4])
         assertNoKorean(panel.allTexts(), "tool window")
         shot(panel, 620, 300, "tool-window-en")
+        shot(panel, 340, 300, "tool-window-en-narrow")
 
         val auth = file("src/auth.ts")
         val note = VerifyLensLinePainter().getLineExtensions(project, auth, 20)!!.single().text.trim()

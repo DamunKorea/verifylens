@@ -188,11 +188,12 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
             when (val o = (value as? DefaultMutableTreeNode)?.userObject) {
                 is ReqRow -> {
                     icon = VerifyLensIcons.status(o.overall)
-                    append(o.id, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
-                    append("  ${o.text}")
+                    // 상태를 요구사항 글 앞에 둔다. 글이 길거나 창이 좁아도 상태는 잘리지 않게 (11/18 실제 창에서 뒤쪽 상태가 잘렸다).
                     val word = I18n.overall(o.overall)
                     val state = if (o.reason.isNotEmpty()) "$word · ${o.reason}" else word
-                    append("   $state", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, Colors.text(o.overall)))
+                    append(o.id, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+                    append("  $state", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, Colors.text(o.overall)))
+                    append("   ${o.text}")
                     toolTipText = reqTooltip(o)
                 }
                 is EvidenceNode -> {
