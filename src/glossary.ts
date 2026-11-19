@@ -95,6 +95,8 @@ const GLOSSARY: [RegExp, string][] = [
   [/장바구니/, 'cart basket'],
   [/가격|금액|요금|배송비/, 'price amount fee cost total subtotal'],
   [/할인|쿠폰/, 'discount coupon'],
+  // 금액을 말하면 코드에서는 amount · price · total 같은 이름으로 나온다 (10만 원을 넘는 환불 ↔ amount > 100000)
+  [/\d[\d,]*\s*(?:만|천|백)?\s*원|[$₩]\s*\d|\d\s*(?:dollars?|won|usd|krw)\b/i, 'amount price total fee cost'],
   [/재고/, 'stock inventory'],
   [/배송/, 'shipping delivery ship'],
   // 글 · 화면

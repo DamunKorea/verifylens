@@ -43,7 +43,7 @@ export type CondInfo = {
 export type UnitKind = 'money' | 'age' | 'char' | 'month' | 'week' | 'day' | 'hour' | 'min' | 'sec' | 'pct' | 'cnt' | 'qty' | 'kb' | 'mb' | 'gb';
 export type NumRelation = 'gte' | 'gt' | 'lte' | 'lt' | 'count' | 'after' | 'eq' | 'value';
 /** 요구사항 문장의 숫자 조건 */
-export type Constraint = { value: number; unit: UnitKind | null; unitText: string; rel: NumRelation; scales: number[]; validSide: 'upper' | 'lower' | null; raw: string; /** 끝값 포함 여부가 문장에 없음 */ soft?: boolean };
+export type Constraint = { value: number; unit: UnitKind | null; unitText: string; rel: NumRelation; scales: number[]; validSide: 'upper' | 'lower' | null; raw: string; /** 끝값 포함 여부가 문장에 없음 */ soft?: boolean; /** 「1분에 5번」의 1분처럼 세는 시간 창 */ window?: boolean; /** 「0이면 막는다」처럼 그 값에서 조건이 걸려야 함 */ trigger?: boolean };
 
 export type Unit = {
   id: string;

@@ -118,7 +118,8 @@ function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[]; n
     num = true;
     why.push(L(`숫자 조건 ${counted.left} ↔ ${counted.lit} (요구사항 ${req.numbers.join('·')})`, `numeric condition ${counted.left} ↔ ${counted.lit} (requirement: ${req.numbers.join(', ')})`));
   }
-  if (req.guardCue && u.guard) {
+  // 막거나 확인해야 하는 요구사항(「소유자만 지울 수 있다」 포함)은 throw/return 이 붙은 조건을 근거로 먼저 본다
+  if (u.guard && (req.guardCue || (req.needsCheck && hits > 0))) {
     s += 1;
     why.push(L('거부 문장 ↔ 조건 뒤 throw/return', 'rejection wording ↔ throw/return after the condition'));
   }
@@ -167,6 +168,22 @@ function sameTarget(req: Requirement, f: Found): boolean {
   return specific.some((t) => f.u.tokens.includes(t));
 }
 
+const TIME_UNIT = new Set<UnitKind>(['sec', 'min', 'hour', 'day', 'week', 'month']);
+/** 시각을 담는 이름: now, Date.now(), sentAt, lastSeen, createdTime, t … */
+const TIME_NAME = /\bDate\.now\(\)|\bnow\b|\b\w*(?:At|Time|time|Date|date|Seen|seen)\b|\bt\b/;
+/**
+ * Date.now() - sentAt > 24 * HOUR 처럼 두 시각의 차이를 비교하는 줄은 이름이 없다.
+ * 요구사항이 시간을 말하고, 그 줄이 든 함수가 요구사항과 같은 대상을 말하면(linkExpired ↔ 링크 만료) 같은 대상으로 본다.
+ */
+function timeDiffTarget(req: Requirement, c: Constraint, f: Found): boolean {
+  if (!c.unit || !TIME_UNIT.has(c.unit) || f.p.source !== 'compare') return false;
+  const left = f.p.left;
+  if (!/[^-]-[^-=]/.test(left) || (left.match(new RegExp(TIME_NAME.source, 'g')) ?? []).length < 1) return false;
+  const specific = req.tokens.filter((t) => !GENERIC.has(t) && !TIME_WORDS.has(t));
+  return specific.some((t) => f.u.tokens.includes(t));
+}
+const TIME_WORDS = new Set(['day', 'minute', 'min', 'ms', 'sec', 'second', 'hour', 'week', 'month', 'duration', 'window', 'period', 'time'].map(stem));
+
 /** 숫자 조건마다 코드의 비교를 고르고 판정한다. 값이 같은 비교를 먼저 짝짓고, 남은 조건만 값이 다른 비교와 견준다. */
 function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Unit | null }[] {
   const all: Found[] = units.flatMap((u) => (u.cond?.parts ?? []).map((p) => ({ u, p, score: scoreUnit(req, u).score })));
@@ -194,17 +211,17 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
   };
   // 1) 요구사항이 말하는 대상의 비교 가운데 값이 같은 것
   for (const c of req.constraints) {
-    const exact = all.filter((f) => sameValue(c, f) && sameTarget(req, f)).sort((a, b) => rank(b) - rank(a));
+    const exact = all.filter((f) => sameValue(c, f) && (sameTarget(req, f) || timeDiffTarget(req, c, f))).sort((a, b) => rank(b) - rank(a));
     if (exact[0]) take(c, exact[0]);
   }
   // 2) 같은 대상인데 값이 다른 비교. 값을 아는 비교를 먼저 본다.
   for (const c of req.constraints) {
     if (out.has(c)) continue;
     const others = all
-      .filter((f) => !used.has(f.p) && sameTarget(req, f) && (f.p.op !== '!==' || c.rel === 'eq') && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
-      // length > 0 처럼 비었는지 보는 조건은 이 숫자와 상관없다
-      .filter((f) => f.p.lit === undefined || f.p.source === 'loop' || !(Math.abs(f.p.lit) <= 1 && c.value >= 3))
-      .filter((f) => f.p.lit === undefined || sameThing(c, f.p))
+      .filter((f) => !used.has(f.p) && (sameTarget(req, f) || timeDiffTarget(req, c, f)) && (f.p.op !== '!==' || c.rel === 'eq') && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
+      // length > 0 처럼 비었는지 보는 조건은 이 숫자와 상관없다 (0.7 같은 비율은 빼지 않는다)
+      .filter((f) => f.p.lit === undefined || f.p.source === 'loop' || c.unit === 'pct' || !(Math.abs(f.p.lit) <= 1 && c.value >= 3))
+      .filter((f) => f.p.lit === undefined || sameThing(c, f.p) || timeDiffTarget(req, c, f))
       .sort((a, b) => Number(b.p.lit !== undefined) - Number(a.p.lit !== undefined) || rank(b) - rank(a));
     if (others[0]) take(c, others[0]);
   }

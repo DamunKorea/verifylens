@@ -209,6 +209,24 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     scan(fnBody);
     return found;
   };
+  /** const recent = attempts.filter(…) 처럼 다른 목록에서 걸러 낸 목록이면 원래 목록의 이름 (recent.length 는 attempts 의 개수를 센다) */
+  const derivedFrom = (left: string, fnBody: ts.Node | null): string | undefined => {
+    const name = left.replace(/\.(?:length|size)$/, '');
+    if (name === left || !fnBody || !/^[A-Za-z_$][\w$]*$/.test(name)) return undefined;
+    let src: string | undefined;
+    const scan = (n: ts.Node) => {
+      if (ts.isVariableDeclaration(n) && n.name.getText(sf) === name && n.initializer) {
+        let init = n.initializer;
+        while (ts.isCallExpression(init) && ts.isPropertyAccessExpression(init.expression) && /^(?:filter|slice|map|concat)$/.test(init.expression.name.text)) {
+          src = init.expression.expression.getText(sf);
+          init = init.expression.expression;
+        }
+      }
+      ts.forEachChild(n, scan);
+    };
+    scan(fnBody);
+    return src && src !== name ? src : undefined;
+  };
   /** if 의 몸통이 거부하는가: throw, return false / null / 빈 return */
   const rejects = (s: ts.Statement): boolean =>
     stmtsOf(s).some((x) => ts.isThrowStatement(x) || (ts.isReturnStatement(x) && (!x.expression || x.expression.kind === ts.SyntaxKind.FalseKeyword || x.expression.kind === ts.SyntaxKind.NullKeyword)));
@@ -254,16 +272,18 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     const down = ctx.inLoopHead && ctx.loopVar === undefined ? countdownStart(left, ctx.fnBody) : undefined;
     const loop = down !== undefined || (ctx.loopVar !== undefined && left === ctx.loopVar);
     if (down !== undefined) ctx = { ...ctx, loopStart: down };
+    // 걸러 낸 목록의 개수는 원래 목록의 이름도 함께 적어 둔다: recent.length (attempts)
+    const src = derivedFrom(left, ctx.fnBody);
     return {
       expr: clip(e.getText(sf), 80),
-      left,
+      left: src ? `${left} (${src})` : left,
       op,
       lit,
       ref,
       line: line(e.getStart(sf)),
       source: loop ? 'loop' : 'compare',
       incBefore: loop ? null : counterOrder(left, ctx.at, ctx.fnBody),
-      preAdd: addsAfter(left, ctx.at, ctx.fnBody),
+      preAdd: addsAfter(left, ctx.at, ctx.fnBody) || (!!src && addsAfter(`${src}.length`, ctx.at, ctx.fnBody)),
       inCatch: insideCatch(ctx.at),
       actionAfter: actionFollows(ctx.at),
       thenKind: ctx.reject ? 'reject' : null,

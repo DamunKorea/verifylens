@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -78,6 +78,31 @@ test('sign-up rules: a check must exist, "only once" is not a count, "6 digits" 
   assert.deepEqual(parseConstraints('하루에 한 번만 응모할 수 있다').map((c) => c.value), [1]);
   assert.deepEqual(parseConstraints('The verification code has 6 digits').map((c) => `${c.value}:${c.rel}`), ['6:eq']);
   assert.deepEqual(parseConstraints('PIN 은 정확히 4자리 숫자다').map((c) => `${c.value}:${c.rel}`), ['4:eq']);
+});
+
+test('time wording: "N days after", "N hours before", "N per minute", "when it is 0"', () => {
+  const rel = (s: string) => parseConstraints(s).map((c) => `${c.value}:${c.rel}${c.window ? ':window' : ''}${c.trigger ? ':trigger' : ''}`);
+  assert.deepEqual(rel('The trial ends 14 days after signup'), ['14:after']);
+  assert.deepEqual(rel('예약은 시작 1시간 전까지만 할 수 있다'), ['1:gte']);
+  assert.deepEqual(rel('같은 계정은 1분에 최대 5번까지 로그인을 시도할 수 있다'), ['1:value:window', '5:lte']);
+  assert.deepEqual(rel('An order cannot be placed when the stock is 0'), ['0:eq:trigger']);
+  assert.deepEqual(rel('재고가 0이면 주문할 수 없다'), ['0:eq:trigger']);
+});
+
+test('a time difference with no name is judged, and "0이면" needs the condition to cover 0', () => {
+  const run = (req: string, code: string, test: string) => {
+    const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/a.ts': code }, tests: [{ name: test, status: 'pass', message: '' }] });
+    return evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main').summaries[0].overall;
+  };
+  const link = (h: number) => `export const linkExpired = (sentAt: number) => Date.now() - sentAt > ${h} * 60 * 60 * 1000;
+`;
+  assert.equal(run('인증 링크는 24시간 뒤 만료된다 | keywords: link, expired', link(12), 'verification link expires after 24 hours'), '다름');
+  const stock = (op: string) => `export function placeOrder(stock: number) {
+  if (stock ${op} 0) throw new Error('OUT');
+}
+`;
+  assert.equal(run('An order cannot be placed when the stock is 0 | keywords: stock, order', stock('<='), 'an order with no stock is rejected'), '확인됨');
+  assert.equal(run('An order cannot be placed when the stock is 0 | keywords: stock, order', stock('<'), 'an order with no stock is rejected'), '다름');
 });
 
 test('word forms of the same word meet', () => {

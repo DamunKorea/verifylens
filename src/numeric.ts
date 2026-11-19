@@ -128,6 +128,16 @@ function makeConstraint(text: string, value: number, start: number, end: number)
   if (/\bafter\s*$/i.test(head)) rel = unit === 'cnt' ? 'count' : 'after';
   // 「6자리」 · 「6 digits」 · 「정확히 6」은 그 값과 같아야 한다
   if ((!rel || rel === 'value') && (/(?:정확히|exactly)\s*$/i.test(head) || /^\s*(?:자리|digits?\b)/i.test(text.slice(end)))) rel = 'eq';
+  // 「시작 1시간 전까지」 · 「1 hour before」: 그만큼 앞서야 한다
+  if (!rel && unit && /^\s*(?:전까지|전에|before\b|in advance\b|ahead\b)/i.test(rest)) rel = 'gte';
+  // 「14 days after signup」: 그만큼 지난 뒤
+  if ((!rel || rel === 'value') && unit && /^\s*after\b/i.test(rest)) rel = unit === 'cnt' ? 'count' : 'after';
+  // 「1분에 5번」 · 「per 10 minutes」의 시간은 경계가 아니라 세는 창이다
+  const window = !!unit && unit !== 'cnt' && unit !== 'qty' && (/^\s*(?:에|당)(?![가-힣])/.test(rest) || /\bper\s*$/i.test(head));
+  // 「재고가 0이면」 · 「when the stock is 0」: 그 값일 때 조건이 걸려야 한다
+  const trigger = !window && (!rel || rel === 'value' || rel === 'eq') && (/\b(?:when|if|once)\b[^.]*\b(?:is|are|equals|reaches|hits|becomes)\s*$/i.test(head) || /^\s*(?:이면|일\s*때|이\s*되면|가\s*되면|이\s*될\s*때)/.test(rest));
+  if (trigger) rel = 'eq';
+  if (window) rel = 'value';
   if (!rel) {
     if (unit === 'cnt') rel = 'count';
     else if (unit) rel = 'value';
@@ -135,7 +145,10 @@ function makeConstraint(text: string, value: number, start: number, end: number)
   }
   if (rel === 'after' && unit === 'cnt') rel = 'count';
   rel = applyEdgeWord(rel, rest);
-  return finish(text, value, unit, unitText, rel, text.slice(start, end + skip + unitText.length).trim());
+  const c = finish(text, value, unit, unitText, rel, text.slice(start, end + skip + unitText.length).trim());
+  if (window) c.window = true;
+  if (trigger) c.trigger = true;
+  return c;
 }
 
 const NUM_SRC = '(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)(?:\\s*(억|천만|백만|십만|만|천|백))?';
@@ -330,6 +343,20 @@ export function judge(c: Constraint, p: NumPart): Boundary {
     : closedAtLit ? T(`${withUnit(n, c)} 미만까지 해당`, `applies below ${withUnit(n, c)}`) : T(`${withUnit(n, c)}까지 해당`, `applies up to ${withUnit(n, c)}`);
   if (p.op === '===' || p.op === '!==') say = T(`${withUnit(n, c)}일 때 해당`, `applies at ${withUnit(n, c)}`);
 
+  // 「1분에 5번」의 1분: 경계가 아니라 세는 시간 창이다. 같은 길이의 창이 코드에 있으면 된다.
+  if (c.window) {
+    const win = T(`${withUnit(n, c)} 창`, `${withUnit(n, c)} window`);
+    return k !== null ? { ...b, ok: true, say: win } : { ...b, why: 'missing', say: T(`요구사항의 시간 창(${withUnit(round(v), c)})을 코드에서 찾지 못함`, `could not find the ${withUnit(round(v), c)} window in the code`) };
+  }
+  // 「재고가 0이면 막는다」: 그 값일 때 조건이 걸려야 한다. stock < 0 은 0 을 막지 못한다.
+  if (c.trigger) {
+    const val = k ?? 1;
+    const at = v * val;
+    const hits = p.op === '<=' ? at <= lit : p.op === '<' ? at < lit : p.op === '>=' ? at >= lit : p.op === '>' ? at > lit : p.op === '===' ? at === lit : at !== lit;
+    return hits
+      ? { ...b, ok: true, say: T(`${withUnit(round(v), c)}일 때 해당`, `applies at ${withUnit(round(v), c)}`) }
+      : { ...b, ok: false, say: T(`${withUnit(round(v), c)}일 때는 해당하지 않음`, `does not apply at ${withUnit(round(v), c)}`) };
+  }
   // 여기까지 온 값은 요구사항과 같은 것을 재는 이름이다(엔진이 먼저 거른다). 값이 다르면 다른 것이다.
   if (c.rel === 'value') {
     const shownValue = T(`코드의 값 ${withUnit(n, c)}`, `${withUnit(n, c)} in the code`);

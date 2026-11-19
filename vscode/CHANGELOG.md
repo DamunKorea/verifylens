@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+Time rules are read better. Found by writing new cases ourselves while waiting for more reader feedback.
+
+- **A time difference with no name is judged.** `Date.now() - sentAt > 12 * HOUR` against "expires after 24 hours" is now Different. Before, a comparison like this was only accepted when the number already matched, so a wrong number stayed Unverified.
+- **More time wording:** "14 days after signup", "1 hour before the start" (at least 1 hour ahead), and "5 times per minute", where the minute is a counting window, not a limit.
+- **"Blocked when the stock is 0"** needs the condition to cover 0. `stock < 0` does not block 0, so it is Different now. 0.10.0 called it Verified.
+- **Counting a filtered list.** `recent = attempts.filter(...)` followed by `attempts.push(...)` counts as checking before adding. 0.10.0 read it as one short and called correct code Different.
+- **Percent caps written as fractions.** `Math.min(rate, 0.7)` against "at most 50%" is compared instead of skipped.
+- **How far to trust it.** On 19 new cases written after these changes, 0.10.0 gave the expected verdict for 8 of 19, called wrong code Verified once, and called correct code Different once. 0.11.0 gave 14 with keywords and 15 without, with no wrong verdicts. On the 21 cases written before the changes (seen while fixing), 0.10.0 gave 11 and 10, and 0.11.0 gives 20 and 17. The fixed open-source set is unchanged.
+- Still not read: "once per product" (it reads 마다 as a time window), and a 10% rate stored as `0.1` in a setting.
+
 ## 0.10.0
 
 Changes from more reader feedback.
