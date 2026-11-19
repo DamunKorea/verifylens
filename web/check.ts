@@ -2,6 +2,8 @@
 // git · 파일 시스템 · 네트워크를 쓰지 않는다. 입력한 글과 코드만 본다.
 import { analyzeFiles, evaluate } from '../src/engine.ts';
 import { parseRequirements } from '../src/requirements.ts';
+import { undecidedReasons } from '../src/summary.ts';
+import { undecidedAction, undecidedLabel } from '../src/numeric.ts';
 import type { Overall } from '../src/types.ts';
 import { allLenses, attemptLines, setLang, treeModel, verifiedLine, wOverall, type Lang } from '../vscode/src/model.ts';
 
@@ -19,6 +21,8 @@ export type TryRow = {
   detail: string;
   strip: string[];
   tests: string[];
+  /** 「미확인」일 때 까닭과 할 일 */
+  todo: { label: string; action: string }[];
 };
 export type TryNote = { line: number; endLine: number; reqId: string; overall: Overall; severity: 'ok' | 'warn' | 'info'; head: string; note: string };
 export type TryResult = { headline: string; rows: TryRow[]; notes: TryNote[]; requirementLines: string[] };
@@ -62,6 +66,7 @@ export function runCheck(input: TryInput): TryResult {
   const rows = treeModel(report).map((r): TryRow => {
     const child = r.children[0];
     const rr = set.perReq[r.id];
+    const s = report.summaries.find((x) => x.req.id === r.id)!;
     return {
       id: r.id,
       text: r.text,
@@ -74,6 +79,7 @@ export function runCheck(input: TryInput): TryResult {
       detail: child?.detail ?? '',
       strip: attemptLines(report, r.id, input.lang),
       tests: rr.tests.map((t) => `${t.status === 'pass' ? '✓' : '✗'} ${t.name}`),
+      todo: undecidedReasons(report, s).map((k) => ({ label: undecidedLabel(k, input.lang), action: undecidedAction(k, input.lang) })),
     };
   });
   const notes = allLenses(report).map((l) => ({ line: l.line, endLine: l.endLine, reqId: l.reqId, overall: l.overall, severity: l.severity, head: l.head, note: l.note }));

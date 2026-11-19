@@ -69,6 +69,8 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 | [JetBrains 미리 보기 (GitHub)](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1) | 0.4.1 | zip으로 설치 가능 |
 | JetBrains 장터 | 0.4.1 | 심사 중 |
 
+판마다 같은 방법으로 잰 결과: [docs/benchmark.md](docs/benchmark.md)
+
 ## VS Code · Cursor 확장 (미리 보기)
 
 같은 엔진이 에디터 안에서, 원래 있던 기능처럼 돌아갑니다. 왼쪽에 요구사항 목록이 열리고, 근거가 된 줄 끝에 설명이 붙습니다(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`). 마우스를 올리면 근거 표가 나오고, A ↔ B는 VS Code 기본 비교 화면으로 나란히 봅니다. 확인이 필요한 줄은 문제(Problems) 목록에 올라가고, 커밋하면 스스로 다시 분석합니다. VS Code와 Cursor 3.29에서 확인했습니다(같은 `.vsix`). Cursor에서는 에디터 창에서 쓰세요. 에이전트 창에서는 확장이 읽히지 않습니다. 다른 VS Code 기반 에디터에도 같은 파일이 설치되는 조건이지만 직접 확인하지는 못했습니다.

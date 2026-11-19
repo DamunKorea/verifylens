@@ -118,8 +118,8 @@ export type Boundary = {
   got?: number;
   say?: Text;
   want?: Text;
-  /** 확정하지 못했거나 어긋난 까닭 */
-  why?: 'ambiguous' | 'unresolved' | 'order' | 'missing' | 'inverted';
+  /** 확정하지 못했거나 어긋난 까닭 (UndecidedKind 와 같은 이름을 쓴다) */
+  why?: 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'inverted';
   line?: number;
 };
 

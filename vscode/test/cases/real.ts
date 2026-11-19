@@ -10,6 +10,16 @@ import type { NumPart, Report } from '../../../src/types.ts';
 
 type Rule = { repo: string; files: string[]; req: string; keywords: string };
 
+/** 고정 묶음: 판마다 같은 커밋으로 잰다 (docs/benchmark.md). 저장소를 바꾸거나 커밋을 올리면 이전 판과 숫자를 비교할 수 없다. */
+export const REPOS: Record<string, { url: string; commit: string }> = {
+  'validator.js': { url: 'https://github.com/validatorjs/validator.js', commit: '9ff342479591ca5a43cb30000195bcf55c1bbed9' },
+  'express-rate-limit': { url: 'https://github.com/express-rate-limit/express-rate-limit', commit: 'f2fbded251a5c2186c244b612dabee970f5ad3c1' },
+  'p-retry': { url: 'https://github.com/sindresorhus/p-retry', commit: 'ac3c4cdb7f015e1f71825e4274e2323a49b615eb' },
+  ky: { url: 'https://github.com/sindresorhus/ky', commit: '3541888878c4d303a8bc2ad61815f4e048f55a5d' },
+  helmet: { url: 'https://github.com/helmetjs/helmet', commit: 'e91d88f6586656531df99816a2e26441feab0e45' },
+  nanoid: { url: 'https://github.com/ai/nanoid', commit: '055d1700cc67ac843e3efb5235d806b419ec7b2b' },
+};
+
 const RULES: Rule[] = [
   { repo: 'validator.js', files: ['src/lib/isEmail.js'], req: '이메일 주소는 254자를 넘을 수 없다', keywords: 'email, length, str' },
   { repo: 'validator.js', files: ['src/lib/isEmail.js'], req: 'The local part of an email is at most 64 bytes', keywords: 'user, max' },

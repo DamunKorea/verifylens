@@ -174,6 +174,7 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
   const rank = (f: Found) => leftHits(req, f.p.left) * 1000 + (f.u.changed ? 500 : 0) + SOURCE_RANK[f.p.source] + f.score;
   const used = new Set<NumPart>();
   const out = new Map<Constraint, { b: Boundary; u: Unit | null }>();
+  const chosen = new Map<Constraint, NumPart>();
   const sameValue = (c: Constraint, f: Found) => {
     const v = partValue(f.p);
     return !used.has(f.p) && v !== undefined && matchScale(c, v) !== null;
@@ -188,6 +189,7 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
   const take = (c: Constraint, found: Found) => {
     const f = decidingLine(c, found);
     used.add(f.p);
+    chosen.set(c, f.p);
     out.set(c, { b: judge(c, f.p), u: f.u });
   };
   // 1) 요구사항이 말하는 대상의 비교 가운데 값이 같은 것
@@ -213,8 +215,36 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
     if (loose[0]) take(c, loose[0]);
     else out.set(c, { b: missingBoundary(c), u: null });
   }
+  // 4) 같은 것을 정하는 값이 코드에 하나 더 있고 값이 다르면, 맞는 쪽 하나만 보고 「맞다」고 하지 않는다.
+  //    (nanoid: 기본 길이 21 이 두 함수에 따로 있고, 한쪽만 45 로 바뀌어도 남은 21 때문에 「확인됨」이었다)
+  for (const c of req.constraints) {
+    const got = out.get(c)!;
+    const p = chosen.get(c);
+    // 설정값 · 기본값만 본다. 호출마다 옵션 값이 다른 것(isByteLength({ max: 64 }) 와 { max: 30 })은 흔하고 정상이다.
+    if (got.b.ok !== true || !p || p.source !== 'config') continue;
+    const family = (x: NumPart) => x.source;
+    const rival = all.find(
+      (f) =>
+        !used.has(f.p) && f.p !== p && family(f.p) === family(p) && f.p.lit !== undefined && f.p.op === p.op &&
+        partValue(f.p) !== undefined && matchScale(c, partValue(f.p)!) === null && sameName(f.p.left, p.left) && sameThing(c, f.p) &&
+        !(Math.abs(f.p.lit) <= 1 && c.value >= 3),
+    );
+    if (rival) out.set(c, { ...got, b: { ...got.b, ok: null, why: 'conflict', say: conflictSay(got.b, rival.u.file, rival.p) } });
+  }
   return req.constraints.map((c) => out.get(c)!);
 }
+
+/** 이름의 뜻만 남긴다: options.defaultSize · size · DEFAULT_SIZE 는 모두 size 다. */
+const QUALIFIER = new Set(['default', 'def', 'option', 'opt', 'config', 'cfg', 'setting', 'this', 'self', 'props', 'param', 'arg'].map(stem));
+const nameCore = (left: string) => tokenize(left).filter((t) => !QUALIFIER.has(t)).sort().join(' ');
+const sameName = (a: string, b: string) => nameCore(a) !== '' && nameCore(a) === nameCore(b);
+const conflictSay = (b: Boundary, file: string, p: NumPart) => {
+  const here = `${file.split('/').pop()}:${p.line}`;
+  return {
+    ko: `${b.say?.ko ?? ''}. 같은 이름의 다른 값 ${p.lit}이 ${here}에 있음`.replace(/^\. /, ''),
+    en: `${b.say?.en ?? ''}. Another value for the same name, ${p.lit}, is at ${here}`.replace(/^\. /, ''),
+  };
+};
 
 const severity = (b: Boundary) => (b.ok === false ? 0 : b.ok === null ? 1 : 2);
 

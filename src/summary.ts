@@ -1,6 +1,6 @@
 import type { Report, ReqSummary, ResultSet } from './types.ts';
 import { L, joinNames, wEvidence, wOverall, wRelation, wTest } from './i18n.ts';
-import { boundaryLine, checkWord } from './numeric.ts';
+import { boundaryLine, checkWord, undecidedAction, type UndecidedKind } from './numeric.ts';
 
 const where = (s: ResultSet, id: string) => {
   const u = s.perReq[id].evidence.unit;
@@ -11,6 +11,24 @@ export function counts(report: Report) {
   const c = { 확인됨: 0, 다름: 0, 미확인: 0, 실패: 0 };
   for (const s of report.summaries) c[s.overall] += 1;
   return c;
+}
+
+/** 「미확인」인 까닭을 종류로 돌려준다. 판단을 막은 것부터 앞에 둔다. 「미확인」이 아니면 빈 목록이다. */
+export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[] {
+  if (s.overall !== '미확인') return [];
+  const out = new Set<UndecidedKind>();
+  for (const set of report.sets) {
+    const rr = set.perReq[s.req.id];
+    if (rr.evidence.status === '미발견') out.add('no-evidence');
+    for (const b of rr.evidence.boundaries ?? []) if (b.ok === null) out.add(b.why && b.why !== 'inverted' ? b.why : 'missing');
+    if (rr.evidence.caveat) out.add('extra-condition');
+  }
+  // 근거가 아예 없으면 「코드에 숫자 없음」은 같은 말이다
+  if (out.has('no-evidence')) out.delete('missing');
+  const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === '미실행');
+  if (!out.size) out.add(report.testsStale ? 'stale' : 'no-test');
+  else if (untested) out.add('no-test');
+  return [...out];
 }
 
 export function nextAction(s: ReqSummary, report: Report): string {
@@ -30,6 +48,8 @@ export function nextAction(s: ReqSummary, report: Report): string {
   }
   if (s.overall === '실패') return L('실패한 검사의 원인을 확인한다.', 'Find out why the test fails.');
   if (s.overall === '미확인') {
+    const reasons = undecidedReasons(report, s);
+    if (reasons.length) return reasons.slice(0, 2).map((k) => undecidedAction(k)).join(' ');
     const open = report.sets.some((x) => x.perReq[s.req.id].evidence.boundaries?.some((b) => b.ok === null) || x.perReq[s.req.id].evidence.caveat);
     if (open) return L('위 주의 사항을 코드와 요구사항에서 직접 확인하고, 필요하면 요구사항 문장을 더 분명하게 고친다.', 'Check the note above in the code and the requirement, and make the requirement wording more precise if needed.');
     return L('관련 검사를 추가하거나 실행해 구현 근거를 확인한다.', 'Add or run a test for this requirement to confirm the behavior.');

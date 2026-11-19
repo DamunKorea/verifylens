@@ -2,9 +2,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, allRows, score } from './cases/run.ts';
-import { numbersIn, parseConstraints } from '../../src/numeric.ts';
+import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
+import { analyzeFiles, evaluate } from '../../src/engine.ts';
+import { parseRequirements } from '../../src/requirements.ts';
+import { undecidedReasons } from '../../src/summary.ts';
 
 const wrong = (rows: ReturnType<typeof allRows>) => rows.filter((r) => r.got !== r.v.expect).map((r) => `${r.c.id} / ${r.v.name}: 기대 ${r.v.expect}, 결과 ${r.got}`);
 
@@ -34,6 +37,31 @@ test('the latest unseen batches never call wrong code verified when keywords are
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
   }
+});
+
+test('a second default with the same name and another value keeps it unverified (nanoid)', () => {
+  const code = 'export let customAlphabet = (alphabet, defaultSize = 45) => {\n  return (size = defaultSize) => size\n}\nexport let nanoid = (size = 21) => size\n';
+  const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/a.js': code }, tests: [{ name: 'size id 21 rule', status: 'pass', message: '' }] });
+  const r = evaluate([set], parseRequirements('- R1: 기본 ID 길이는 21자다 | keywords: size, id'), '.', 'main');
+  assert.equal(r.summaries[0].overall, '미확인');
+  assert.deepEqual(undecidedReasons(r, r.summaries[0]), ['conflict']);
+  // 같은 값만 있으면 그대로 확인된다
+  const same = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/a.js': code.replace('= 45', '= 21') }, tests: [{ name: 'size id 21 rule', status: 'pass', message: '' }] });
+  assert.equal(evaluate([same], parseRequirements('- R1: 기본 ID 길이는 21자다 | keywords: size, id'), '.', 'main').summaries[0].overall, '확인됨');
+});
+
+test('an unverified requirement says which kind of reason stopped it', () => {
+  const kinds = (req: string, code: string, tests: string[] = []) => {
+    const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/a.ts': code }, tests: tests.map((name) => ({ name, status: 'pass' as const, message: '' })) });
+    const r = evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main');
+    return undecidedReasons(r, r.summaries[0]);
+  };
+  assert.deepEqual(kinds('Coupons expire after 7 days', 'export const expired = (daysSinceIssued: number) => daysSinceIssued >= 7;\n'), ['edge', 'no-test']);
+  assert.deepEqual(kinds('The upload size limit is about 8mb', 'export const tooBig = (fileSize: number) => fileSize >= 8 * 1024 * 1024;\n', ['upload size 8 rule']), ['wording', 'no-test']);
+  assert.deepEqual(kinds('Quantity must be between 1 and 10', 'export const ok = (quantity: number) => quantity > 1 && quantity < 10;\n', ['quantity 1 10']), ['edge']);
+  assert.deepEqual(kinds('Admins can refund orders', 'export function refund(order: unknown) { return order; }\n'), ['no-test']);
+  assert.equal(undecidedLabel('conflict', 'ko'), '다른 값이 함께 있음');
+  assert.match(undecidedAction('wording', 'en'), /at least/);
 });
 
 test('word forms of the same word meet', () => {

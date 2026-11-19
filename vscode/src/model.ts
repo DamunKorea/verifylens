@@ -6,11 +6,11 @@ import { analyzeResult, evaluate } from '../../src/engine.ts';
 import { draftRequirements, extractRequirements, parseRequirements } from '../../src/requirements.ts';
 import { buildSampleRepo } from '../../src/demo.ts';
 import { renderHtml } from '../../src/output.ts';
-import { counts, renderSummaryMd } from '../../src/summary.ts';
+import { counts, renderSummaryMd, undecidedReasons } from '../../src/summary.ts';
 import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
 import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../src/types.ts';
 import { L, getLang, setLabel, testPhrase, wOverall, wTest } from '../../src/i18n.ts';
-import { boundaryLine, boundaryShort, checkWord, pick } from '../../src/numeric.ts';
+import { boundaryLine, boundaryShort, checkWord, pick, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 
 export { L, getLang, resolveLang, setLang, wJudge, wOverall } from '../../src/i18n.ts';
 export type { Lang } from '../../src/i18n.ts';
@@ -167,13 +167,8 @@ export type ReqRow = { id: string; text: string; overall: Overall; reason: strin
 
 /** 상태 옆에 붙일 짧은 이유. 「미확인」이 왜 미확인인지 한눈에 보이게 한다. */
 function shortReason(report: Report, s: ReqSummary): string {
-  const id = s.req.id;
-  if (s.overall === '미확인') {
-    if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return L('근거 없음', 'no evidence');
-    if (report.sets.some((x) => x.perReq[id].evidence.boundaries?.some((b) => b.ok === null))) return L('숫자 미확정', 'number unconfirmed');
-    if (report.sets.some((x) => x.perReq[id].evidence.caveat)) return L('조건이 더 있음', 'extra condition');
-    return report.testsStale ? L('검사 오래됨', 'tests out of date') : L('검사 없음', 'no test');
-  }
+  // 「미확인」은 까닭을 종류로 보여 준다 (판단을 막은 것 두 가지까지)
+  if (s.overall === '미확인') return undecidedReasons(report, s).slice(0, 2).map((k) => undecidedLabel(k)).join(' · ');
   if (s.overall === '실패') return L('검사 실패', 'a test fails');
   return '';
 }
@@ -385,6 +380,8 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
   const two = report.sets.length > 1;
   const out: string[] = [`**VerifyLens · ${s.req.id} · ${wOverall(s.overall)}** — ${s.req.text}`, '', summaryLine(report, s)];
   // 검사는 통과했는데 계산과 다른 경우의 설명은 표보다 위에 둔다 (hover 가 길면 아래쪽이 잘려 보이지 않는다).
+  const reasons = undecidedReasons(report, s);
+  if (reasons.length) out.push('', `**${L('미확인 이유', 'Why unverified')}**`, ...reasons.map((k) => `- ${undecidedLabel(k)} — ${undecidedAction(k)}`));
   const off = passButOffSets(report, reqId);
   if (off.length) out.push('', `⚠ ${two ? `${off.map((x) => x.label).join(' · ')}: ` : ''}${passButOffNote(off[0].perReq[reqId])}`);
   const strip = attemptLines(report, reqId);

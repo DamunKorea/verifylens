@@ -70,6 +70,8 @@ Last checked: 2026-11-19
 | [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1) | 0.4.1 | Available as a zip |
 | JetBrains Marketplace | 0.4.1 | In review |
 
+Every version is measured the same way: [docs/benchmark.md](docs/benchmark.md).
+
 ## VS Code and Cursor extension (preview)
 
 The same engine runs inside the editor and feels native to it: a requirements side panel, a note at the end of each evidence line (for example `← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes`), a hover with the evidence table, VS Code's own diff editor for A ↔ B, entries in the Problems panel, and automatic re-runs when you commit. Checked on VS Code and on Cursor 3.29 (same `.vsix`; in Cursor use the editor window, since extensions are not loaded in its agent window). Other VS Code–based editors should accept the same file but have not been checked.

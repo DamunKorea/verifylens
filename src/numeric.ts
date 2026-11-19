@@ -304,7 +304,7 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   }
   // 횟수를 세는 요구사항인데 올리는 코드가 안 보이면 몇 번째인지 알 수 없다
   if (c.rel === 'count') {
-    return { ...b, kind: 'attempt', firstTrue: stopAt, why: 'order', say: T('횟수를 올리는 코드를 찾지 못해 몇 번째에 동작하는지 확정 못함', 'the code that increments the counter was not found, so the attempt is undetermined') };
+    return { ...b, kind: 'attempt', firstTrue: stopAt, why: 'path', say: T('횟수를 올리는 코드를 찾지 못해 몇 번째에 동작하는지 확정 못함', 'the code that increments the counter was not found, so the attempt is undetermined') };
   }
 
   const k = matchScale(c, lit);
@@ -328,7 +328,7 @@ export function judge(c: Constraint, p: NumPart): Boundary {
     if (k === null) return { ...b, ok: false, say: shownValue };
     if (p.source !== 'compare') return { ...b, ok: true, say: shownValue };
     // 값은 같아도 요구사항에 방향(이상 · 이하)이 없으면 >= 와 > 중 무엇이 맞는지 말할 수 없다
-    return { ...b, why: 'ambiguous', say: T(`${say.ko}. 요구사항에 「이상 · 이하」 같은 방향이 없어 경계를 확정할 수 없음`, `${say.en}. The requirement does not say which side of ${withUnit(round(v), c)} is meant`) };
+    return { ...b, why: 'wording', say: T(`${say.ko}. 요구사항에 「이상 · 이하」 같은 방향이 없어 경계를 확정할 수 없음`, `${say.en}. The requirement does not say which side of ${withUnit(round(v), c)} is meant`) };
   }
   if (c.rel === 'eq') {
     if (p.op === '===' || p.op === '!==') return lit === v ? { ...b, ok: true, say } : { ...b, ok: false, say };
@@ -362,7 +362,7 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   if (c.rel === 'after') {
     if (cut === v || cut === v + 1) {
       const exact = withUnit(round(v), c);
-      return { ...b, why: 'ambiguous', say: T(`${say.ko}. 요구사항 문장만으로는 정확히 ${exact}째가 포함되는지 정해지지 않음`, `${say.en}. The requirement does not say whether exactly ${exact} counts`) };
+      return { ...b, why: 'edge', say: T(`${say.ko}. 요구사항 문장만으로는 정확히 ${exact}째가 포함되는지 정해지지 않음`, `${say.en}. The requirement does not say whether exactly ${exact} counts`) };
     }
     return { ...b, ok: false, say };
   }
@@ -375,14 +375,14 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   // 「3번까지」인데 입력 변수만 보이면(entryCount >= 3) 그 값에 이번 것이 포함됐는지 알 수 없어 경계 하나 차이는 정할 수 없다.
   // 목록의 길이(.length)는 지금 개수가 분명하므로 그대로 판정한다.
   if (isCapacity(c) && (c.unit === 'cnt' || c.unit === 'qty') && p.source === 'compare' && !p.preAdd && /count|hits|used|entries|requests|sent/i.test(p.left) && !/\.(?:length|size)$/.test(p.left) && (cut === wanted || cut === wanted - 1)) {
-    return { ...b, why: 'ambiguous', say: T(`${say.ko}. 이 값에 이번 요청이 포함되는지 코드만으로 정해지지 않음`, `${say.en}. The code does not show whether this count includes the current one`) };
+    return { ...b, why: 'path', say: T(`${say.ko}. 이 값에 이번 요청이 포함되는지 코드만으로 정해지지 않음`, `${say.en}. The code does not show whether this count includes the current one`) };
   }
   if (p.thenKind === 'reject' && c.validSide) {
     const trueSide = p.op === '>' || p.op === '>=' ? 'upper' : 'lower';
     if (trueSide === c.validSide) return { ...b, ok: false, why: 'inverted', say: T(`${say.ko}: 허용해야 할 쪽을 막고 있음`, `${say.en}: it rejects the side that should be allowed`) };
   }
   // between 1 and 10 은 끝값 포함 여부가 문장에 없다
-  if (c.soft && Math.abs(cut - wanted) === 1) return { ...b, why: 'ambiguous', say: T(`${say.ko}. 「${c.raw}」의 끝값 포함 여부가 문장에 없음`, `${say.en}. "${c.raw}" does not say whether the end value counts`) };
+  if (c.soft && Math.abs(cut - wanted) === 1) return { ...b, why: 'edge', say: T(`${say.ko}. 「${c.raw}」의 끝값 포함 여부가 문장에 없음`, `${say.en}. "${c.raw}" does not say whether the end value counts`) };
   return { ...b, ok: cut === wanted, say };
 }
 
@@ -404,9 +404,59 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
   if (!b) return '';
   const ko = lang === 'ko';
   if (b.kind === 'attempt' && b.attempts !== null) return ko ? `${b.attempts}번째 동작` : `attempt ${b.attempts}`;
-  if (b.ok === null) return ko ? '숫자 미확정' : 'number unconfirmed';
+  if (b.ok === null) return undecidedLabel(b.why && b.why !== 'inverted' ? b.why : 'missing', lang);
   return pick(b.say, lang);
 }
+
+/**
+ * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
+ * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
+ */
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-evidence' | 'extra-condition' | 'no-test' | 'stale';
+const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
+  wording: {
+    label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
+    action: { ko: '요구사항에 「이상 · 이하 · 초과 · 미만」 가운데 하나를 적는다.', en: 'Say “at least”, “at most”, “over” or “under” in the requirement.' },
+  },
+  edge: {
+    label: { ko: '끝값 포함 여부 애매', en: 'edge value unclear' },
+    action: { ko: '끝값이 포함되는지 요구사항에 적는다 (예: 「7일째부터」, 「8MB 포함」).', en: 'Say in the requirement whether the edge value counts (for example “from day 7”, “8 MB included”).' },
+  },
+  path: {
+    label: { ko: '실행 순서 확인 못함', en: 'execution order not visible' },
+    action: { ko: '세는 코드와 비교가 어떤 순서로 도는지 확인하고, 경계 값을 직접 넣는 테스트를 더한다.', en: 'Check the order in which the counting code and the comparison run, and add a test that hits the edge value.' },
+  },
+  unresolved: {
+    label: { ko: '값을 읽지 못함', en: 'value not readable' },
+    action: { ko: '값이 환경 변수나 설정에서 오면 기본값을 코드에 두거나, 그 값을 확인하는 테스트를 더한다.', en: 'If the value comes from an environment variable or settings, keep a default in the code or add a test for it.' },
+  },
+  missing: {
+    label: { ko: '코드에 숫자 없음', en: 'number not found' },
+    action: { ko: '구현이 있는지 확인한다. 있으면 「| keywords: 코드에 나오는 영어 단어」를 요구사항에 붙인다.', en: 'Check that it is implemented. If it is, add “| keywords: words in the code” to the requirement.' },
+  },
+  conflict: {
+    label: { ko: '다른 값이 함께 있음', en: 'conflicting values' },
+    action: { ko: '같은 대상에 다른 값이 있다. 어느 값이 실제로 쓰이는지 확인하고 하나로 맞춘다.', en: 'The same thing has another value elsewhere. Check which one is used and make them agree.' },
+  },
+  'no-evidence': {
+    label: { ko: '근거 없음', en: 'no evidence' },
+    action: { ko: '구현이 있는지 확인한다. 있으면 「| keywords: 코드에 나오는 영어 단어」를 요구사항에 붙인다.', en: 'Check that it is implemented. If it is, add “| keywords: words in the code” to the requirement.' },
+  },
+  'extra-condition': {
+    label: { ko: '조건이 더 있음', en: 'extra condition' },
+    action: { ko: '함께 걸린 조건이 거짓일 때도 요구사항이 지켜지는지 확인한다.', en: 'Check that the requirement still holds when the attached condition is false.' },
+  },
+  'no-test': {
+    label: { ko: '검사 없음', en: 'no test' },
+    action: { ko: '이 요구사항을 확인하는 테스트를 돌린다. 테스트 이름에 요구사항의 낱말과 숫자를 넣으면 이어진다.', en: 'Run a test for this requirement. A test name with the requirement’s words and number gets linked.' },
+  },
+  stale: {
+    label: { ko: '검사 오래됨', en: 'tests out of date' },
+    action: { ko: '코드를 바꾼 뒤 테스트를 다시 돌린다.', en: 'Run the tests again after the code change.' },
+  },
+};
+export const undecidedLabel = (k: UndecidedKind, lang = getLang()) => pick(UNDECIDED[k].label, lang);
+export const undecidedAction = (k: UndecidedKind, lang = getLang()) => pick(UNDECIDED[k].action, lang);
 
 /** 검사가 무엇을 확인해야 하는지 말할 때 쓰는 낱말 */
 export function checkWord(b: Boundary | undefined, lang = getLang()): string {

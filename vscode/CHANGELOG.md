@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+Changes from reader feedback on OKKY.
+
+- **"Unverified" now says why, by kind, and what to do next.** The kinds are: wording has no direction, edge value unclear, execution order not visible, value not readable, number not found, conflicting values, no evidence, extra condition, no test, and tests out of date. They appear in the requirements panel, the hover, the summary and the [try page](https://damunkorea.github.io/verifylens/).
+- **A second setting with the same name and a different value keeps the result Unverified.** In nanoid the default length 21 is written in two functions. Changing one of them to 45 used to stay Verified, because the other 21 was still there.
+- **Every version is measured on the same fixed set.** It has 11 documented rules from 6 open-source projects, pinned to commits ([docs/benchmark.md](https://github.com/DamunKorea/verifylens/blob/main/docs/benchmark.md)). Changed code that was still called Verified went from 1 in 0.8.0 to 0 in 0.9.0. Verdicts on the 378 test cases are the same as in 0.8.0.
+- **Try it in your browser.** A page that runs the same engine without installing anything: https://damunkorea.github.io/verifylens/
+
 ## 0.8.0
 
 Range wording is read correctly, and many more requirements can be judged without keywords.

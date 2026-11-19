@@ -218,6 +218,15 @@ function run() {
       const meta = [r.where, r.tests.length ? T.linked[lang] + r.tests.join(', ') : T.noLinked[lang]].filter(Boolean).join(' · ');
       card.append(el('p', 'meta', meta));
       if (r.strip.length) card.append(el('div', 'strip', r.strip.join('\n')));
+      if (r.todo.length) {
+        const todo = el('ul', 'todo');
+        for (const t of r.todo) {
+          const li = el('li');
+          li.append(el('b', undefined, t.label), document.createTextNode(` — ${t.action}`));
+          todo.append(li);
+        }
+        card.append(todo);
+      }
       card.addEventListener('click', () => r.line && jump(r.line));
       return card;
     }),
