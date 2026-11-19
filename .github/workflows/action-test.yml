@@ -31,6 +31,9 @@ jobs:
           node --input-type=module -e "
             import { cpSync, appendFileSync } from 'node:fs';
             const { buildSampleRepo } = await import('./src/demo.ts');
+            const { setLang } = await import('./src/i18n.ts');
+            // 영어 요구사항(requirements.en.md)으로 돌려, 작업 화면의 표시가 모두 영어로 나오게 한다
+            setLang('en');
             const env = buildSampleRepo();
             cpSync(env.repo, 'sample-repo', { recursive: true });
             appendFileSync(process.env.GITHUB_OUTPUT, 'requirements=' + env.reqFile + '\njunit_a=' + env.junitA + '\njunit_b=' + env.junitB + '\n');
