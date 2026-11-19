@@ -65,7 +65,7 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 | [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.9.0) | 0.9.0 | 공개 |
 | [VS Code 장터](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.9.0 | 공개 |
 | [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.9.0 | 공개 |
-| Cursor 확장 검색 | 0.8.0 | Open VSX에서 복사 대기 |
+| Cursor 확장 검색 | 0.9.0 | 공개 |
 | [JetBrains 미리 보기 (GitHub)](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1) | 0.4.1 | zip으로 설치 가능 |
 | JetBrains 장터 | 0.4.1 | 심사 중 |
 

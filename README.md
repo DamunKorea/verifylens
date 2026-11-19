@@ -66,7 +66,7 @@ Last checked: 2026-11-19
 | [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.9.0) | 0.9.0 | Available |
 | [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.9.0 | Available |
 | [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.9.0 | Available |
-| Cursor extension search | 0.8.0 | Update pending (copies from Open VSX) |
+| Cursor extension search | 0.9.0 | Available |
 | [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1) | 0.4.1 | Available as a zip |
 | JetBrains Marketplace | 0.4.1 | In review |
 
