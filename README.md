@@ -4,6 +4,8 @@
 
 [한국어 README](README.ko.md)
 
+**[Try it in your browser →](https://damunkorea.github.io/verifylens/)** No install. Paste a requirement and some code; nothing leaves the page.
+
 The AI says "Done, all requirements implemented", and **every test passes.** The requirement can still be unmet.
 
 ```text

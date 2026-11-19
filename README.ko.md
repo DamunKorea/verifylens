@@ -4,6 +4,8 @@
 
 [English README](README.md)
 
+**[브라우저에서 바로 해 보기 →](https://damunkorea.github.io/verifylens/?lang=ko)** 설치하지 않아도 됩니다. 요구사항과 코드를 넣어 보세요. 넣은 내용은 페이지 밖으로 나가지 않습니다.
+
 AI가 「요구사항 전부 반영, 완료」라고 답하고, **테스트도 전부 통과했습니다.** 그래도 요구사항대로가 아닐 수 있습니다.
 
 ```text

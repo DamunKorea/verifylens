@@ -8,3 +8,4 @@ vscode/node_modules/
 vscode/dist/
 vscode/samples/
 *.vsix
+web/dist/
