@@ -96,12 +96,12 @@ npm run package     # verifylens-0.8.0.vsix 를 만듭니다
 IntelliJ IDEA · WebStorm 같은 JetBrains IDE용입니다. VS Code 확장과 같은 엔진을 그대로 돌리므로 판정이 같습니다. 왼쪽 **VerifyLens** 도구 창에 한 줄 요약과 요구사항별 상태 · 근거 줄이 나오고(누르면 그 줄로 이동), 근거 줄에는 줄 번호 옆 아이콘과 줄 끝 설명이 붙습니다. **내 변경 확인**은 커밋 전 변경까지 기준 브랜치와 비교하고, 파일이 저장되면 스스로 다시 확인합니다. **샘플로 해 보기**도 있습니다. 화면 글은 IDE 화면 언어를 따라 한국어 · 영어로 나옵니다.
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC의 **Node.js 18 이상**(엔진을 Node로 돌립니다. 없으면 무엇을 설치할지 알려 줍니다), git.
-- **설치:** JetBrains Marketplace 심사 중이라 아직 검색되지 않습니다. [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1)에서 `verifylens-jetbrains-0.4.1.zip`을 받아(압축을 풀지 말고) IDE의 **Settings → Plugins → ⚙ → Install Plugin from Disk…**에서 고릅니다. 직접 만들려면 아래처럼 합니다.
+- **설치:** JetBrains Marketplace 심사 중이라 아직 검색되지 않습니다. [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.5.0)에서 `verifylens-jetbrains-0.5.0.zip`을 받아(압축을 풀지 말고) IDE의 **Settings → Plugins → ⚙ → Install Plugin from Disk…**에서 고릅니다. 직접 만들려면 아래처럼 합니다.
 - **한계:** 테스트 실행 단추, 요구사항 가져오기, PR 요약 복사, 리포트 화면, 두 브랜치 비교는 아직 없습니다. IntelliJ IDEA 2026.3과 Android Studio 2026.1(같은 IntelliJ 플랫폼)에서 자동 시험과 실제 창(IntelliJ IDEA, 영어 · 한국어)으로 확인했고, WebStorm에서는 아직 직접 돌려 보지 못했습니다.
 
 ```bash
 cd jetbrains
-./gradlew buildPlugin     # build/distributions/verifylens-jetbrains-0.4.1.zip 을 만듭니다
+./gradlew buildPlugin     # build/distributions/verifylens-jetbrains-0.5.0.zip 을 만듭니다
 ```
 
 빌드에 필요한 것과 확인한 범위는 [jetbrains/README.md](jetbrains/README.md)에 있습니다.
@@ -120,6 +120,33 @@ node src/cli.ts report --repo ../내저장소 --base main --a feature/x [--b fea
 
 - 요구사항은 한국어나 영어 문장만 적으면 코드와 자동으로 이어집니다(영어는 문장의 낱말로, 한국어는 자주 쓰는 말의 고정 용어집으로, LLM 없음). 엉뚱한 코드에 이어지면 뒤에 `| keywords: 코드에, 나오는, 단어`를 붙여 직접 정하세요. 자동 연결은 검사를 일부러 좁게 잇습니다. 검사 이름이 요구사항의 대부분을 담아야만 인정해서, 검사가 없으면 「미확인」으로 남습니다.
 - 검사 결과는 JUnit XML을 읽습니다. 예: `node --test --test-reporter=junit --test-reporter-destination=a.xml`. 검사 결과가 없으면 「미실행」으로 표시합니다.
+
+## CI 에서 쓰기 (GitHub Actions)
+
+PR 이 많아 하나씩 볼 수 없을 때, PR 마다 VerifyLens 를 돌릴 수 있습니다. 「다름」인 요구사항의 근거 줄에 표시를 남기고, 작업 페이지에 요약을 쓰고, 검사를 실패로 끝냅니다.
+
+```yaml
+# .github/workflows/verifylens.yml
+name: VerifyLens
+on: pull_request
+jobs:
+  verifylens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0          # 기준 브랜치와 비교하려면 필요합니다
+      # 선택: 테스트를 JUnit 결과로 남기면 검사까지 함께 봅니다. 예:
+      # - run: npx vitest run --reporter=junit --outputFile=junit.xml
+      - uses: DamunKorea/verifylens@v0.10.0
+        with:
+          requirements: .verifylens/requirements.md
+          junit: junit.xml        # 결과 파일이 없으면 지웁니다
+          fail-on: different,failed   # 엄격하게 하려면 unverified 도 넣습니다
+          lang: ko
+```
+
+코드는 러너 안에서만 분석하고 밖으로 보내지 않습니다. 같은 검사를 PC 에서는 `node src/cli.ts ci --repo . --base origin/main --requirements .verifylens/requirements.md` 로 돌립니다.
 
 ## 리포트 읽는 법
 

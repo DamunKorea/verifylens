@@ -96,7 +96,7 @@ See [vscode/README.md](vscode/README.md) for details.
 
 For IntelliJ IDEA and other JetBrains IDEs (platform 2026.1 or newer). It runs the same engine as the VS Code extension through your local Node.js (18+), so the verdicts are the same: a tool window with the status of each requirement, a gutter icon and a note on the evidence line, and a re-check when a file is saved. The UI is in English or Korean, following the IDE language. Running tests, importing requirements, the PR summary and the report view are not in this preview.
 
-Download `verifylens-jetbrains-0.4.1.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1) and install it with **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Checked on IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried. See [jetbrains/README.md](jetbrains/README.md).
+Download `verifylens-jetbrains-0.5.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.5.0) and install it with **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Checked on IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried. See [jetbrains/README.md](jetbrains/README.md).
 
 ## Use it on your own repo
 
@@ -112,6 +112,32 @@ node src/cli.ts report --repo ../your-repo --base main --a feature/x [--b featur
 
 - Requirements written in English or Korean are linked to code automatically (English by their own words, Korean through a fixed glossary of common terms, no LLM). If a requirement lands on the wrong code, append `| keywords: words, in, the, code` to pin it. Automatic links are deliberately strict about tests: a test only counts when its name covers most of the requirement, so a missing test stays "not verified".
 - Test results are read from JUnit XML, e.g. `node --test --test-reporter=junit --test-reporter-destination=a.xml`. Without test results, tests show as "not run".
+
+## Use it in CI (GitHub Actions)
+
+When there are too many pull requests to look at one by one, run VerifyLens on each of them. It marks the deciding line of a requirement that is Different, writes a summary to the job page, and fails the check.
+
+```yaml
+# .github/workflows/verifylens.yml
+name: VerifyLens
+on: pull_request
+jobs:
+  verifylens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0          # the base branch is needed for the comparison
+      # Optional: run your tests with a JUnit report, for example
+      # - run: npx vitest run --reporter=junit --outputFile=junit.xml
+      - uses: DamunKorea/verifylens@v0.10.0
+        with:
+          requirements: .verifylens/requirements.md
+          junit: junit.xml        # leave out if you have no report
+          fail-on: different,failed   # add unverified to be strict
+```
+
+The code is analyzed on the runner and is not sent anywhere. The same check runs locally with `node src/cli.ts ci --repo . --base origin/main --requirements .verifylens/requirements.md`.
 
 ## Reading the report
 

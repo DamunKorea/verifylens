@@ -201,7 +201,7 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
   for (const c of req.constraints) {
     if (out.has(c)) continue;
     const others = all
-      .filter((f) => !used.has(f.p) && sameTarget(req, f) && f.p.op !== '!==' && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
+      .filter((f) => !used.has(f.p) && sameTarget(req, f) && (f.p.op !== '!==' || c.rel === 'eq') && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
       // length > 0 처럼 비었는지 보는 조건은 이 숫자와 상관없다
       .filter((f) => f.p.lit === undefined || f.p.source === 'loop' || !(Math.abs(f.p.lit) <= 1 && c.value >= 3))
       .filter((f) => f.p.lit === undefined || sameThing(c, f.p))
@@ -262,7 +262,9 @@ function findEvidence(req: Requirement, units: Unit[]): Evidence {
   // 근거 줄은 판정한 숫자 조건이 있는 줄로 맞춘다
   const unit = worst?.u ?? best!.u;
   const s = unit === best?.u ? best : { ...scoreUnit(req, unit), u: unit };
-  const status = judged.some((j) => j.u) || s.score >= 2 ? '발견' : '일부 발견';
+  // 확인하는 조건이 있어야 하는 요구사항인데 근거가 함수 전체뿐이면(이름만 겹침) 구현을 찾았다고 하지 않는다
+  const onlyName = req.needsCheck && !judged.length && unit.kind === 'function';
+  const status = !onlyName && (judged.some((j) => j.u) || s.score >= 2) ? '발견' : '일부 발견';
   const ev: Evidence = { unit, score: s.score, status, why: s.why };
   if (judged.length) {
     ev.boundaries = judged.map((j) => j.b);
@@ -298,17 +300,30 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
     const nums = namedNumbers(t.name);
     return req.constraints.some((c) => nums.some((n) => matchScale(c, n) !== null)) && req.concepts.some((g) => g.some((x) => !BROAD.has(x) && names.has(x)));
   };
+  // 숫자가 없는 규칙(형식 · 중복 · 동의): 요구사항 · 판단하는 조건 줄 · 검사 이름이 같은 대상을 말하면 잇는다.
+  // 검사 이름이 요구사항 개념의 절반 이상(둘 이상)을 담고, 그 가운데 하나가 조건 줄에도 나와야 한다. 막는 요구사항이면 검사 이름도 거부를 말해야 한다.
+  // (절반 기준이 없으면 「잠긴 계정은 로그인되지 않는다」에 「5번 실패하면 잠근다」 검사가 이어졌다)
+  const deciding = ev.status === '발견' && ev.unit?.kind === 'condition' && !req.constraints.length;
+  const agrees = (t: TestCase) => {
+    if (!deciding) return false;
+    const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
+    const code = new Set(ev.unit!.tokens);
+    const words = new Set([...req.tokens, ...req.concepts.flat()]);
+    const shared = [...names].some((x) => code.has(x) && words.has(x) && !BROAD.has(x));
+    const covered = req.concepts.filter((g) => g.some((x) => names.has(x))).length;
+    return shared && covered >= 2 && covered * 2 >= req.concepts.length && (!req.guardCue || NEGATIVE_TEST.test(t.name));
+  };
   if (!req.auto) {
     const set = new Set([...req.tokens, ...req.numbers.map(String)]);
     // 키워드가 하나뿐이면 그 낱말 하나로 잇는다 (둘을 요구하면 영영 이어지지 않는다)
     const need = Math.min(2, set.size);
-    return tests.filter((t) => sameRule(t) || new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= need);
+    return tests.filter((t) => sameRule(t) || agrees(t) || new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= need);
   }
   // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
   // 조건: 요구사항의 개념(숫자 포함) 가운데 3분의 2 이상을 검사 이름이 담고, 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
   const groups = [...req.concepts, ...req.numbers.map((n) => [String(n)])];
   return tests.filter((t) => {
-    if (sameRule(t)) return true;
+    if (sameRule(t) || agrees(t)) return true;
     const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
     if (groups.length < 2) return false;
     if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;

@@ -7,6 +7,8 @@ import { numbersIn, parseConstraints } from './numeric.ts';
 /** 「관리자만」 · only: 다른 경우를 빼는 요구사항 */
 const ONLY_CUE = /[가-힣]만(?=\s|$)|\bonly\b/i;
 const GUARD_CUE = /(않|차단|거부|막|금지|불가|reject|deny|block|forbid|refuse|must not|cannot)/i;
+/** 무엇을 확인하거나 막는 조건이 코드에 있어야 하는 요구사항 (함수 이름만 겹쳐서는 근거가 되지 않는다) */
+const CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있/i;
 
 export function parseRequirements(md: string): Requirement[] {
   const reqs: Requirement[] = [];
@@ -23,7 +25,7 @@ export function parseRequirements(md: string): Requirement[] {
     // 키워드를 적어도 문장의 개념은 뽑아 둔다 (검사 이름과 이을 때 쓴다)
     const concepts = conceptsFor(text);
     const tokens = auto ? concepts.flat() : tokenize(keywords.join(' '));
-    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text) });
+    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) });
   }
   return reqs;
 }

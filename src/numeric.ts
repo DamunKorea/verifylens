@@ -112,6 +112,12 @@ function applyEdgeWord(rel: NumRelation, rest: string): NumRelation {
   return rel;
 }
 
+/** 기간 없이 「한 번만」이라고 하면 횟수 제한이 아니라 중복을 막으라는 뜻이다 (같은 이메일로는 한 번만 가입). 「하루에 한 번만」은 횟수다. */
+const WINDOW = /(하루|매일|주|달|시간|분|초|일)\s*(?:에|마다|당)|마다|\bper\s+(?:day|hour|minute|week|month)|\ba\s+(?:day|week|month)|\ban\s+hour/i;
+function onlyOnce(text: string, m: RegExpMatchArray): boolean {
+  return m[1] === '한' && /^\s*번만/.test(text.slice(m.index! + m[0].length)) && !WINDOW.test(text);
+}
+
 function makeConstraint(text: string, value: number, start: number, end: number): Constraint | null {
   const head = text.slice(Math.max(0, start - 30), start);
   const { unit, unitText, rest, skip } = readUnit(text.slice(end));
@@ -120,6 +126,8 @@ function makeConstraint(text: string, value: number, start: number, end: number)
   for (const [re, r] of BEFORE) if (re.test(head)) { rel = r; break; }
   if (!rel) for (const [re, r] of AFTER) if (re.test(rest)) { rel = r; break; }
   if (/\bafter\s*$/i.test(head)) rel = unit === 'cnt' ? 'count' : 'after';
+  // 「6자리」 · 「6 digits」 · 「정확히 6」은 그 값과 같아야 한다
+  if ((!rel || rel === 'value') && (/(?:정확히|exactly)\s*$/i.test(head) || /^\s*(?:자리|digits?\b)/i.test(text.slice(end)))) rel = 'eq';
   if (!rel) {
     if (unit === 'cnt') rel = 'count';
     else if (unit) rel = 'value';
@@ -188,7 +196,7 @@ export function parseConstraints(text: string): Constraint[] {
     if (/[A-Za-z]$/.test(text.slice(0, m.index)) || inRange(m.index!)) continue;
     add(makeConstraint(text, readNumber(m as RegExpExecArray), m.index!, m.index! + m[0].length));
   }
-  for (const m of text.matchAll(NATIVE_RE)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
+  for (const m of text.matchAll(NATIVE_RE)) if (!onlyOnce(text, m)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
   for (const m of text.matchAll(WORD_RE)) add(makeConstraint(text, WORDS[m[1].toLowerCase()], m.index!, m.index! + m[0].length));
   wordBoundaries(text).forEach(add);
   return out;
@@ -197,7 +205,7 @@ export function parseConstraints(text: string): Constraint[] {
 /** 문장에 나온 숫자들 (쉼표 · 「만」을 풀어서). 단위가 없어도 낸다. */
 export function numbersIn(text: string): number[] {
   const out = [...text.matchAll(NUM)].filter((m) => !/[A-Za-z]$/.test(text.slice(0, m.index))).map((m) => readNumber(m as RegExpExecArray));
-  for (const m of text.matchAll(NATIVE_RE)) out.push(NATIVE[m[1]]);
+  for (const m of text.matchAll(NATIVE_RE)) if (!onlyOnce(text, m)) out.push(NATIVE[m[1]]);
   for (const m of text.matchAll(WORD_RE)) out.push(WORDS[m[1].toLowerCase()]);
   return [...new Set(out)];
 }
@@ -412,7 +420,7 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
  * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
  * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
  */
-export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-evidence' | 'extra-condition' | 'no-test' | 'stale';
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'no-evidence' | 'extra-condition' | 'no-test' | 'stale';
 const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   wording: {
     label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
@@ -437,6 +445,13 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   conflict: {
     label: { ko: '다른 값이 함께 있음', en: 'conflicting values' },
     action: { ko: '같은 대상에 다른 값이 있다. 어느 값이 실제로 쓰이는지 확인하고 하나로 맞춘다.', en: 'The same thing has another value elsewhere. Check which one is used and make them agree.' },
+  },
+  'no-check': {
+    label: { ko: '확인하는 조건 못 찾음', en: 'no deciding check' },
+    action: {
+      ko: '요구사항을 확인하거나 막는 if 문이 있는지 본다. 지금은 함수 이름에 낱말만 겹쳤다. 있으면 「| keywords: 코드에 나오는 영어 단어」를 붙인다.',
+      en: 'Check that an if statement enforces the requirement. Only the function name matched. If there is one, add “| keywords: words in the code”.',
+    },
   },
   'no-evidence': {
     label: { ko: '근거 없음', en: 'no evidence' },

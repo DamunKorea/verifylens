@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -62,6 +62,22 @@ test('an unverified requirement says which kind of reason stopped it', () => {
   assert.deepEqual(kinds('Admins can refund orders', 'export function refund(order: unknown) { return order; }\n'), ['no-test']);
   assert.equal(undecidedLabel('conflict', 'ko'), '다른 값이 함께 있음');
   assert.match(undecidedAction('wording', 'en'), /at least/);
+});
+
+test('sign-up rules: a check must exist, "only once" is not a count, "6 digits" is exact', () => {
+  const run = (req: string, code: string, test: string) => {
+    const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/a.ts': code }, tests: [{ name: test, status: 'pass', message: '' }] });
+    const r = evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main');
+    return { overall: r.summaries[0].overall, reasons: undecidedReasons(r, r.summaries[0]) };
+  };
+  // 약관 검사가 없는 코드: 함수 이름에 낱말이 겹쳐도 확인됨이 아니다
+  const none = run('Users must accept the terms to sign up | keywords: terms, accepted', 'export function signup(input: { acceptedTerms: boolean }) {\n  return users.create(input);\n}\n', 'signup without accepting the terms is rejected');
+  assert.equal(none.overall, '미확인');
+  assert.ok(none.reasons.includes('no-check'));
+  assert.deepEqual(parseConstraints('같은 이메일로는 한 번만 가입할 수 있다'), []);
+  assert.deepEqual(parseConstraints('하루에 한 번만 응모할 수 있다').map((c) => c.value), [1]);
+  assert.deepEqual(parseConstraints('The verification code has 6 digits').map((c) => `${c.value}:${c.rel}`), ['6:eq']);
+  assert.deepEqual(parseConstraints('PIN 은 정확히 4자리 숫자다').map((c) => `${c.value}:${c.rel}`), ['4:eq']);
 });
 
 test('word forms of the same word meet', () => {

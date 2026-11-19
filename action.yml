@@ -1,0 +1,55 @@
+name: VerifyLens
+description: Check each requirement against the code and the tests in a pull request. Rule-based, no LLM, nothing leaves the runner.
+author: DAMUN
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  requirements:
+    description: 'Requirements file, one "- R1: sentence" per line.'
+    default: .verifylens/requirements.md
+  base:
+    description: 'Branch or commit to compare against. Defaults to the pull request''s base branch (origin/<base>), or origin/main.'
+    default: ''
+  head:
+    description: 'Commit to check. Defaults to the checked-out commit.'
+    default: HEAD
+  junit:
+    description: 'JUnit XML test report, if your tests write one. Without it, requirements stay Unverified for lack of a test.'
+    default: ''
+  fail-on:
+    description: 'Which results fail the check, comma-separated. different, failed, unverified.'
+    default: different,failed
+  lang:
+    description: 'Language of the output, en or ko.'
+    default: en
+  path:
+    description: 'Folder of the repository to check, relative to the workspace.'
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 22
+    - name: Install VerifyLens
+      shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --omit=dev --no-audit --no-fund --loglevel=error
+    - name: Check requirements
+      shell: bash
+      env:
+        VL_REQUIREMENTS: ${{ inputs.requirements }}
+        VL_BASE: ${{ inputs.base }}
+        VL_HEAD: ${{ inputs.head }}
+        VL_JUNIT: ${{ inputs.junit }}
+        VL_FAIL_ON: ${{ inputs.fail-on }}
+        VL_LANG: ${{ inputs.lang }}
+        VL_PATH: ${{ inputs.path }}
+      run: |
+        base="$VL_BASE"
+        if [ -z "$base" ]; then base="origin/${GITHUB_BASE_REF:-main}"; fi
+        args=(ci --repo "$GITHUB_WORKSPACE/$VL_PATH" --base "$base" --head "$VL_HEAD" --requirements "$VL_REQUIREMENTS" --fail-on "$VL_FAIL_ON" --lang "$VL_LANG")
+        if [ -n "$VL_JUNIT" ]; then args+=(--junit "$VL_JUNIT"); fi
+        node "$GITHUB_ACTION_PATH/src/cli.ts" "${args[@]}"

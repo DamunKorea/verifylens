@@ -20,6 +20,7 @@ export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[]
   for (const set of report.sets) {
     const rr = set.perReq[s.req.id];
     if (rr.evidence.status === '미발견') out.add('no-evidence');
+    if (rr.evidence.status === '일부 발견' && !rr.evidence.boundaries?.length) out.add('no-check');
     for (const b of rr.evidence.boundaries ?? []) if (b.ok === null) out.add(b.why && b.why !== 'inverted' ? b.why : 'missing');
     if (rr.evidence.caveat) out.add('extra-condition');
   }

@@ -40,6 +40,12 @@ const HELP_EN = `VerifyLens preview — your code never leaves this machine (no 
         --requirements requirements.md [--junit-a a.xml --junit-b b.xml] [--out dir] [--open] [--lang en|ko]
       Analyzes base..branch and writes report.html and summary.md.
 
+  node src/cli.ts ci --repo repo --base origin/main [--head HEAD] --requirements .verifylens/requirements.md
+        [--junit report.xml] [--fail-on different,failed] [--lang en|ko]
+      For CI (GitHub Actions). Prints one line per requirement, marks the deciding lines on the pull request
+      (when GITHUB_ACTIONS is set), writes the summary to GITHUB_STEP_SUMMARY, and exits with 1 when a
+      requirement is Different or Failed (--fail-on also accepts unverified).
+
   node src/cli.ts check   (engine check: prints the sample result as text)
 `;
 
@@ -55,6 +61,11 @@ const HELP = `VerifyLens 프로토타입 v0 — 코드는 이 PC 밖으로 나�
         --requirements requirements.md [--junit-a a.xml --junit-b b.xml] [--out 폴더] [--open]
       저장소의 base..브랜치 변경을 분석해 리포트(report.html, summary.md)를 만듭니다.
 
+  node src/cli.ts ci --repo 저장소 --base origin/main [--head HEAD] --requirements .verifylens/requirements.md
+        [--junit report.xml] [--fail-on different,failed] [--lang en|ko]
+      CI(GitHub Actions)용. 요구사항마다 한 줄씩 출력하고, GITHUB_ACTIONS 가 있으면 PR 의 근거 줄에 표시를 남기며,
+      요약을 GITHUB_STEP_SUMMARY 에 쓴다. 「다름」 · 「실패」가 있으면 종료 코드 1 (--fail-on 에 unverified 도 넣을 수 있다).
+
   node src/cli.ts check   (엔진 점검: 샘플 결과를 표로 출력)
 `;
 
@@ -66,6 +77,11 @@ export async function main(argv: string[]) {
   if (cmd === 'extract') {
     if (!opts['pr-body']) throw new Error(L('--pr-body 파일이 필요합니다.', '--pr-body <file> is required.'));
     process.stdout.write(extractFromPrBody(readFileSync(opts['pr-body'], 'utf8')));
+    return;
+  }
+  if (cmd === 'ci') {
+    const { runCi } = await import('./ci.ts');
+    process.exitCode = runCi(opts);
     return;
   }
   if (cmd === 'check' || cmd === 'demo' || cmd === 'report') {

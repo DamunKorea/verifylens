@@ -105,6 +105,8 @@ export type Requirement = {
   constraints: Constraint[];
   /** 「관리자만」처럼 다른 경우를 빼는 요구사항인가 */
   only: boolean;
+  /** 확인하거나 막는 조건이 있어야 하는 요구사항인가 (해야 · must · 거부 · 만) */
+  needsCheck?: boolean;
 };
 
 export type Boundary = {

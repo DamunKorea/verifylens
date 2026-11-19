@@ -1,0 +1,59 @@
+# Runs the VerifyLens action on the login-lockout sample, the way a user's pull request would.
+# Branch B locks the account on attempt 6 (the requirement says 5), so the check must fail there and pass on branch A.
+name: Action test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'action.yml'
+      - 'src/**'
+      - 'samples/**'
+      - 'vscode/src/model.ts'
+      - '.github/workflows/action-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Build the sample repository inside the workspace
+        id: sample
+        run: |
+          node --input-type=module -e "
+            import { cpSync, appendFileSync } from 'node:fs';
+            const { buildSampleRepo } = await import('./src/demo.ts');
+            const env = buildSampleRepo();
+            cpSync(env.repo, 'sample-repo', { recursive: true });
+            appendFileSync(process.env.GITHUB_OUTPUT, 'requirements=' + env.reqFile + '\njunit_a=' + env.junitA + '\njunit_b=' + env.junitB + '\n');
+          "
+      - name: Branch B (acts on attempt 6) must fail
+        id: b
+        continue-on-error: true
+        uses: ./
+        with:
+          path: sample-repo
+          base: main
+          head: feature/lockout-b
+          requirements: ${{ steps.sample.outputs.requirements }}
+          junit: ${{ steps.sample.outputs.junit_b }}
+      - name: Branch A must pass
+        uses: ./
+        with:
+          path: sample-repo
+          base: main
+          head: feature/lockout-a
+          requirements: ${{ steps.sample.outputs.requirements }}
+          junit: ${{ steps.sample.outputs.junit_a }}
+      - name: The check failed on B and passed on A
+        run: |
+          echo "B: ${{ steps.b.outcome }}"
+          test "${{ steps.b.outcome }}" = "failure"

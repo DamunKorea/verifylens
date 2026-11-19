@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.0
+
+Changes from more reader feedback.
+
+- **Use it in CI.** "With thousands of pull requests you cannot check by eye" (OKKY). A GitHub Action, `DamunKorea/verifylens@v0.10.0`, runs on every pull request, marks the deciding line of a requirement that is Different, writes a summary to the job page and fails the check. `fail-on` decides which results fail it. The same check runs locally with `node src/cli.ts ci`. See the README.
+- **Sign-up rules are read better.** "I always click through the sign-up flow first" (X). A requirement that needs a check ("must accept the terms", "can only sign up once") is no longer Verified when only the function name matches; it is Unverified with the reason "no deciding check". "Only once" without a time window means no duplicates, not a count of 1. "6 digits" and "exactly 4" mean exactly that value. More Korean words are in the glossary (숫자, 약관, 올바르지 않으면 …).
+- **How far to trust it.** On 21 new account cases written after these changes, 0.9.0 gave the expected verdict for 15 and called wrong code Verified 1–2 times; 0.10.0 gave 18 and 0 times. On the 20 sign-up cases written before the changes (seen while fixing), 0.9.0 gave 14 and 12 (with and without keywords), 0.10.0 gives 18 and 18. The fixed open-source set is unchanged: 11 of 11 read, 0 changed code called Verified.
+
 ## 0.9.0
 
 Changes from reader feedback on OKKY.
