@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0
+
+More rules read correctly. As before, found by writing new cases ourselves.
+
+- **"Orders under 10,000 won are not accepted"** is read as a refusal. Before, correct code (`total < 10000` throws) was called Different.
+- **"Once per person", "only once", "상품마다 한 번만"** mean the code must check for a duplicate. A function that never checks is no longer Verified. "마다" is a time window only after a time word (하루마다), not after 상품.
+- **Rates stored as fractions in settings.** `VAT_RATE = 0.1` is compared with "10%", so `0.08` is Different. Fee, tax, commission and discount names count as settings.
+- **Timer values.** `setInterval(refresh, 60000)` against "every 30 seconds" is Different.
+- **A setting named for another thing is not used.** `RETURN_FEE = 3000` is not evidence for "the shipping fee is 3,000 won", and `TAX_RATE = 0.05` is not evidence for a 5% point rate. Both stay Unverified instead of Verified.
+- **How far to trust it.** On 15 new cases written after all the changes, 0.11.0 gave the expected verdict for 9 and 0.12.0 for 14, both without a wrong verdict. On an earlier new batch of 17, the changes made one wrong Verified (the RETURN_FEE case). That is fixed, and those 17 now count as seen. The fixed open-source set is unchanged.
+
 ## 0.11.0
 
 Time rules are read better. Found by writing new cases ourselves while waiting for more reader feedback.

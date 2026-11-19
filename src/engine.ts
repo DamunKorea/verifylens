@@ -156,10 +156,25 @@ const SOURCE_RANK: Record<NumPart['source'], number> = { compare: 200, loop: 200
 type Found = { u: Unit; p: NumPart; score: number };
 
 /** 어느 코드에나 나오는 말. 이 낱말만 겹쳐서는 같은 대상을 말한다고 볼 수 없다 (part.length 와 「비밀번호 길이」). */
-const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'item', 'data'].map(stem));
+const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'item', 'data', 'rate', 'ratio', 'percent'].map(stem));
+/** 무엇의 양인지는 말하지 않는 낱말 (배송비 · 반품비의 「비」). 설정값 이름에는 이것 말고 대상 낱말이 있어야 한다. */
+const MEASURE = new Set(['fee', 'price', 'cost', 'amount', 'total', 'sum', 'charge', 'tax'].map(stem));
+/**
+ * 설정값은 이름이 전부다. 이름(또는 그 값을 정한 문장)에 요구사항의 대상 낱말이 있어야 한다.
+ * 요구사항이 「배송」비를 말하면 RETURN_FEE(반품비)는 같은 대상이 아니고, 「포인트」 적립률이면 TAX_RATE 는 아니다.
+ * 대상 낱말이 없으면(fee · rate 만 말하면) 양을 뜻하는 낱말로 본다.
+ */
+function configNamed(req: Requirement, f: Found): boolean {
+  const said = (t: string) => tokenize(f.p.left).includes(t) || f.u.tokens.includes(t);
+  const subject = req.tokens.filter((t) => !GENERIC.has(t) && !MEASURE.has(t));
+  if (subject.length) return subject.some(said);
+  return req.tokens.filter((t) => !GENERIC.has(t)).some(said) || req.tokens.some((t) => tokenize(f.p.left).includes(t));
+}
+
 function sameTarget(req: Requirement, f: Found): boolean {
   const hits = leftHits(req, f.p.left);
   if (!hits) return false;
+  if (f.p.source === 'config' && !configNamed(req, f)) return false;
   const specific = req.tokens.filter((t) => !GENERIC.has(t));
   const left = new Set(tokenize(f.p.left));
   // 일반적인 낱말이라도 둘 이상 겹치면(minLength ↔ min, length) 같은 대상으로 본다
@@ -176,10 +191,13 @@ const TIME_NAME = /\bDate\.now\(\)|\bnow\b|\b\w*(?:At|Time|time|Date|date|Seen|s
  * 요구사항이 시간을 말하고, 그 줄이 든 함수가 요구사항과 같은 대상을 말하면(linkExpired ↔ 링크 만료) 같은 대상으로 본다.
  */
 function timeDiffTarget(req: Requirement, c: Constraint, f: Found): boolean {
-  if (!c.unit || !TIME_UNIT.has(c.unit) || f.p.source !== 'compare') return false;
+  if (!c.unit || !TIME_UNIT.has(c.unit)) return false;
+  const specific = req.tokens.filter((t) => !GENERIC.has(t) && !TIME_WORDS.has(t));
+  // setTimeout(retry, 5000) 도 이름이 없다: 그 줄이 든 함수가 요구사항의 대상을 말하면(scheduleRetry ↔ 다시 시도) 같은 대상이다
+  if (f.p.source === 'config' && /^(?:setTimeout|setInterval|sleep|delay|wait)\b/.test(f.p.left)) return specific.some((t) => f.u.tokens.includes(t));
+  if (f.p.source !== 'compare') return false;
   const left = f.p.left;
   if (!/[^-]-[^-=]/.test(left) || (left.match(new RegExp(TIME_NAME.source, 'g')) ?? []).length < 1) return false;
-  const specific = req.tokens.filter((t) => !GENERIC.has(t) && !TIME_WORDS.has(t));
   return specific.some((t) => f.u.tokens.includes(t));
 }
 const TIME_WORDS = new Set(['day', 'minute', 'min', 'ms', 'sec', 'second', 'hour', 'week', 'month', 'duration', 'window', 'period', 'time'].map(stem));
@@ -228,7 +246,10 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
   // 3) 대상 이름은 안 겹치지만 값이 같고, 줄 자체가 요구사항과 이어지는 비교 (마지막 수단)
   for (const c of req.constraints) {
     if (out.has(c)) continue;
-    const loose = all.filter((f) => sameValue(c, f) && f.score >= 3).sort((a, b) => rank(b) - rank(a));
+    // 설정값은 이름이 전부다: 이름에 요구사항의 대상이 없으면(TAX_RATE ↔ 포인트 적립률) 값이 같아도 쓰지 않는다
+    // (이름이 limit 처럼 일반적이면 그 값을 정한 문장을 본다: const { limit = 20 } = query ↔ 조회)
+    const named = (f: Found) => f.p.source !== 'config' || configNamed(req, f);
+    const loose = all.filter((f) => sameValue(c, f) && f.score >= 3 && named(f)).sort((a, b) => rank(b) - rank(a));
     if (loose[0]) take(c, loose[0]);
     else out.set(c, { b: missingBoundary(c), u: null });
   }

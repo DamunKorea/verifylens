@@ -474,7 +474,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     return null;
   };
   /** 설정값: { maxLength: 20, minLength: 8, maxAttempts: 3 } */
-  const CONFIG_NAME = /retr|attempt|timeout|ttl|expire|age|window|delay|interval|duration|limit|size|count|capacity|lifetime|max|length|quota|threshold|period|day|hour|minute|second(?!ary)|week|month|year/i;
+  const CONFIG_NAME = /retr|attempt|timeout|ttl|expire|age|window|delay|interval|duration|limit|size|count|capacity|lifetime|max|length|quota|threshold|period|day|hour|minute|second(?!ary)|week|month|year|rate|ratio|percent|pct|fee|tax|vat|commission|discount|interest/i;
   /** '1h' · '7d' · '30m' 같은 기간 글을 초로 */
   const durationSeconds = (e0: ts.Expression): number | undefined => {
     const e = unwrap(e0);

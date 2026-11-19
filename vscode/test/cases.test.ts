@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -103,6 +103,21 @@ test('a time difference with no name is judged, and "0이면" needs the conditio
 `;
   assert.equal(run('An order cannot be placed when the stock is 0 | keywords: stock, order', stock('<='), 'an order with no stock is rejected'), '확인됨');
   assert.equal(run('An order cannot be placed when the stock is 0 | keywords: stock, order', stock('<'), 'an order with no stock is rejected'), '다름');
+});
+
+test('refusal wording, uniqueness and settings named for another thing', () => {
+  const rel = (s: string) => parseConstraints(s).map((c) => `${c.value}:${c.rel}:${c.validSide}`);
+  assert.deepEqual(rel('Orders under 10,000 won are not accepted'), ['10000:lt:upper']);
+  assert.deepEqual(parseConstraints('상품마다 리뷰는 한 번만 쓸 수 있다'), []);
+  const run = (req: string, code: string, test: string) => {
+    const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/a.ts': code }, tests: [{ name: test, status: 'pass', message: '' }] });
+    return evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main').summaries[0].overall;
+  };
+  // 반품비 상수는 「배송비」 요구사항의 근거가 아니다
+  assert.equal(run('배송비는 3,000원이다 | keywords: shipping, fee', 'export const RETURN_FEE = 3000;\n', 'shipping fee is 3000'), '미확인');
+  assert.equal(run('부가세는 10%다 | keywords: vat, rate', 'export const VAT_RATE = 0.08;\n', 'vat is 10%'), '다름');
+  // 한 사람당 한 번: 막는 코드가 없으면 확인됨이 아니다
+  assert.equal(run('Each coupon can be used once per person | keywords: coupon, used', 'export function redeem(coupon: { usedBy: Set<string> }, userId: string) {\n  coupon.usedBy.add(userId);\n}\n', 'a coupon used twice by the same person is rejected'), '미확인');
 });
 
 test('word forms of the same word meet', () => {

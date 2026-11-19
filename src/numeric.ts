@@ -75,7 +75,7 @@ const AFTER: [RegExp, NumRelation][] = [
 ];
 /** 지켜야 하는 조건을 말하는 문장인가 (허용되는 쪽이 정해진다) */
 const MUST = /(?:이어야|여야|해야|할 수 있|될 수 있|가능|must|should|shall|can\b|at least|at most|accepted|allowed|최대|최소|까지만?)/i;
-const NEGATIVE = /(?:없다|없음|없어|불가|금지|안\s*된다|않는다|cannot|can't|can not|must not|may not|not allowed|rejected|denied|blocked)/i;
+const NEGATIVE = /(?:없다|없음|없어|불가|금지|안\s*된다|않는다|cannot|can't|can not|must not|may not|not allowed|rejected|denied|blocked|refused|declined|\bnot\s+(?:be\s+)?(?:accepted|allowed|permitted|possible|valid)\b|받지\s*않)/i;
 
 const ABSORBED = new RegExp(`(?:not|never|cannot|can't|can not|must not|may not|shall not|should not|does not|doesn't|do not|don't|won't|will not)\\s+(?:be\\s+)?(?:exceed(?:ing)?|over|above|beyond|below|under|(?:${MORE}|${LESS})\\s+than)|넘지\\s*(?:않|말|못)[가-힣]*|넘을\\s*수\\s*없[가-힣]*|넘으면\\s*안[가-힣\\s]*|넘어서는\\s*안[가-힣\\s]*`, 'gi');
 
@@ -113,7 +113,7 @@ function applyEdgeWord(rel: NumRelation, rest: string): NumRelation {
 }
 
 /** 기간 없이 「한 번만」이라고 하면 횟수 제한이 아니라 중복을 막으라는 뜻이다 (같은 이메일로는 한 번만 가입). 「하루에 한 번만」은 횟수다. */
-const WINDOW = /(하루|매일|주|달|시간|분|초|일)\s*(?:에|마다|당)|마다|\bper\s+(?:day|hour|minute|week|month)|\ba\s+(?:day|week|month)|\ban\s+hour/i;
+const WINDOW = /(하루|매일|주|달|시간|분|초|일)\s*(?:에|마다|당)|\bper\s+(?:day|hour|minute|week|month)|\ba\s+(?:day|week|month)|\ban\s+hour/i;
 function onlyOnce(text: string, m: RegExpMatchArray): boolean {
   return m[1] === '한' && /^\s*번만/.test(text.slice(m.index! + m[0].length)) && !WINDOW.test(text);
 }
@@ -135,7 +135,7 @@ function makeConstraint(text: string, value: number, start: number, end: number)
   // 「1분에 5번」 · 「per 10 minutes」의 시간은 경계가 아니라 세는 창이다
   const window = !!unit && unit !== 'cnt' && unit !== 'qty' && (/^\s*(?:에|당)(?![가-힣])/.test(rest) || /\bper\s*$/i.test(head));
   // 「재고가 0이면」 · 「when the stock is 0」: 그 값일 때 조건이 걸려야 한다
-  const trigger = !window && (!rel || rel === 'value' || rel === 'eq') && (/\b(?:when|if|once)\b[^.]*\b(?:is|are|equals|reaches|hits|becomes)\s*$/i.test(head) || /^\s*(?:이면|일\s*때|이\s*되면|가\s*되면|이\s*될\s*때)/.test(rest));
+  const trigger = !window && (!rel || rel === 'value' || rel === 'eq') && (/\b(?:when|if|once)\b[^.]*\b(?:is|are|has|have|contains|equals|reaches|hits|becomes)\s*$/i.test(head) || /^\s*(?:이면|일\s*때|이\s*되면|가\s*되면|이\s*될\s*때)/.test(rest));
   if (trigger) rel = 'eq';
   if (window) rel = 'value';
   if (!rel) {
