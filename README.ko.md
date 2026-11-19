@@ -58,15 +58,15 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 
 ## Release 현황
 
-마지막 확인: 2026-11-19
+마지막 확인: 2026-11-20
 
 | 채널 | 버전 | 상태 |
 |---|---|---|
-| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.10.0) | 0.10.0 | 공개 |
-| [VS Code 장터](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.10.0 | 공개 |
-| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.10.0 | 공개 |
+| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.11.0) | 0.11.0 | 공개 |
+| [VS Code 장터](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.11.0 | 공개 |
+| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.11.0 | 공개 |
 | Cursor 확장 검색 | 0.9.0 | Open VSX에서 복사 대기 |
-| [JetBrains 미리 보기 (GitHub)](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.5.0) | 0.5.0 | zip으로 설치 가능 |
+| [JetBrains 미리 보기 (GitHub)](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.6.0) | 0.6.0 | zip으로 설치 가능 |
 | JetBrains 장터 | 0.4.1 | 심사 중 |
 
 판마다 같은 방법으로 잰 결과: [docs/benchmark.md](docs/benchmark.md)
@@ -138,7 +138,7 @@ jobs:
           fetch-depth: 0          # 기준 브랜치와 비교하려면 필요합니다
       # 선택: 테스트를 JUnit 결과로 남기면 검사까지 함께 봅니다. 예:
       # - run: npx vitest run --reporter=junit --outputFile=junit.xml
-      - uses: DamunKorea/verifylens@v0.10.0
+      - uses: DamunKorea/verifylens@v0.11.0
         with:
           requirements: .verifylens/requirements.md
           junit: junit.xml        # 결과 파일이 없으면 지웁니다
