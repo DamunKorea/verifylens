@@ -63,11 +63,11 @@ Last checked: 2026-11-20
 
 | Channel | Version | Status |
 |---|---|---|
-| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.12.0) | 0.12.0 | Available |
-| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.12.0 | Available |
-| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.12.0 | Available |
+| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.13.0) | 0.13.0 | Available |
+| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.13.0 | Available |
+| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.13.0 | Available |
 | Cursor extension search | 0.9.0 | Update pending (copies from Open VSX) |
-| [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.7.0) | 0.7.0 | Available as a zip |
+| [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.8.0) | 0.8.0 | Available as a zip |
 | JetBrains Marketplace | 0.4.1 | In review |
 
 Every version is measured the same way: [docs/benchmark.md](docs/benchmark.md).
@@ -96,7 +96,7 @@ See [vscode/README.md](vscode/README.md) for details.
 
 For IntelliJ IDEA and other JetBrains IDEs (platform 2026.1 or newer). It runs the same engine as the VS Code extension through your local Node.js (18+), so the verdicts are the same: a tool window with the status of each requirement, a gutter icon and a note on the evidence line, and a re-check when a file is saved. The UI is in English or Korean, following the IDE language. Running tests, importing requirements, the PR summary and the report view are not in this preview.
 
-Download `verifylens-jetbrains-0.7.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.7.0) and install it with **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Checked on IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried. See [jetbrains/README.md](jetbrains/README.md).
+Download `verifylens-jetbrains-0.8.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.8.0) and install it with **Settings → Plugins → ⚙ → Install Plugin from Disk…**. Checked on IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried. See [jetbrains/README.md](jetbrains/README.md).
 
 ## Use it on your own repo
 
@@ -130,7 +130,7 @@ jobs:
           fetch-depth: 0          # the base branch is needed for the comparison
       # Optional: run your tests with a JUnit report, for example
       # - run: npx vitest run --reporter=junit --outputFile=junit.xml
-      - uses: DamunKorea/verifylens@v0.12.0
+      - uses: DamunKorea/verifylens@v0.13.0
         with:
           requirements: .verifylens/requirements.md
           junit: junit.xml        # leave out if you have no report
