@@ -197,6 +197,11 @@ test('differentiators up front: verified ratio, reason for 미확인, attempt st
   assert.match(M.demoHeadline(r.report), /「요구사항 전부 반영, 완료」라고 답했고, 테스트도 전부 통과했습니다\. 그런데 .*3개 중 1개/);
   const rows = M.treeModel(r.report);
   assert.deepEqual(rows.map((x) => x.reason), ['', '', '검사 없음']);
+  // 옆 패널: 다름 · 실패만 위에, 확인됨과 검사만 없는 미확인은 「나머지」로 접는다
+  assert.deepEqual(rows.map((x) => x.attention), ['ok', 'fix', 'tests']);
+  const g = M.treeGroups(rows);
+  assert.deepEqual([g.top.map((x) => x.id), g.rest.map((x) => x.id), g.restNote], [['R2'], ['R1', 'R3'], '확인됨 1 · 검사만 없음 1']);
+  assert.deepEqual(M.treeGroups(rows.filter((x) => x.id !== 'R2')).top, [], 'nothing on top when nothing needs a person');
   assert.deepEqual(M.attemptLines(r.report, 'R2'), [
     '요구사항     1  2  3  4 [5] 6',
     '결과 A　　   1  2  3  4 [5] 6   ✓ 요구사항과 같음',
@@ -213,13 +218,18 @@ test('differentiators up front: verified ratio, reason for 미확인, attempt st
   assert.match(html, /PR 요약 복사/);
 });
 
-test('PR summary: one table a reviewer can trust without redoing the check', () => {
+test('PR summary: problems open on top, the rest folded, nothing a reviewer must redo', () => {
   const r = demo(null);
   const ko = M.prSummary(r, { R2: { judge: '수정', note: 'a | b' } }, { lang: 'ko', version: '9.9.9' });
   const lines = ko.split('\n');
   assert.equal(lines[0], '## VerifyLens 검증 요약');
   assert.equal(lines[2], '**요구사항 3개 중 1개만 근거와 검사로 확인됨**');
-  assert.match(lines[4], /^_AI가 쓴 의견이 아닙니다\./);
+  // 다름 · 실패만 펼친다. 볼 만한 것과 나머지 표는 접는다 (OKKY 의견: 사람이 다 읽는 게 병목).
+  assert.match(ko, /### 고쳐야 할 것 1개 \(다름 · 실패\)\n\n\| 요구사항 \|/);
+  assert.ok(ko.indexOf('| **R2**') < ko.indexOf('<details>'), 'R2 is above the folded part');
+  assert.ok(ko.indexOf('| **R1**') > ko.indexOf('<summary>나머지 요구사항 2개</summary>'), 'R1 is folded');
+  assert.match(ko, /<summary>사람이 볼 것 2개<\/summary>\n\n- 해석하지 못한 호출 \(A\)/);
+  assert.match(ko, /<sub>AI가 쓴 의견이 아닙니다\. 이 요약의 항목은 모두/);
   assert.match(ko, /샘플\(가상 사례\) · A `feature\/lockout-a` \(`[0-9a-f]{7}`\) ↔ B `feature\/lockout-b` \(`[0-9a-f]{7}`\) · 기준 `main`/);
   assert.match(ko, /\| \*\*R2\*\* 연속 5회 실패하면 계정을 잠근다 \| ⚠️ 다름 \| A `src\/auth\.ts:17` `user\.failures >= 5` → 5번째 시도에 동작<br>B `src\/auth\.ts:21` `user\.failures > 5` → 6번째 시도에 동작 \(요구사항 5회\) \| A 통과<br>B 통과 \| \*\*수정\*\* — a \\\| b \|/);
   assert.match(ko, /\| \*\*R1\*\* [^|]+ \| ✅ 확인됨 \|[^|]+\|[^|]+\| — \|/);
@@ -227,9 +237,9 @@ test('PR summary: one table a reviewer can trust without redoing the check', () 
   assert.match(ko, /\*\*동작 시점 \(조건 값에서 계산, \[n\] = 동작하는 시도\)\*\*\n```\nR2\n요구사항 /);
   assert.match(ko, /\*\*검사는 통과했지만 계산과 다른 것\*\*\n- R2 · B: 검사가 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다름/);
   assert.ok(!/실패한 검사/.test(ko), 'nothing failed in the sample');
-  assert.match(ko, /\*\*확인되지 않은 것 \(통과로 치지 않음\)\*\*\n- R3: 연결된 검사가 실행되지 않음 \(A, B\)/);
+  assert.match(ko, /\*\*검사가 없어서만 미확인인 것\*\*\n- R3: 연결된 검사가 실행되지 않음 \(A, B\)\n\n<\/details>/);
   assert.match(ko, /해석하지 못한 호출 \(B\): `src\/auth\.ts:31`/);
-  assert.match(ko, /<sub>VerifyLens 9\.9\.9 · 정적 분석과 실행된 검사 결과만 사용 \(AI 추정 없음\)/);
+  assert.match(ko, /<br>VerifyLens 9\.9\.9 · 정적 분석과 실행된 검사 결과만 사용 \(AI 추정 없음\)/);
   // every table row has the same number of unescaped cell separators
   const rows = lines.filter((l) => l.startsWith('| '));
   for (const row of rows) assert.equal(row.replace(/\\\|/g, '').split('|').length, 7, row);
@@ -248,6 +258,12 @@ test('PR summary: one table a reviewer can trust without redoing the check', () 
   const enFail = M.prSummary(failingRun, {}, { lang: 'en' });
   assert.match(enFail, /acts on attempt 6 \(requirement: 5\) \| Failed \| Not reviewed \|/);
   assert.match(enFail, /\*\*Failed tests\*\*\n- R2 · `[^`]*locks the account on the 5th consecutive failure`/);
+  // 문제가 없으면 본문은 한 줄이고, 표는 접혀 있다
+  const okRun = M.runRepo({ repo: r.repo, base: 'main', a: 'feature/lockout-a', reqFile, junitA: join(ext, 'samples', 'junit', 'junit-a.xml') });
+  const okEn = M.prSummary(okRun, {}, { lang: 'en' });
+  assert.match(okEn, /\*\*No requirement is Different or Failed\.\*\*\n/);
+  assert.ok(!/### Needs a fix/.test(okEn));
+  assert.ok(okEn.indexOf('| **R2**') > okEn.indexOf('<summary>All requirements (3)</summary>'), 'the table is folded');
   assert.match(en, /code       1  2  3  4  5 \[6\]  ✗ 1 late/);
   assert.match(en, /- R3: no linked test was run\n/);
   assert.ok(!/[가-힣]/.test(en.replace(/\| \*\*R\d\*\* [^|]+\|/g, '')), 'English summary has no Korean outside the requirement text');
@@ -295,7 +311,7 @@ test('automatic linking never turns a missing test into "verified"', () => {
   assert.equal(status(run).R1, '미확인');
   assert.equal(status(run).R2, '미확인', 'a requirement with no code at all stays unverified');
   assert.match(M.hoverMarkdown(run.report, 'R1')!, /용어집으로 코드와 이었습니다\. 근거 줄이 맞는지 확인하세요/);
-  assert.match(M.prSummary(run), /<sub>R1, R2: 키워드 없이 용어집으로 코드와 연결함 — 근거 줄은 작성자가 확인<br>VerifyLens/);
+  assert.match(M.prSummary(run), /<br>R1, R2: 키워드 없이 용어집으로 코드와 연결함 — 근거 줄은 작성자가 확인<br>VerifyLens/);
 });
 
 test('requirements are extracted from issue and PR text by rules', () => {
@@ -559,4 +575,43 @@ test('English UI: a decision is stored and shown the same way in both languages'
   assert.match(en, /"jl":\{[^}]*"수정":"Fix"/);
   assert.equal(inEnglish(() => M.wJudge('추가 검증')), 'Verify more');
   assert.equal(M.wJudge('추가 검증'), '추가 검증');
+});
+
+// ---------------------------------------------------------------- 0.14.0: 요구사항의 숫자에서 경계 시험값
+import { testPoints, testPointsLine } from '../../src/testpoints.ts';
+
+test('test values: just inside and just outside each number in the requirement', () => {
+  const reqs = parseRequirements(
+    [
+      '- R1: Lock the account after 5 consecutive failures',
+      '- R2: 비밀번호는 8자 이상이어야 한다',
+      '- R3: 3만 원 이상 주문은 배송비 무료',
+      '- R4: 비밀번호 재설정 메일은 하루 3번까지 보낼 수 있다',
+      '- R5: 14세 미만은 가입할 수 없다',
+      '- R6: 로그인 토큰은 15분 뒤 만료된다',
+      '- R7: 포인트는 결제 금액의 1%를 적립한다',
+      '- R8: Usernames must be 3 to 20 characters',
+      '- R9: 재고가 0이면 주문을 막는다',
+      '- R10: 1분에 5번까지 요청할 수 있다',
+    ].join('\n'),
+  );
+  const line = (i: number, lang: 'ko' | 'en') => testPointsLine(reqs[i], lang);
+  assert.equal(line(0, 'en'), '4th time → does not act yet · 5th time → acts');
+  assert.equal(line(1, 'ko'), '7자 → 거절 · 8자 → 허용');
+  assert.equal(line(2, 'ko'), '29,999원 → 조건 밖 · 30,000원 → 조건 안');
+  assert.equal(line(3, 'ko'), '3번째 → 허용 · 4번째 → 거절');
+  assert.equal(line(4, 'ko'), '13세 → 거절 · 14세 → 허용');
+  assert.equal(line(5, 'ko'), '15분 직전 → 아직 동작 안 함 · 15분 → 동작');
+  assert.deepEqual(testPoints(reqs[6]), [], 'a rate on its own has no boundary to test');
+  assert.equal(line(7, 'en'), '2 characters → rejected · 3 characters → allowed · 20 characters → allowed · 21 characters → rejected');
+  assert.equal(line(8, 'ko'), '0 → 동작 · 1 → 동작 안 함');
+  assert.equal(line(9, 'ko'), '5번째 → 허용 · 6번째 → 거절', 'the 1-minute window is not a boundary');
+});
+
+test('test values go to the requirements a person must fix, not to verified ones', () => {
+  const r = demo(null);
+  const ko = M.prSummary(r, {}, { lang: 'ko' });
+  assert.match(ko, /\*\*경계에서 시험할 값 \(요구사항의 숫자에서 뽑음\)\*\*\n- R2: 4번째 → 아직 동작 안 함 · 5번째 → 동작/);
+  assert.match(M.hoverMarkdown(r.report, 'R2')!, /\*\*경계에서 시험할 값\*\* 4번째 → 아직 동작 안 함 · 5번째 → 동작/);
+  assert.doesNotMatch(M.hoverMarkdown(r.report, 'R1')!, /경계에서 시험할 값/);
 });

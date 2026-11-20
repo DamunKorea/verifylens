@@ -13,6 +13,19 @@ export function counts(report: Report) {
   return c;
 }
 
+/**
+ * 사람이 얼마나 봐야 하는지. 결과를 다 읽지 않아도 되게 나눈다 (OKKY 의견: 「결국 제가 확인하는 게 늦어짐」).
+ * fix = 다름 · 실패, look = 미확인 중 코드나 문장을 봐야 하는 것(끝값 애매 · 다른 조건 · 근거 없음 등),
+ * tests = 미확인이지만 검사가 없거나 오래된 것뿐, ok = 확인됨.
+ */
+export type Attention = 'fix' | 'look' | 'tests' | 'ok';
+const TEST_ONLY: UndecidedKind[] = ['no-test', 'stale'];
+export function attention(report: Report, s: ReqSummary): Attention {
+  if (s.overall === '다름' || s.overall === '실패') return 'fix';
+  if (s.overall === '확인됨') return 'ok';
+  return undecidedReasons(report, s).every((k) => TEST_ONLY.includes(k)) ? 'tests' : 'look';
+}
+
 /** 「미확인」인 까닭을 종류로 돌려준다. 판단을 막은 것부터 앞에 둔다. 「미확인」이 아니면 빈 목록이다. */
 export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[] {
   if (s.overall !== '미확인') return [];

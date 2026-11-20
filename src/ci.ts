@@ -14,6 +14,7 @@ import { join, relative, resolve } from 'node:path';
 import { analyzeResult, evaluate } from './engine.ts';
 import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from './git.ts';
 import { parseRequirements } from './requirements.ts';
+import { testPointsLine } from './testpoints.ts';
 import { undecidedReasons } from './summary.ts';
 import { undecidedLabel } from './numeric.ts';
 import { L, wOverall } from './i18n.ts';
@@ -116,6 +117,9 @@ function agentMessage(blocking: ReqSummary[], why: (s: ReqSummary) => string, le
     lines.push(`- ${s.req.id} · ${wOverall(s.overall)}: ${s.req.text}`);
     const detail = [why(s), lens ? `${lens.file}:${lens.line}` : ''].filter(Boolean).join(' — ');
     if (detail) lines.push(`  ${detail}`);
+    // 테스트도 같은 착각으로 쓰지 않게, 요구사항의 숫자에서 뽑은 경계값을 함께 준다
+    const points = testPointsLine(s.req);
+    if (points) lines.push(`  ${L('경계에서 시험할 값', 'Values to test at the boundary')}: ${points}`);
   }
   lines.push(
     L(

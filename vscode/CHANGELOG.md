@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.14.0
+
+Less to read, more to act on. A reader on OKKY wrote that even with a review service, checking its results was what slowed them down.
+
+- **The PR summary opens only what needs a fix.** Different and Failed requirements are on top, with when the code acts, failed tests and the values to test. The rest is folded:
+  - **Worth a look**: Not verified because the code or the wording needs a check (an unclear edge, another condition, no evidence), and unresolved calls.
+  - **The other requirements**: Verified ones, and the ones Not verified only because no test ran.
+  - With nothing Different or Failed, the body is one line. The GitHub Action writes the same summary to the job page.
+- **The requirements panel does the same.** Different and Failed first, then the ones worth a look. Verified and test-only ones are folded under "Other".
+- **Values to test at the boundary**, taken from the numbers in the requirement without an LLM. "Lock after 5 failures" gives the 4th and 5th time, "at least 8 characters" gives 7 and 8, "3만 원 이상" gives 29,999 and 30,000, and "3 to 20 characters" gives 2, 3, 20 and 21. They appear in the PR summary, the hover and the agent hook's message, so a test written for the fix checks the right attempt. A rate on its own ("1%") and a counting window ("per minute") give none.
+- **Agent hooks** are in a release for the first time: `ci --hook claude|cursor` asks the agent once to fix a Different or Failed requirement before it says it is done, and `ci --worktree` is for git pre-commit. See the README.
+- **Known mistakes in one place.** [docs/known-mistakes.md](https://github.com/DamunKorea/verifylens/blob/main/docs/known-mistakes.md) lists every wrong verdict found so far, with the version that fixed it, and what is not read yet.
+- **Verdicts are unchanged.** All 18 case sets, with and without keywords, give the same output as 0.13.0. The fixed open-source set is unchanged: 11 of 11 read, 10 of 11 changes caught, 0 changed code called Verified.
+
 ## 0.13.0
 
 Fewer wrong verdicts caused by other lines and other files. Found by trying VerifyLens the way a developer would — three usability trials by our promo session on the try page and on two multi-file repositories, not user reports — and then by new cases.

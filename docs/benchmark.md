@@ -29,6 +29,7 @@ For each rule:
 | 0.11.0 | 11 / 11 | 10 / 11 | 0 |
 | 0.12.0 | 11 / 11 | 10 / 11 | 0 |
 | 0.13.0 | 11 / 11 | 10 / 11 | 0 |
+| 0.14.0 | 11 / 11 | 10 / 11 | 0 |
 
 The nanoid miss: the default length 21 is written in two functions. Changing one to 45 left the other 21 in place, and that was enough for "Verified". Since 0.9.0 a second setting with the same name and a different value makes the result Unverified.
 
@@ -37,6 +38,8 @@ To run it: clone each project at the commit above into one folder, then from `vs
 ## 2. Case sets written for the tests
 
 585 small cases in [`vscode/test/cases/`](../vscode/test/cases/). They are written by us, so they are a regression check, not a benchmark. The most useful number is the **first run of a batch written after the rules were changed**, before fixing anything it reveals; see the release notes of each version.
+
+Every wrong verdict found so far, and what is not read yet, is listed in [known-mistakes.md](known-mistakes.md).
 
 ---
 

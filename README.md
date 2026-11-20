@@ -143,7 +143,7 @@ The code is analyzed on the runner and is not sent anywhere. The same check runs
 
 `ci --hook` checks the code the agent just changed, before anything is committed. It compares the working folder (committed, uncommitted and new files) with `origin/main`, or `main`, `origin/master` or `master` when that is missing; set `--base` to choose. It runs only when code files have uncommitted changes, so a turn where the agent only answered a question is not checked.
 
-- When a requirement is **Different** or **Failed**, the agent is asked once to fix it. The message names the requirement, the reason and the line, and tells the agent to ask you rather than edit the requirements file.
+- When a requirement is **Different** or **Failed**, the agent is asked once to fix it. The message names the requirement, the reason and the line, gives the values to test at the boundary (taken from the numbers in the requirement, such as the 4th and the 5th failure), and tells the agent to ask you rather than edit the requirements file.
 - If the code is still wrong after that one try, the agent is not stopped again. You get a notice instead.
 - **Not verified** does not stop the agent unless you add `--fail-on different,failed,unverified`.
 - The requirements file is `.verifylens/requirements.md` in the project (`--requirements` to change). A project without one is skipped, so the hook can also go in your user settings.
@@ -198,7 +198,10 @@ These were tested by piping each tool's hook input into the command on Windows (
 | Failed | A linked test failed |
 | Not verified | Weak evidence, or no linked test ran |
 
-## Limitations (v0)
+## Limitations
+
+Every wrong verdict found so far, the version that fixed it, and what is not read yet: [docs/known-mistakes.md](docs/known-mistakes.md).
+
 
 - Analyzes **TypeScript and JavaScript only**.
 - Requirement ↔ code linking is **rule-based** (shared words and numbers, rejection sentences ↔ `throw`/`return`). It can be wrong; the report shows why each line was picked so you can check.
@@ -206,7 +209,7 @@ These were tested by piping each tool's hook input into the command on Windows (
 - In the editor, test results older than the code are ignored rather than trusted; run the tests again to refresh them.
 - Flow maps simplify to `if` branches inside a function; loops, `switch` and `try` collapse to one step.
 - Dynamic calls such as `hooks[event]()` are flagged as "unresolved" rather than followed.
-- The editor extension is a preview; PR integration and accounts are not built yet.
+- Pull requests are checked with the GitHub Action, and AI agents with hooks. There are no accounts and no hosted service; everything runs on your machine or your CI runner.
 
 ## Project layout
 

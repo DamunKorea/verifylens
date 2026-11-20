@@ -108,7 +108,10 @@ exports.run = async function run() {
   const sum = await vscode.commands.executeCommand('verifylens.copySummary', { dryRun: true });
   assert.match(sum, X.sumHead);
   assert.match(sum, X.sumStrip);
-  assert.match(sum, new RegExp('<sub>VerifyLens ' + ext.packageJSON.version.replace(/\./g, '\\.')));
+  assert.match(sum, new RegExp('<br>VerifyLens ' + ext.packageJSON.version.replace(/\./g, '\\.')));
+  // 0.14.0: 고칠 것만 펼치고 나머지는 접는다
+  assert.ok(sum.indexOf('| **R2**') < sum.indexOf('<details>'), 'R2 (Different) is above the folded part');
+  assert.match(sum, /<summary>(Other requirements \(2\)|나머지 요구사항 2개)<\/summary>/);
   log.push(`PR summary: ${sum.split('\n').length} lines, starts "${sum.split('\n')[2]}"`);
 
   // 요구사항 가져오기: 파일 · 클립보드 · 네트워크를 건드리지 않도록 dryRun 으로 초안만 받는다

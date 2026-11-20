@@ -6,11 +6,12 @@ import { analyzeResult, evaluate } from '../../src/engine.ts';
 import { draftRequirements, extractRequirements, parseRequirements } from '../../src/requirements.ts';
 import { buildSampleRepo } from '../../src/demo.ts';
 import { renderHtml } from '../../src/output.ts';
-import { counts, renderSummaryMd, undecidedReasons } from '../../src/summary.ts';
+import { attention, counts, renderSummaryMd, undecidedReasons, type Attention } from '../../src/summary.ts';
 import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
 import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../src/types.ts';
 import { L, getLang, setLabel, testPhrase, wOverall, wTest } from '../../src/i18n.ts';
 import { boundaryLine, boundaryShort, checkWord, pick, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
+import { testPointsLine } from '../../src/testpoints.ts';
 
 export { L, getLang, resolveLang, setLang, wJudge, wOverall } from '../../src/i18n.ts';
 export type { Lang } from '../../src/i18n.ts';
@@ -163,7 +164,7 @@ export const reqTemplate = (): string => L(REQ_TEMPLATE, REQ_TEMPLATE_EN);
 // ---------------------------------------------------------------- 화면에 보여 줄 모양
 /** 좁은 옆 패널에서도 읽히게 label · detail 은 짧게, 긴 설명은 tooltip 에 둔다. */
 export type EvidenceRow = { setKey: 'A' | 'B'; label: string; file?: string; line?: number; detail: string; tooltip: string };
-export type ReqRow = { id: string; text: string; overall: Overall; reason: string; summary: string; children: EvidenceRow[] };
+export type ReqRow = { id: string; text: string; overall: Overall; attention: Attention; reason: string; summary: string; children: EvidenceRow[] };
 
 /** 상태 옆에 붙일 짧은 이유. 「미확인」이 왜 미확인인지 한눈에 보이게 한다. */
 function shortReason(report: Report, s: ReqSummary): string {
@@ -288,11 +289,25 @@ export function summaryLine(report: Report, s: ReqSummary): string {
   return L('근거를 찾았고 검사가 통과', 'evidence found and the tests pass');
 }
 
+/**
+ * 옆 패널의 맨 위에 둘 것과 접어 둘 것. 다름 · 실패, 그다음 사람이 볼 미확인을 위에 두고,
+ * 확인됨과 검사만 없는 미확인은 「나머지」로 접는다. 위에 둘 것이 없으면 모두 rest 에 요구사항 순서대로 둔다.
+ */
+export function treeGroups(rows: ReqRow[]): { top: ReqRow[]; rest: ReqRow[]; restNote: string } {
+  const top = [...rows.filter((r) => r.attention === 'fix'), ...rows.filter((r) => r.attention === 'look')];
+  const rest = rows.filter((r) => r.attention === 'ok' || r.attention === 'tests');
+  const ok = rest.filter((r) => r.attention === 'ok').length;
+  const tests = rest.length - ok;
+  const restNote = [ok ? `${wOverall('확인됨')} ${ok}` : '', tests ? L(`검사만 없음 ${tests}`, `no test only ${tests}`) : ''].filter(Boolean).join(' · ');
+  return { top, rest, restNote };
+}
+
 export function treeModel(report: Report): ReqRow[] {
   return report.summaries.map((s) => ({
     id: s.req.id,
     text: s.req.text,
     overall: s.overall,
+    attention: attention(report, s),
     reason: shortReason(report, s),
     summary: summaryLine(report, s),
     children: report.sets.map((set) => {
@@ -403,6 +418,8 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
     }
   }
   if (failed.length) out.push('', L('실패한 검사', 'Failed tests'), ...failed);
+  const points = s.overall === '확인됨' ? '' : testPointsLine(s.req);
+  if (points) out.push('', `**${L('경계에서 시험할 값', 'Values to test at the boundary')}** ${points}`);
   if (links) {
     const acts = [cmdLink(L('근거 보기', 'Show evidence'), 'verifylens.focusRequirement', [reqId])];
     if (diffTarget(report, reqId)) acts.push(cmdLink(two ? L('A ↔ B 비교', 'Compare A ↔ B') : L('기준과 비교', 'Compare with base'), 'verifylens.openDiff', [reqId]));
@@ -689,7 +706,7 @@ const TXT = {
     test: { 통과: '통과', 실패: '실패', 미실행: '미실행' } as Record<string, string>,
     judge: { 사용: '사용', 수정: '수정', '추가 검증': '추가 검증', 보류: '보류', 미검토: '미검토' } as Record<string, string>,
     cols: ['요구사항', '상태', '근거와 동작 (코드 분석 · 계산)', '검사 (실행 기록)', '판단 (작성자)'],
-    notOpinion: 'AI가 쓴 의견이 아닙니다. 아래 항목은 모두 코드 줄과 실행된 검사 기록에서 나왔고, 확인하지 못한 것은 통과로 치지 않았습니다.',
+    notOpinion: 'AI가 쓴 의견이 아닙니다. 이 요약의 항목은 모두 코드 줄과 실행된 검사 기록에서 나왔고, 확인하지 못한 것은 통과로 치지 않았습니다.',
     when: '동작 시점 (조건 값에서 계산, [n] = 동작하는 시도)',
     attempt: (n: number, req: number, ok: boolean | null) => (ok === false ? `${n}번째 시도에 동작 (요구사항 ${req}회)` : `${n}번째 시도에 동작`),
     noEvidence: '근거를 찾지 못함',
@@ -697,7 +714,14 @@ const TXT = {
     failed: '실패한 검사',
     passOff: '검사는 통과했지만 계산과 다른 것',
     passOffLine: '검사가 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다름 — 검사가 요구사항과 같은 횟수를 확인하는지 볼 것',
-    open: '확인되지 않은 것 (통과로 치지 않음)',
+    fix: (n: number) => `고쳐야 할 것 ${n}개 (다름 · 실패)`,
+    none: '다름 · 실패인 요구사항이 없습니다.',
+    look: (ids: string, n: number) => (ids ? `사람이 볼 것 — 미확인 중 코드나 문장을 봐야 하는 것 (${ids})` : `사람이 볼 것 ${n}개`),
+    others: (n: number) => `나머지 요구사항 ${n}개`,
+    all: (n: number) => `요구사항 ${n}개 표`,
+    testsOnly: '검사가 없어서만 미확인인 것',
+    points: '경계에서 시험할 값 (요구사항의 숫자에서 뽑음)',
+    tryValues: '시험할 값:',
     notRun: '연결된 검사가 실행되지 않음',
     noImpl: '구현 근거를 찾지 못함',
     dyn: '해석하지 못한 호출',
@@ -715,7 +739,7 @@ const TXT = {
     test: { 통과: 'Passed', 실패: 'Failed', 미실행: 'Not run' } as Record<string, string>,
     judge: { 사용: 'Use', 수정: 'Fix', '추가 검증': 'Verify more', 보류: 'Hold', 미검토: 'Not reviewed' } as Record<string, string>,
     cols: ['Requirement', 'Status', 'Evidence and behavior (code analysis · computed)', 'Tests (executed)', 'Decision (author)'],
-    notOpinion: 'This is not an AI opinion. Every item below comes from a code line or an executed test, and anything that could not be checked is not counted as passing.',
+    notOpinion: 'This is not an AI opinion. Every item in this summary comes from a code line or an executed test, and anything that could not be checked is not counted as passing.',
     when: 'When it acts (computed from the condition, [n] = the attempt that triggers it)',
     attempt: (n: number, req: number, ok: boolean | null) => (ok === false ? `acts on attempt ${n} (requirement: ${req})` : `acts on attempt ${n}`),
     noEvidence: 'no evidence found',
@@ -723,7 +747,14 @@ const TXT = {
     failed: 'Failed tests',
     passOff: 'Tests pass, but the computed behavior differs',
     passOffLine: 'the linked test passes, but the attempt computed from the condition differs from the requirement — check that the test exercises the same count as the requirement',
-    open: 'Not verified (not counted as passing)',
+    fix: (n: number) => `Needs a fix: ${n} (Different or Failed)`,
+    none: 'No requirement is Different or Failed.',
+    look: (ids: string, n: number) => (ids ? `Worth a look — not verified, and the code or the wording needs a check (${ids})` : `Worth a look (${n})`),
+    others: (n: number) => `Other requirements (${n})`,
+    all: (n: number) => `All requirements (${n})`,
+    testsOnly: 'Not verified only because no test ran',
+    points: "Values to test at the boundary (from the requirement's numbers)",
+    tryValues: 'try',
     notRun: 'no linked test was run',
     noImpl: 'no implementation evidence found',
     dyn: 'Unresolved call',
@@ -742,7 +773,9 @@ export function pendingDecisions(report: Report, judgments: Record<string, Judgm
 
 /**
  * PR 설명이나 댓글에 붙여 넣을 검증 요약 (GitHub 마크다운).
- * 리뷰어가 같은 확인을 다시 하지 않도록: 요구사항마다 상태 · 근거 줄 · 동작 시점 · 검사 · 작성자의 판단을 한 표에 담는다.
+ * 리뷰어가 같은 확인을 다시 하지 않도록: 요구사항마다 상태 · 근거 줄 · 동작 시점 · 검사 · 작성자의 판단을 표에 담는다.
+ * 사람이 다 읽지 않아도 되게(0.14.0, OKKY 의견): 다름 · 실패만 펼치고, 볼 만한 미확인과 나머지 표는 접어 둔다.
+ * 문제가 없으면 「다름 · 실패 없음」 한 줄이 본문의 전부다.
  */
 export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts: { lang?: SummaryLang; version?: string } = {}): string {
   const lang = opts.lang ?? getLang();
@@ -750,21 +783,29 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   const { report } = r;
   const two = report.sets.length > 1;
   const c = counts(report);
-  const out: string[] = [`## ${t.title}`, '', `**${verifiedLine(report, lang)}**`, '', `_${t.notOpinion}_`, ''];
-  const strips: string[] = [];
+  const out: string[] = [`## ${t.title}`, '', `**${verifiedLine(report, lang)}**`, ''];
   const ref = (s: ResultSet) => `\`${s.ref}\` (\`${s.sha}\`${s.wip ? `, ${t.wip}` : ''})`;
   const scope = two ? `A ${ref(report.sets[0])} ↔ B ${ref(report.sets[1])} · ${t.base} \`${report.base}\`` : `${ref(report.sets[0])} ← \`${report.base}\``;
   out.push(`${r.kind === 'demo' ? `${t.sample} · ` : ''}${scope}`, '');
   out.push((['확인됨', '다름', '실패', '미확인'] as Overall[]).map((k) => `${t.count[k]} ${c[k]}`).join(' · '), '');
-  out.push(`| ${t.cols.join(' | ')} |`, `|${t.cols.map(() => '---').join('|')}|`);
+  const head = [`| ${t.cols.join(' | ')} |`, `|${t.cols.map(() => '---').join('|')}|`];
+  const fixRows: string[] = [];
+  const otherRows: string[] = [];
+  const fixStrips: string[] = [];
+  const otherStrips: string[] = [];
   const failed: string[] = [];
   const passOff: string[] = [];
-  const open: string[] = [];
+  const look: string[] = [];
+  const lookIds: string[] = [];
+  const testsOnly: string[] = [];
+  const points: string[] = [];
   for (const s of report.summaries) {
     const id = s.req.id;
+    const kind = attention(report, s);
     const ev: string[] = [];
     const tests: string[] = [];
     const notRun: string[] = [];
+    const notes: string[] = [];
     let noImpl = false;
     for (const set of report.sets) {
       const rr = set.perReq[id];
@@ -778,8 +819,8 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
       tests.push(pre + (t.test[rr.testStatus] ?? rr.testStatus));
       if (rr.testStatus === '미실행') notRun.push(set.key);
       if (passButOff(rr)) passOff.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${t.passOffLine}`);
-      for (const x of rr.evidence.boundaries ?? []) if (x.ok === null) open.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${boundaryLine(x, lang)}`);
-      if (rr.evidence.caveat) open.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${pick(rr.evidence.caveat, lang)}`);
+      for (const x of rr.evidence.boundaries ?? []) if (x.ok === null) notes.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${boundaryLine(x, lang)}`);
+      if (rr.evidence.caveat) notes.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${pick(rr.evidence.caveat, lang)}`);
       if (!u) noImpl = true;
       for (const tc of rr.tests) {
         if (tc.status !== 'fail') continue;
@@ -789,25 +830,51 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
     }
     const j = judgments[id];
     const decision = isJudged(j) ? `**${t.judge[j.judge] ?? j.judge}**${j.note ? ` — ${cell(j.note)}` : ''}` : s.overall === '확인됨' ? '—' : t.judge.미검토;
-    out.push(`| **${id}** ${cell(s.req.text)} | ${t.status[s.overall]} | ${ev.join('<br>')} | ${tests.join('<br>')} | ${decision} |`);
+    const row = `| **${id}** ${cell(s.req.text)} | ${t.status[s.overall]} | ${ev.join('<br>')} | ${tests.join('<br>')} | ${decision} |`;
+    (kind === 'fix' ? fixRows : otherRows).push(row);
     const strip = attemptLines(report, id, lang);
-    if (strip.length && (s.overall !== '확인됨' || two)) strips.push(`${id}`, ...strip, '');
-    if (noImpl) open.push(`- ${id}: ${t.noImpl}`);
-    else if (notRun.length) open.push(`- ${id}: ${t.notRun}${two ? ` (${notRun.join(', ')})` : ''}`);
+    if (strip.length && (s.overall !== '확인됨' || two)) (kind === 'fix' ? fixStrips : otherStrips).push(`${id}`, ...strip, '');
+    if (noImpl) notes.push(`- ${id}: ${t.noImpl}`);
+    // 요구사항의 숫자에서 뽑은 경계값: 고칠 것과 검사가 없는 것에 붙인다 (테스트를 같은 착각으로 쓰지 않게)
+    const pts = kind === 'ok' ? '' : testPointsLine(s.req, lang);
+    if (pts && kind === 'fix') points.push(`- ${id}: ${pts}`);
+    const untested = notRun.length ? `- ${id}: ${t.notRun}${two ? ` (${notRun.join(', ')})` : ''}${pts ? ` — ${t.tryValues} ${pts}` : ''}` : '';
+    if (kind === 'tests') {
+      if (untested) testsOnly.push(untested);
+      continue;
+    }
+    if (kind === 'look') lookIds.push(id);
+    look.push(...notes);
+    if (untested && !noImpl && kind === 'look') look.push(untested);
   }
   for (const set of report.sets) {
     for (const d of set.dyn) {
       const line = `- ${t.dyn}${two ? ` (${set.key})` : ''}: \`${d.file}:${d.line}\` \`${d.text.replace(/`/g, "'")}\``;
-      if (!open.includes(line)) open.push(line);
+      if (!look.includes(line)) look.push(line);
     }
   }
-  if (report.testsStale) open.unshift(`- ${t.stale}`);
-  if (strips.length) out.push('', `**${t.when}**`, '```', ...strips.slice(0, -1), '```');
-  if (failed.length) out.push('', `**${t.failed}**`, ...failed);
-  if (passOff.length) out.push('', `**${t.passOff}**`, ...passOff);
-  if (open.length) out.push('', `**${t.open}**`, ...open);
+  if (report.testsStale) look.unshift(`- ${t.stale}`);
+  const code = (lines: string[]) => ['```', ...lines.slice(0, -1), '```'];
+
+  if (fixRows.length) {
+    out.push(`### ${t.fix(fixRows.length)}`, '', ...head, ...fixRows);
+    if (fixStrips.length) out.push('', `**${t.when}**`, ...code(fixStrips));
+    if (failed.length) out.push('', `**${t.failed}**`, ...failed);
+    if (passOff.length) out.push('', `**${t.passOff}**`, ...passOff);
+    if (points.length) out.push('', `**${t.points}**`, ...points);
+  } else {
+    out.push(`**${t.none}**`);
+  }
+  // <details> 안의 마크다운은 <summary> 뒤에 빈 줄이 있어야 표 · 목록으로 보인다
+  if (look.length) out.push('', '<details>', `<summary>${t.look(lookIds.join(', '), look.length)}</summary>`, '', ...look, '', '</details>');
+  if (otherRows.length) {
+    out.push('', '<details>', `<summary>${fixRows.length ? t.others(otherRows.length) : t.all(otherRows.length)}</summary>`, '', ...head, ...otherRows);
+    if (otherStrips.length) out.push('', `**${t.when}**`, ...code(otherStrips));
+    if (testsOnly.length) out.push('', `**${t.testsOnly}**`, ...testsOnly);
+    out.push('', '</details>');
+  }
   const autoIds = report.summaries.filter((x) => x.req.auto).map((x) => x.req.id);
-  out.push('', `<sub>${autoIds.length ? t.autoLink(autoIds.join(', ')) + '<br>' : ''}${t.footer(opts.version ?? '')}</sub>`, '');
+  out.push('', `<sub>${t.notOpinion}<br>${autoIds.length ? t.autoLink(autoIds.join(', ')) + '<br>' : ''}${t.footer(opts.version ?? '')}</sub>`, '');
   return out.join('\n');
 }
 

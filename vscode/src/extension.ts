@@ -71,7 +71,7 @@ async function setJudgment(id: string, j: M.Judgment, fromWebview = false) {
 }
 
 // ---------------------------------------------------------------- 옆 패널: 요구사항 목록
-type Node = { kind: 'req'; row: M.ReqRow } | { kind: 'ev'; row: M.EvidenceRow; reqId: string };
+type Node = { kind: 'req'; row: M.ReqRow } | { kind: 'ev'; row: M.EvidenceRow; reqId: string } | { kind: 'rest'; rows: M.ReqRow[]; note: string };
 
 class ReqTree implements vscode.TreeDataProvider<Node> {
   private ch = new vscode.EventEmitter<Node | undefined>();
@@ -81,11 +81,25 @@ class ReqTree implements vscode.TreeDataProvider<Node> {
   }
   getChildren(n?: Node): Node[] {
     if (!run) return [];
-    if (!n) return M.treeModel(run.report).map((row) => ({ kind: 'req', row }));
+    if (!n) {
+      // 다름 · 실패와 사람이 볼 미확인만 위에 펼치고, 나머지는 한 줄로 접는다 (사람이 다 읽지 않아도 되게)
+      const g = M.treeGroups(M.treeModel(run.report));
+      const req = (row: M.ReqRow): Node => ({ kind: 'req', row });
+      if (!g.top.length || !g.rest.length) return [...g.top, ...g.rest].map(req);
+      return [...g.top.map(req), { kind: 'rest', rows: g.rest, note: g.restNote }];
+    }
+    if (n.kind === 'rest') return n.rows.map((row) => ({ kind: 'req', row }));
     if (n.kind === 'req') return n.row.children.map((row) => ({ kind: 'ev', row, reqId: n.row.id }));
     return [];
   }
   getTreeItem(n: Node): vscode.TreeItem {
+    if (n.kind === 'rest') {
+      const it = new vscode.TreeItem(L(`나머지 ${n.rows.length}개`, `Other ${n.rows.length}`), vscode.TreeItemCollapsibleState.Collapsed);
+      it.description = n.note;
+      it.tooltip = L('확인됨이거나, 검사가 없어서만 미확인인 요구사항', 'Verified, or not verified only because no test ran');
+      it.iconPath = new vscode.ThemeIcon('fold', new vscode.ThemeColor('descriptionForeground'));
+      return it;
+    }
     if (n.kind === 'req') {
       const r = n.row;
       const j = judgments()[r.id];

@@ -102,17 +102,21 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   const store = new Map();
   const ctx = { subscriptions: [], asAbsolutePath: (p) => path.join(ext, p), workspaceState: { get: (k, d) => (store.has(k) ? store.get(k) : d), update: async (k, v) => { store.set(k, v); } } };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // 옆 패널은 고칠 것을 위에 두고 나머지를 「나머지」로 접는다(0.14.0). 시험은 요구사항 순서로 펼쳐서 본다.
+  const reqNodes = () => reg.tree.getChildren().flatMap((n) => (n.kind === 'rest' ? reg.tree.getChildren(n) : [n])).sort((x, y) => Number(x.row.id.slice(1)) - Number(y.row.id.slice(1)));
   mod.activate(ctx);
   for (const id of ['verifylens.runDemo', 'verifylens.checkBranch', 'verifylens.compareBranches', 'verifylens.openReport', 'verifylens.createRequirements', 'verifylens.rerun', 'verifylens.focusRequirement', 'verifylens.openLocation', 'verifylens.openDiff', 'verifylens.recordJudgment', 'verifylens.copySummary', 'verifylens.importRequirements', 'verifylens.runTests'])
     assert.ok(reg.commands[id], `registered ${id}`);
-  assert.deepEqual(reg.tree.getChildren(), [], 'empty tree before a run (welcome view shows)');
+  assert.deepEqual(reqNodes(), [], 'empty tree before a run (welcome view shows)');
 
   // 1) 데모
   await reg.commands['verifylens.runDemo']();
   assert.deepEqual(log.errors, [], 'no errors during demo');
-  const roots = reg.tree.getChildren();
+  const roots = reqNodes();
   assert.equal(roots.length, 3);
   const items = roots.map((n) => reg.tree.getTreeItem(n));
+  const top = reg.tree.getChildren().map((n) => reg.tree.getTreeItem(n));
+  assert.deepEqual(top.map((x) => [String(x.label).slice(0, 2), x.description, x.collapsibleState]), [['R2', '다름', 2], ['나머', '확인됨 1 · 검사만 없음 1', 1]], 'R2 on top, R1 and R3 folded under 나머지');
   assert.match(items[1].label, /^R2/);
   assert.equal(items[1].description, '다름');
   assert.match(items[1].tooltip.value, /결과 B: 6번째 시도에 동작/);
@@ -173,13 +177,13 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.equal(dopts.selection.start.line, 20);
   // 판단 기록: 목록에 표시되고 리포트에도 전해진다
   answers = { warning: undefined, quickPick: ['수정'], input: 'B 조건 고치기' };
-  await reg.commands['verifylens.recordJudgment'](reg.tree.getChildren()[1]);
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[1]).description, '다름 → 수정');
-  assert.match(reg.tree.getTreeItem(reg.tree.getChildren()[1]).tooltip.value, /사람의 판단: 수정\*\* — B 조건 고치기/);
+  await reg.commands['verifylens.recordJudgment'](reqNodes()[1]);
+  assert.equal(reg.tree.getTreeItem(reqNodes()[1]).description, '다름 → 수정');
+  assert.match(reg.tree.getTreeItem(reqNodes()[1]).tooltip.value, /사람의 판단: 수정\*\* — B 조건 고치기/);
   assert.match(reg.view.message, /판단 1\/3$/);
   assert.deepEqual(log.posted.at(-1), { type: 'judgments', state: { R2: { judge: '수정', note: 'B 조건 고치기' } } });
   await reg.panel.webview.recv({ type: 'judge', id: 'R3', judge: '추가 검증', note: '' });
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[2]).description, '미확인 · 검사 없음 → 추가 검증');
+  assert.equal(reg.tree.getTreeItem(reqNodes()[2]).description, '미확인 · 검사 없음 → 추가 검증');
   // PR 요약 복사: 기록한 판단이 들어가고, 판단이 다 있으면 미검토 경고가 없다
   const sum = await reg.commands['verifylens.copySummary']();
   assert.equal(log.clipboard.at(-1), sum);
@@ -204,7 +208,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   await reg.commands['verifylens.rerun']();
   assert.match(reg.panel.webview.html, /"R2":\{"judge":"수정"/, 'after a re-run the report still carries the stored decision');
   assert.match(reg.panel.webview.html, /"focus":"R3"/, 'and stays on the requirement you were looking at');
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[1]).description, '다름 → 수정');
+  assert.equal(reg.tree.getTreeItem(reqNodes()[1]).description, '다름 → 수정');
 
   // 4) 실제 저장소 흐름: 요구사항 파일이 없으면 만들고, 다시 실행하면 지금 브랜치를 확인한다
   const repo = new URLSearchParams(uriB.query).get('repo');
@@ -218,14 +222,14 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   answers = { warning: undefined, quickPick: ['main'] };
   await reg.commands['verifylens.checkBranch']();
   assert.deepEqual(log.errors, [], 'no errors on branch check');
-  const rows = reg.tree.getChildren().map((n) => reg.tree.getTreeItem(n));
+  const rows = reqNodes().map((n) => reg.tree.getTreeItem(n));
   assert.equal(rows.length, 2, 'template has R1, R2');
   assert.equal(rows[1].description, '다름');
   // 지금 체크아웃된 브랜치라서 실제 파일로 열리고, 실제 파일에도 렌즈가 붙는다
   const real = await vscode.workspace.openTextDocument(Uri.file(path.join(repo, 'src', 'auth.ts')));
   const lensReal = reg.lens.provideCodeLenses(real);
   assert.ok(lensReal.some((l) => /R2 · 다름/.test(l.command.title)), 'lens on the real working-tree file');
-  const kid = reg.tree.getChildren(reg.tree.getChildren()[1]).map((n) => reg.tree.getTreeItem(n))[0];
+  const kid = reg.tree.getChildren(reqNodes()[1]).map((n) => reg.tree.getTreeItem(n))[0];
   await reg.commands['verifylens.openLocation'](...kid.command.arguments);
   assert.equal(log.opened.at(-1).scheme, 'file');
   assert.ok(log.warnings.some((w) => /미실행/.test(w)), 'warns that tests were not given');
@@ -249,7 +253,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   fs.writeFileSync(authFile, fs.readFileSync(authFile, 'utf8').replace('user.failures > 5', 'user.failures >= 5'));
   execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-am', 'fix lockout']);
   let auto = '';
-  for (let i = 0; i < 60 && !/^미확인/.test(auto); i++) { await sleep(150); auto = reg.tree.getTreeItem(reg.tree.getChildren()[1]).description; }
+  for (let i = 0; i < 60 && !/^미확인/.test(auto); i++) { await sleep(150); auto = reg.tree.getTreeItem(reqNodes()[1]).description; }
   assert.equal(auto, '미확인 · 검사 없음', 'after the fix R2 is no longer 다름 (no test report here, so 미확인)');
   assert.equal(reg.status.backgroundColor, undefined, 'warning color cleared');
   assert.deepEqual(log.errors, []);
@@ -263,9 +267,9 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   assert.equal(log.opened.at(-1).fsPath, path.resolve(reqFile), 'the file is opened for the author to read');
   assert.match(log.infos.at(-1), /복사한 글에서 요구사항 1개를 가져왔습니다/);
   let n3 = 0;
-  for (let i = 0; i < 60 && n3 !== 3; i++) { await sleep(150); n3 = reg.tree.getChildren().length; }
+  for (let i = 0; i < 60 && n3 !== 3; i++) { await sleep(150); n3 = reqNodes().length; }
   assert.equal(n3, 3, 'the list picked up R3 by itself');
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[2]).description, '미확인 · 검사 없음');
+  assert.equal(reg.tree.getTreeItem(reqNodes()[2]).description, '미확인 · 검사 없음');
   answers = { warning: undefined, quickPick: ['$(clippy) 복사한 글 (클립보드)'], input: '', clipboard: '회의록: 다음 주에 다시 봅니다' };
   assert.equal(await reg.commands['verifylens.importRequirements'](), undefined);
   assert.match(log.warnings.at(-1), /요구사항으로 볼 문장을 찾지 못했습니다/);
@@ -276,20 +280,20 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   fs.writeFileSync(authFile, fs.readFileSync(authFile, 'utf8').replace('user.failures >= 5', 'user.failures > 3'));
   for (const f of reg.saveListeners) f({ uri: Uri.file(authFile) });
   let live = '';
-  for (let i = 0; i < 60 && !/^다름/.test(live); i++) { await sleep(150); live = reg.tree.getTreeItem(reg.tree.getChildren()[1]).description; }
+  for (let i = 0; i < 60 && !/^다름/.test(live); i++) { await sleep(150); live = reg.tree.getTreeItem(reqNodes()[1]).description; }
   assert.equal(live, '다름', 'the saved, uncommitted edit (> 3 locks on the 4th attempt) is caught');
   assert.match(reg.view.message, /feature\/lockout-b \+ 커밋 전 변경 ← main/);
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren(reg.tree.getChildren()[1])[0]).description, '4번째 동작 · 검사 미실행');
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren(reqNodes()[1])[0]).description, '4번째 동작 · 검사 미실행');
 
   // 5-4) 테스트 실행: 명령을 알아내 실제로 돌리고(node:test), 결과를 읽어 다시 분석한다
   await reg.commands['verifylens.runTests']();
   assert.deepEqual(log.errors, []);
   assert.match(log.infos.at(-1), /테스트 결과를 반영했습니다 \(node:test\)/);
   assert.ok(fs.existsSync(path.join(repo, '.verifylens', 'test-report.xml')));
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[0]).description, '확인됨', 'R1 now has a passing test');
-  const r2row = reg.tree.getTreeItem(reg.tree.getChildren(reg.tree.getChildren()[1])[0]).description;
+  assert.equal(reg.tree.getTreeItem(reqNodes()[0]).description, '확인됨', 'R1 now has a passing test');
+  const r2row = reg.tree.getTreeItem(reg.tree.getChildren(reqNodes()[1])[0]).description;
   assert.equal(r2row, '4번째 동작 · 검사는 통과', 'the test passes, yet the computed attempt still shows the requirement is not met');
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[1]).description, '다름');
+  assert.equal(reg.tree.getTreeItem(reqNodes()[1]).description, '다름');
 
   // 6) 제한 모드: 브랜치 확인은 신뢰를 요청하고 멈추며, 샘플은 그대로 된다
   vscode.workspace.isTrusted = false;
@@ -311,13 +315,13 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   // 7) 영어 화면: 설정을 en 으로 바꾸면 다시 분석해서 패널 · 줄 표시 · 리포트 · 알림이 영어로 나온다
   config.language = 'en';
   reg.onConfig({ affectsConfiguration: () => true });
-  for (let i = 0; i < 100 && !/^R2  Lock the account/.test(String(reg.tree.getTreeItem(reg.tree.getChildren()[1]).label)); i++) await sleep(100);
-  const enItems = reg.tree.getChildren().map((n) => reg.tree.getTreeItem(n));
+  for (let i = 0; i < 100 && !/^R2  Lock the account/.test(String(reg.tree.getTreeItem(reqNodes()[1]).label)); i++) await sleep(100);
+  const enItems = reqNodes().map((n) => reg.tree.getTreeItem(n));
   assert.equal(enItems[1].label, 'R2  Lock the account after 5 consecutive failures');
   assert.equal(enItems[1].description, 'Different → Fix', 'the decision recorded in Korean shows in English');
   assert.match(enItems[1].tooltip.value, /Result B: acts on attempt 6 \(requirement: 5\) — but the test passes/);
   assert.equal(enItems[2].description, 'Not verified · no test → Verify more');
-  const enKids = reg.tree.getChildren(reg.tree.getChildren()[1]).map((n) => reg.tree.getTreeItem(n));
+  const enKids = reg.tree.getChildren(reqNodes()[1]).map((n) => reg.tree.getTreeItem(n));
   assert.equal(enKids[1].description, 'attempt 6 · but the test passes');
   const HANGUL = /[가-힣]/;
   const seen = (html) => html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '').replace(/ value="[^"]*"/g, '');
@@ -340,8 +344,8 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   // 다시 한국어로
   config.language = 'ko';
   reg.onConfig({ affectsConfiguration: () => true });
-  for (let i = 0; i < 100 && !/^R2  연속 5회/.test(String(reg.tree.getTreeItem(reg.tree.getChildren()[1]).label)); i++) await sleep(100);
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren()[1]).description, '다름 → 수정');
+  for (let i = 0; i < 100 && !/^R2  연속 5회/.test(String(reg.tree.getTreeItem(reqNodes()[1]).label)); i++) await sleep(100);
+  assert.equal(reg.tree.getTreeItem(reqNodes()[1]).description, '다름 → 수정');
   mod.deactivate();
   console.log('smoke OK —', reg.status.text);
 })().catch((e) => {
