@@ -44,6 +44,11 @@ const T: Record<string, { en: string; ko: string }> = {
   result: { en: 'Result', ko: '결과' },
   loading: { en: 'Loading the analysis engine…', ko: '분석 엔진을 불러오는 중…' },
   noReqs: { en: 'Write at least one requirement.', ko: '요구사항을 한 줄 이상 적어 주세요.' },
+  testsCleared: {
+    en: 'Your requirements or code no longer match the example, so its tests were removed. Add the tests you ran, if any.',
+    ko: '요구사항이나 코드가 예제와 달라져서 예제의 테스트를 뺐습니다. 직접 돌린 테스트가 있으면 적어 주세요.',
+  },
+  jump: { en: 'See results ↓', ko: '결과 보기 ↓' },
   error: { en: 'Could not analyze this input: ', ko: '이 입력은 분석하지 못했습니다: ' },
   codecap: { en: 'each verdict is shown under the line it is based on', ko: '판정은 근거가 된 줄 바로 아래에 있습니다' },
   linked: { en: 'Linked tests: ', ko: '이어진 테스트: ' },
@@ -79,10 +84,16 @@ const cardsEl = $('cards');
 const codewrapEl = $('codewrap');
 const codecapEl = $('codecap');
 const codeviewEl = $('codeview');
+const testsNoteEl = $('tests-note');
+const jumpbarEl = $('jumpbar');
+const jumpwhatEl = $('jumpwhat');
+const outEl = $('out');
 
 let lang: Lang = initialLang();
 let current: Example | null = null;
 let tests: TryTest[] = [];
+/** 지금 테스트 칸이 어느 예제에서 온 그대로인가. 사용자가 테스트를 고치면 null */
+let testsFrom: Example | null = null;
 
 function initialLang(): Lang {
   const q = new URLSearchParams(location.search).get('lang');
@@ -135,6 +146,8 @@ function load(ex: Example) {
   fileEl.value = ex.fileName;
   codeEl.value = ex.code;
   tests = ex.tests[lang].map((t) => ({ ...t }));
+  testsFrom = ex;
+  testsNoteEl.hidden = true;
   renderExamples();
   renderTests();
   run();
@@ -152,6 +165,7 @@ function renderTests() {
     name.spellcheck = false;
     name.addEventListener('input', () => {
       tests[i].name = name.value;
+      testsFrom = null;
       edited();
     });
     const status = el('select');
@@ -164,6 +178,7 @@ function renderTests() {
     }
     status.addEventListener('change', () => {
       tests[i].status = status.value as TryTest['status'];
+      testsFrom = null;
       edited();
     });
     const del = el('button', 'icon-btn', '×');
@@ -171,6 +186,7 @@ function renderTests() {
     del.setAttribute('aria-label', T.remove[lang]);
     del.addEventListener('click', () => {
       tests.splice(i, 1);
+      testsFrom = null;
       renderTests();
       edited();
     });
@@ -180,7 +196,22 @@ function renderTests() {
 }
 
 let timer: number | undefined;
+/** 두 글에 같은 줄(짧은 줄 · 괄호만 있는 줄은 빼고)이 하나라도 있는가 */
+function sharesLine(text: string, example: string): boolean {
+  const lines = (s: string) => s.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length >= 8);
+  const mine = new Set(lines(text));
+  return lines(example).some((l) => mine.has(l));
+}
+
 function edited() {
+  // 요구사항이나 코드를 예제와 전혀 다르게 바꿨으면, 예제의 테스트가 남아 엉뚱한 요구사항에 이어지지 않게 뺀다
+  if (testsFrom && tests.length && (!sharesLine(reqsEl.value, testsFrom.requirements[lang]) || !sharesLine(codeEl.value, testsFrom.code))) {
+    tests = [];
+    testsFrom = null;
+    renderTests();
+    testsNoteEl.textContent = T.testsCleared[lang];
+    testsNoteEl.hidden = false;
+  }
   // 고친 뒤에는 예제 선택 표시를 지운다 (예제 그대로가 아니므로)
   if (current) {
     current = null;
@@ -201,6 +232,7 @@ function run() {
     return;
   }
   statusEl.textContent = '';
+  showJump(res.rows.length ? res.headline : '');
   if (!res.rows.length) {
     headlineEl.textContent = '';
     cardsEl.replaceChildren(el('p', 'empty', T.noReqs[lang]));
@@ -232,6 +264,22 @@ function run() {
     }),
   );
   renderCode(res);
+}
+
+// 결과 칸이 화면에 보이면 막대를 숨긴다 (좁은 화면에서만 보이는 막대다)
+let outInView = false;
+let jumpText = '';
+function showJump(text: string) {
+  jumpText = text;
+  jumpwhatEl.textContent = text;
+  jumpbarEl.hidden = !text || outInView;
+  document.body.classList.toggle('has-jumpbar', !jumpbarEl.hidden);
+}
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver((entries) => {
+    outInView = entries.some((e) => e.isIntersecting);
+    showJump(jumpText);
+  }, { threshold: 0.15 }).observe(outEl);
 }
 
 function renderCode(res: TryResult) {
@@ -287,6 +335,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('.lang button')) b.
 for (const input of [reqsEl, codeEl, fileEl]) input.addEventListener('input', edited);
 $('add-test').addEventListener('click', () => {
   tests.push({ name: '', status: 'pass' });
+  testsFrom = null;
+  testsNoteEl.hidden = true;
   renderTests();
   (testsEl.lastElementChild?.querySelector('input') as HTMLInputElement | null)?.focus();
 });

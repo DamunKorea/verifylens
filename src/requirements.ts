@@ -8,7 +8,7 @@ import { numbersIn, parseConstraints } from './numeric.ts';
 const ONLY_CUE = /[가-힣]만(?=\s|$)|\bonly\b/i;
 const GUARD_CUE = /(않|차단|거부|막|금지|불가|reject|deny|block|forbid|refuse|must not|cannot)/i;
 /** 무엇을 확인하거나 막는 조건이 코드에 있어야 하는 요구사항 (함수 이름만 겹쳐서는 근거가 되지 않는다) */
-const CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있|\bonce\s+(?:per|a|each|for)\b|\bonly once\b|한\s*번(?:씩)?만|중복/i;
+const CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있|\bonce\s+(?:per|a|each|for)\b|\bonly once\b|\bonly one\b|한\s*번(?:씩)?만|하나만|중복/i;
 
 export function parseRequirements(md: string): Requirement[] {
   const reqs: Requirement[] = [];
@@ -23,7 +23,8 @@ export function parseRequirements(md: string): Requirement[] {
     const constraints = parseConstraints(text);
     const auto = !keywords.length;
     // 키워드를 적어도 문장의 개념은 뽑아 둔다 (검사 이름과 이을 때 쓴다)
-    const concepts = conceptsFor(text);
+    // 「5 times」의 times 는 단위다. 무엇을 하는지 말하는 낱말이 아니므로 개념으로 세지 않는다
+    const concepts = conceptsFor(text.replace(/(\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten))\s*times?\b/gi, '$1'));
     const tokens = auto ? concepts.flat() : tokenize(keywords.join(' '));
     reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) });
   }

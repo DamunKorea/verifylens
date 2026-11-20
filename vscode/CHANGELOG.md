@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.13.0
+
+Fewer wrong verdicts caused by other lines and other files. Found by trying VerifyLens the way a developer would — three usability trials by our promo session on the try page and on two multi-file repositories, not user reports — and then by new cases.
+
+- **A line that only shares a number or a unit with the requirement is no longer evidence.**
+  - A string's length is not a count, and a list's length is not a number of characters. "Password reset mail can be sent at most 3 times a day" was matched to `pw.length < 8` in the same file and called correct code Different.
+  - A name that shares only a time unit or "age" is evidence only when the code around it names the same thing. Before, `LOCK_MINUTES = 15` in another file made "login tokens expire after 15 minutes" Verified, and a sign-up form's `age.min(14)` made "the free trial lasts 14 days" Verified while `TRIAL_DAYS = 7`.
+  - "Only one per person" (하나만) needs a duplicate check; a condition that compares another count (`items.length > 100` in another file) is not one.
+  - When the names do not overlap at all, the value must be exactly the same: `items.length > 100` is no longer read as "at most 99".
+- **A whole-number tolerance no longer applies to fractions.** `POINT_RATE = 0.02`, and even `0.5`, was Verified against "1%". Now they are Different.
+- **Settings with a generic name** (`maxAge`) are linked through the statement that sets them, so `session({ cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } })` is Verified for "Sessions expire after 7 days".
+- **Counting first, then rejecting** (`count++; if (count > 3) throw`) allows 3. 0.12.0 said "runs at most 4 times".
+- **"30일에 한 번만" and "once every 24 hours"** mean that much time must pass since the last time.
+- **A test that names the first rejected attempt** ("a sixth attempt is rejected") is linked to "at most 5 times".
+- **More words without keywords:** 재설정, 보낼, 하루, 입력, 바꾸, 문자 (SMS), 체험, 끝나, 하나만, tried. A function or a non-rejecting condition that covers less than half of what the requirement talks about is no longer enough evidence.
+- **Wording:** `POINT_RATE = 0.01` reads "1%" instead of "0.01%". A duration string such as `'1h'` is converted from seconds instead of being shown as "2.5 days". Korean particles follow the last sound (15분으로). A rate limiter's 1-minute window is no longer described as "2 minutes".
+- **Try page:** when your requirements or code no longer share a line with the example, the example's tests are removed and a note says so. On a narrow screen, a bar at the bottom shows the result and jumps to it.
+- **CLI summary:** the "prototype v0" label is gone. The section listing tests not run and evidence not found is now named that, so it does not read like the Unverified count.
+- **How far to trust it.** On 20 new multi-file cases written after all the changes, 0.12.0 gave the expected verdict for 19 with keywords and 13 without, calling wrong code Verified once. 0.13.0 gave 19 and 18, with no wrong verdict. The numbers for the other batches and for the trial repositories are in the release notes. They are our own cases, so read them as a regression check, not a benchmark. All 585 cases run with the tests and none gets a wrong verdict. The fixed open-source set is unchanged.
+
 ## 0.12.0
 
 More rules read correctly. As before, found by writing new cases ourselves.

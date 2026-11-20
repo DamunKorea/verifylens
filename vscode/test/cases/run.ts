@@ -15,6 +15,10 @@ import { HOLDOUT10 } from './holdout10.ts';
 import { HOLDOUT11 } from './holdout11.ts';
 import { HOLDOUT12 } from './holdout12.ts';
 import { HOLDOUT13 } from './holdout13.ts';
+import { HOLDOUT14 } from './holdout14.ts';
+import { HOLDOUT15 } from './holdout15.ts';
+import { HOLDOUT16 } from './holdout16.ts';
+import { HOLDOUT17 } from './holdout17.ts';
 
 export type Row = { c: Case; v: Variant; got: string; note: string };
 
@@ -29,7 +33,7 @@ export function runVariant(c: Case, v: Variant, withKeywords = true): { got: str
 }
 
 export const allRows = (withKeywords = true, cases: Case[] = CASES): Row[] => cases.flatMap((c) => c.variants.map((v) => ({ c, v, ...runVariant(c, v, withKeywords) })));
-export { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13 };
+export { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17 };
 
 export function score(rows: Row[]) {
   const bads = rows.filter((r) => r.v.expect === '다름');

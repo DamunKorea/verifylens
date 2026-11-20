@@ -22,6 +22,7 @@ AI 판정 없이 코드 분석과 실제로 돌린 테스트 결과만 쓰고, �
 ]]></description>
 
     <change-notes><![CDATA[
+<p><b>0.8.0</b>: a line that only shares a number or a unit with the requirement (a string length, a list length, LOCK_MINUTES in another file, a sign-up form's age) is no longer used as evidence. A fraction is no longer within one of a whole percent (0.02 was Verified against 1%). Counting first and then rejecting allows the limit. "Once every 30 days" means 30 days must pass. Settings with a generic name (maxAge) are linked through the statement that sets them.</p>
 <p><b>0.7.0</b>: reads "are not accepted" as a refusal, "once per person" as a uniqueness check, rates stored as fractions (0.1 = 10%) and timer values (setInterval). A setting named for another thing (RETURN_FEE for a shipping fee) is no longer used as evidence.</p>
 <p><b>0.6.0</b>: time rules are read better: a time difference with no name (Date.now() - sentAt), "14 days after", "1 hour before", "1 minute window", and "blocked when it is 0".</p>
 <p><b>0.5.0</b>: says why a requirement is unverified (wording, edge value, execution order, no deciding check, no test …) and what to do next. Sign-up rules are read better: a required check must exist, "only once" is not a count, "6 digits" means exactly 6. A second setting with the same name and another value keeps the result unverified.</p>

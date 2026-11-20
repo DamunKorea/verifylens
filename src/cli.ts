@@ -28,7 +28,7 @@ function args(argv: string[]): { cmd: string; opts: Record<string, string> } {
   return { cmd, opts };
 }
 
-const HELP_EN = `VerifyLens preview — your code never leaves this machine (no network use)
+const HELP_EN = `VerifyLens — your code never leaves this machine (no network use)
 
   node src/cli.ts demo [--out dir] [--open] [--lang en|ko]
       Builds a report from the sample (a made-up login-lockout case). --open opens it in the browser.
@@ -49,7 +49,7 @@ const HELP_EN = `VerifyLens preview — your code never leaves this machine (no 
   node src/cli.ts check   (engine check: prints the sample result as text)
 `;
 
-const HELP = `VerifyLens 프로토타입 v0 — 코드는 이 PC 밖으로 나가지 않습니다 (네트워크 사용 없음)
+const HELP = `VerifyLens — 코드는 이 PC 밖으로 나가지 않습니다 (네트워크 사용 없음)
 
   node src/cli.ts demo [--out 폴더] [--open]
       샘플(로그인 잠금 가상 사례)로 리포트를 만듭니다. --open 은 컨셉 시연을 브라우저로 엽니다.

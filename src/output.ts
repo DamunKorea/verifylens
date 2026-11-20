@@ -94,7 +94,7 @@ function overview(report: Report): string {
   for (const set of report.sets) for (const d of set.dyn) unc.push(`<span><b>${set.key}</b> ${L('해석하지 못한 호출', 'unresolved call')} <code>${esc(d.file.split('/').pop()!)}:${d.line}</code> <code>${esc(d.text)}</code></span>`);
   return `<section class="ov"><div class="ovh"><h2>${L('요구사항별 검증 상태', 'Verification status by requirement')}</h2><div class="cnt"><span class="ok">${wOverall('확인됨')} <b>${c.확인됨}</b></span><span class="diff">${wOverall('다름')} <b>${c.다름}</b></span><span class="fail">${wOverall('실패')} <b>${c.실패}</b></span><span class="unk">${wOverall('미확인')} <b>${c.미확인}</b></span></div><div class="hint">${L('행을 누르면 아래에 근거가 열립니다', 'Click a row to see its evidence below')}</div></div>
 <table class="mx"><thead>${head}</thead><tbody>${rows}</tbody></table>
-<div class="unc"><b>${L('미확인 범위', 'Not verified')}</b>${unc.join('') || `<span>${L('없음', 'none')}</span>`}</div></section>`;
+<div class="unc"><b>${L('검사 미실행 · 근거 없음', 'No test run · no evidence')}</b>${unc.join('') || `<span>${L('없음', 'none')}</span>`}</div></section>`;
 }
 
 // ---------------------------------------------------------------- 코드 비교
@@ -430,9 +430,9 @@ export function renderHtml(report: Report, summaryMd: string): string {
   const t = { jl: JUDGE_LABELS(), text: L('글', 'text'), viz: L('시각화', 'visual'), stop: L('종료', 'Stop'), start: L('시작', 'Start'), rec: L('기록', 'recorded') };
   const data = { id, first: first.req.id, meta, t, reqs: report.summaries.map((s) => ({ id: s.req.id, text: s.req.text, status: s.overall })) };
   const mark = '<svg width="24" height="24" viewBox="0 0 64 64"><circle cx="27" cy="27" r="19" fill="none" stroke="#fff" stroke-width="6"/><path d="M18 27.5 L24.5 34 L36.5 20" fill="none" stroke="#4285E8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M41.5 41.5 L56 56" stroke="#fff" stroke-width="7.5" stroke-linecap="round"/></svg>';
-  return `<!doctype html><html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${L('VerifyLens 검증 리포트 (프로토타입 v0)', 'VerifyLens verification report (preview)')}</title><style>${CSS}</style></head>
+  return `<!doctype html><html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${L('VerifyLens 검증 리포트', 'VerifyLens verification report')}</title><style>${CSS}</style></head>
 <body data-view="viz">
-<div class="top"><div class="logo">${mark}<div>Verify<span>Lens</span></div></div><div class="meta">${L('검증 리포트 · 프로토타입 v0 · 기준', 'Verification report · preview · base')} <code>${esc(report.base)}</code></div><span class="sp"></span><span class="badge g">${L('로컬에서 생성 · 네트워크 사용 없음 · AI 추정 없음', 'Generated locally · no network · no AI inference')}</span><div class="vt"><button class="vtab on" data-view="viz">${L('시각화', 'Visual')}</button><button class="vtab" data-view="text">${L('글 요약', 'Text summary')}</button></div></div>
+<div class="top"><div class="logo">${mark}<div>Verify<span>Lens</span></div></div><div class="meta">${L('검증 리포트 · 기준', 'Verification report · base')} <code>${esc(report.base)}</code></div><span class="sp"></span><span class="badge g">${L('로컬에서 생성 · 네트워크 사용 없음 · AI 추정 없음', 'Generated locally · no network · no AI inference')}</span><div class="vt"><button class="vtab on" data-view="viz">${L('시각화', 'Visual')}</button><button class="vtab" data-view="text">${L('글 요약', 'Text summary')}</button></div></div>
 <div class="wrap">${overview(report)}${report.summaries.map((s) => detail(report, s)).join('')}</div>
 <div class="text"><div class="doc">${mdToHtml(summaryMd)}</div></div>
 <div class="bar"><b>${L('과제 시간', 'Task timer')}</b><select id="task"><option>T1</option><option>T2</option><option>T3</option><option>${L('자유', 'Free')}</option></select><button id="tstart">${L('시작', 'Start')}</button><span id="tlabel">0:00</span><span id="tlog" style="opacity:.85"></span><span class="sp"></span><span>${L('사람의 판단', 'Decisions')} <b id="judged">0</b></span><button id="export">${L('판단·시간 내보내기', 'Export decisions and times')}</button></div>

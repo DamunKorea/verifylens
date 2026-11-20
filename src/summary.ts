@@ -62,7 +62,7 @@ export function nextAction(s: ReqSummary, report: Report): string {
 export function renderSummaryMd(report: Report): string {
   const c = counts(report);
   const out: string[] = [];
-  out.push(L('# VerifyLens 검증 요약 (프로토타입 v0 · 규칙 기반 분석, AI 추정 없음)', '# VerifyLens verification summary (preview · rule-based analysis, no AI inference)'));
+  out.push(L('# VerifyLens 검증 요약 (규칙 기반 분석, AI 추정 없음)', '# VerifyLens verification summary (rule-based analysis, no AI inference)'));
   out.push('');
   out.push(L(`- 기준: \`${report.base}\``, `- Base: \`${report.base}\``));
   for (const s of report.sets) out.push(L(`- ${s.label}: \`${s.ref}\` (${s.sha}) · 검사 ${s.tests.length}개`, `- ${s.label}: \`${s.ref}\` (${s.sha}) · ${s.tests.length} test(s)`));
@@ -92,7 +92,8 @@ export function renderSummaryMd(report: Report): string {
     out.push(`- ${L('다음 행동', 'Next step')}: ${nextAction(s, report)}`);
     out.push('');
   }
-  out.push(L('## 미확인 범위', '## Not verified'));
+  // 「미확인」 판정 수와 헷갈리지 않게, 이 절이 실제로 담는 것(돌리지 않은 검사 · 못 찾은 근거)을 이름으로 쓴다
+  out.push(L('## 검사를 돌리지 않았거나 근거를 못 찾은 곳', '## Tests not run or evidence not found'));
   let any = false;
   for (const s of report.summaries) {
     const missing = report.sets.filter((x) => x.perReq[s.req.id].testStatus === '미실행' || x.perReq[s.req.id].evidence.status === '미발견');

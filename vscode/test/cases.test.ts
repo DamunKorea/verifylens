@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -169,4 +169,78 @@ test('constants are read through arithmetic, objects and readonly fields, but no
   assert.equal(a.constants['this.r'], 3);
   assert.equal(a.constants['C.s'], 4);
   assert.equal(a.constants['this.n'], undefined);
+});
+
+// 0.13.0: 홍보 세션 사용성 시험(11/20)에서 나온 거짓 경보와 그 둘레
+const verdict = (req: string, code: string, test = '') => {
+  const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/a.ts': code }, tests: test ? [{ name: test, status: 'pass', message: '' }] : [] });
+  return evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main').summaries[0];
+};
+
+test('a string length is not compared with a count of times, and a list length is not compared with characters', () => {
+  const pw = "export function validatePassword(pw: string) {\n  if (pw.length < 8 || pw.length >= 64) throw new Error('LEN');\n}\n";
+  // 비밀번호 길이 줄은 「하루에 3번」과 상관없다: 횟수 검사가 없으면 「다름」이 아니라 「미확인」
+  const none = verdict('비밀번호 재설정 메일은 하루에 3번까지만 보낼 수 있다', pw + "export function sendResetMail(u: { sentToday: number }) {\n  u.sentToday++;\n}\n");
+  assert.equal(none.overall, '미확인');
+  // 목록의 길이(cart.items.length > 30)는 「30자까지」의 근거가 아니다
+  const chars = verdict('장바구니 상품 이름은 30자까지 보여 준다', "export function checkCart(cart: { items: string[] }) {\n  if (cart.items.length > 30) throw new Error('FULL');\n}\nexport const shortName = (name: string) => (name.length > 40 ? name.slice(0, 40) : name);\n", 'product names are cut at 30 characters');
+  assert.notEqual(chars.overall, '확인됨');
+});
+
+test('counting first and then rejecting does not count the rejected call', () => {
+  const code = (max: number) => `const MAX_RESET_PER_DAY = ${max};\nexport function sendResetMail(u: { sentToday: number }) {\n  u.sentToday++;\n  if (u.sentToday > MAX_RESET_PER_DAY) throw new Error('TOO_MANY');\n}\n`;
+  const req = '비밀번호 재설정 메일은 하루에 3번까지만 보낼 수 있다 | keywords: reset, sentToday';
+  assert.equal(verdict(req, code(3), 'reset mail is limited to 3 per day').overall, '확인됨');
+  assert.equal(verdict(req, code(4), 'reset mail is limited to 3 per day').overall, '다름');
+});
+
+test('"once every N days" means N days must pass, not a count of one', () => {
+  const rel = (s: string) => parseConstraints(s).map((c) => `${c.value}${c.unit}:${c.rel}`);
+  assert.deepEqual(rel('닉네임은 30일에 한 번만 바꿀 수 있다'), ['30day:gte']);
+  assert.deepEqual(rel('A user can export their data once every 24 hours'), ['24hour:gte']);
+});
+
+test('a test that names the first rejected attempt is linked to the limit', () => {
+  const code = "export function checkOtp(s: { attempts: number }) {\n  if (s.attempts >= 5) throw new Error('LOCKED');\n  s.attempts++;\n}\n";
+  const s = verdict('An OTP code can be tried at most 5 times', code, 'a sixth otp attempt is rejected');
+  assert.equal(s.overall, '확인됨');
+  // 「one second」의 second 는 서수가 아니다
+  assert.equal(verdict('An OTP code can be tried at most 5 times', code, 'otp check takes one second').overall, '미확인');
+});
+
+// 0.13.0: 홍보 세션 사용성 시험 2 · 3차(여러 파일 저장소)에서 나온 「확인됨」 오판
+const many = (req: string, files: Record<string, string>, test = '') => {
+  const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files, tests: test ? [{ name: test, status: 'pass', message: '' }] : [] });
+  return evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main').summaries[0];
+};
+
+test('a line in another file that only shares the time unit or a person\'s age is not evidence', () => {
+  const lock = { 'src/lock.ts': 'const LOCK_MINUTES = 15;\nexport function onLoginFailure(u: { failures: number }) {\n  u.failures += 1;\n}\n' };
+  const token = "import jwt from 'jsonwebtoken';\nexport function issueAccessToken(id: string, secret: string) {\n  return jwt.sign({ sub: id }, secret, { expiresIn: '1h' });\n}\n";
+  const s = many('로그인 토큰은 15분 뒤 만료된다', { 'src/token.ts': token, ...lock }, 'login token expires after 15 minutes');
+  assert.notEqual(s.overall, '확인됨');
+  // 가입 양식의 나이(age.min(14))는 「무료 체험은 14일」의 근거가 아니다: 체험 일수 설정(7)과 견준다
+  const signup = { 'src/signup.ts': "import { z } from 'zod';\nexport const signupSchema = z.object({ age: z.number().int().min(14) });\n" };
+  const trial = { 'src/trial.ts': 'export const TRIAL_DAYS = 7;\nexport const trialEndsAt = (start: number) => start + TRIAL_DAYS * 86400000;\n' };
+  assert.equal(many('The free trial lasts 14 days', { ...signup, ...trial }, 'the free trial lasts 14 days').overall, '다름');
+});
+
+test('a setting with a generic name is linked through the statement that sets it', () => {
+  const session = "import session from 'express-session';\nexport const sessionMiddleware = session({ secret: 'dev', cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } });\n";
+  const rejoin = 'export function canRejoin(leftAt: number, now: number) {\n  const daysSinceLeft = (now - leftAt) / 86400000;\n  if (daysSinceLeft < 30) return false;\n  return true;\n}\n';
+  assert.equal(many('Sessions expire after 7 days', { 'src/session.ts': session, 'src/rejoin.ts': rejoin }, 'sessions expire after 7 days').overall, '확인됨');
+});
+
+test('"only one per person" is not met by a condition that compares another count', () => {
+  const bulk = "export function bulkUpdate(req: { body: { items: string[] } }, res: any) {\n  if (req.body.items.length > 100) return res.status(400).json({ error: 'TOO_MANY' });\n  return res.json({ ok: true });\n}\n";
+  const review = 'export async function addReview(db: any, userId: string, productId: string) {\n  return db.review.create({ data: { userId, productId } });\n}\n';
+  assert.notEqual(many('상품 리뷰는 한 사람당 하나만 쓸 수 있다', { 'src/bulk.ts': bulk, 'src/review.ts': review }, 'one review per user per product').overall, '확인됨');
+});
+
+test('a fraction is not within one of a whole percent, and the Korean particle follows the last sound', () => {
+  const rate = (v: string) => many('포인트 적립률은 결제 금액의 1%다', { 'src/points.ts': `export const POINT_RATE = ${v};\nexport const points = (paid: number) => paid * POINT_RATE;\n` }, 'points are 1% of the payment');
+  assert.equal(rate('0.01').overall, '확인됨');
+  assert.equal(rate('0.02').overall, '다름');
+  const lock = many('잠금 시간은 10분이다', { 'src/lock.ts': 'export const LOCK_MINUTES = 15;\n' }, 'lock lasts 10 minutes');
+  assert.match(lock.notes.join(' '), /15분으로 설정됨/);
 });

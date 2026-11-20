@@ -246,6 +246,39 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     return down ? start : undefined;
   };
 
+  /**
+   * X.length 가 문자열의 길이(글자 수)인가, 목록의 길이(개수)인가.
+   * pw.length 를 「하루에 3번」에, cart.items.length 를 「이름은 30자까지」에 잘못 견주지 않게 한다.
+   * 이 파일에 그 이름의 선언이 있으면 타입(string · 배열 · 초깃값)으로, 없으면 흔한 이름으로 본다.
+   */
+  const lenKind = new Map<string, 'str' | 'list' | 'other'>();
+  const visitDecl = (n: ts.Node) => {
+    if ((ts.isParameter(n) || ts.isVariableDeclaration(n) || ts.isPropertySignature(n) || ts.isPropertyDeclaration(n)) && ts.isIdentifier(n.name)) {
+      const type = n.type;
+      const init = ts.isParameter(n) || ts.isVariableDeclaration(n) || ts.isPropertyDeclaration(n) ? n.initializer : undefined;
+      const strType = (t: ts.TypeNode): boolean =>
+        t.kind === ts.SyntaxKind.StringKeyword || (ts.isLiteralTypeNode(t) && ts.isStringLiteral(t.literal)) ||
+        (ts.isUnionTypeNode(t) && t.types.some(strType) && t.types.every((x) => strType(x) || x.kind === ts.SyntaxKind.UndefinedKeyword || (ts.isLiteralTypeNode(x) && x.literal.kind === ts.SyntaxKind.NullKeyword)));
+      const listType = (t: ts.TypeNode): boolean => ts.isArrayTypeNode(t) || ts.isTupleTypeNode(t) || (ts.isTypeReferenceNode(t) && /^(?:Array|ReadonlyArray)$/.test(t.typeName.getText(sf)));
+      let kind: 'str' | 'list' | 'other' | undefined;
+      if (type) kind = strType(type) ? 'str' : listType(type) ? 'list' : 'other';
+      else if (init) kind = ts.isStringLiteralLike(init) || ts.isTemplateExpression(init) ? 'str' : ts.isArrayLiteralExpression(init) ? 'list' : undefined;
+      if (kind !== undefined && !lenKind.has(n.name.text)) lenKind.set(n.name.text, kind);
+    }
+    ts.forEachChild(n, visitDecl);
+  };
+  visitDecl(sf);
+  const STRINGY = /^(?:name|\w+Name|pw|pwd|password|passwd|passcode|otp|pin|text|\w+Text|title|username|nickname|email|phone|slug|message|msg|memo|label|keyword|description|content)$/;
+  const LISTY = /^(?:items|list|rows|entries|tags|files|users|people|members|children|results|values|keys|ids|records|orders|products|messages|comments|attempts|requests|lines)$/;
+  const lengthKind = (left: string): 'str' | 'list' | undefined => {
+    const m = left.match(/(?:^|\.)([A-Za-z_$][\w$]*)\.length$/);
+    if (!m) return undefined;
+    const k = lenKind.get(m[1]);
+    if (k === 'str' || k === 'list') return k;
+    if (k === 'other') return undefined;
+    return STRINGY.test(m[1]) ? 'str' : LISTY.test(m[1]) ? 'list' : undefined;
+  };
+
   type Ctx = { at: ts.Node; fnBody: ts.Node | null; reject: boolean; loopVar?: string; loopStart?: number; inLoopHead?: boolean };
   const partOf = (e: ts.BinaryExpression, negated: boolean, ctx: Ctx): NumPart | null => {
     let op = CMP[e.operatorToken.kind];
@@ -288,6 +321,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       actionAfter: actionFollows(ctx.at),
       thenKind: ctx.reject ? 'reject' : null,
       loopStart: loop ? ctx.loopStart : undefined,
+      ...(lengthKind(left) === 'str' ? { strLen: true } : lengthKind(left) === 'list' ? { listLen: true } : {}),
     };
   };
   /** 조건식을 &&, ||, ! 로 나눠 숫자 비교를 모은다. */
@@ -492,7 +526,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     let value = unwrap(value0);
     if (ts.isBinaryExpression(value) && (value.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || value.operatorToken.kind === ts.SyntaxKind.BarBarToken)) value = value.right;
     const secs = durationSeconds(value);
-    if (secs !== undefined) return { ...simplePartBase(n, name, '==='), lit: secs, source: 'config' };
+    if (secs !== undefined) return { ...simplePartBase(n, name, '==='), lit: secs, source: 'config', secs: true };
     return evalNum(value) === undefined ? null : simplePart(n, name, '===', value, 'config');
   };
   const propertyPart = (n: ts.PropertyAssignment): NumPart | null => {

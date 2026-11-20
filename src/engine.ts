@@ -97,6 +97,12 @@ const leftHits = (req: Requirement, left: string) => {
   return new Set(tokenize(left).filter((t) => set.has(t))).size;
 };
 
+/** 「하루에 3번」 · 「20개까지」는 횟수 · 개수다: 문자열의 길이(pw.length)와 견주지 않는다. 「30자까지」는 글자 수다: 목록의 길이(items.length)와 견주지 않는다. */
+const COUNTED: (UnitKind | null)[] = ['cnt', 'qty'];
+const fitsUnit = (c: Constraint, p: NumPart) => !(p.strLen && COUNTED.includes(c.unit)) && !(p.listLen && c.unit === 'char');
+/** 요구사항의 숫자 조건 어느 것과도 단위가 맞지 않는 길이 비교(글자 수 ↔ 횟수 · 개수)는 숫자 근거로 치지 않는다 */
+const numberPart = (req: Requirement, p: NumPart) => (!p.strLen && !p.listLen) || !req.constraints.length || req.constraints.some((c) => fitsUnit(c, p));
+
 function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[]; num: boolean } {
   const why: string[] = [];
   let num = false;
@@ -106,7 +112,7 @@ function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[]; n
   const hits = req.auto ? req.concepts.filter((c) => c.some((t) => u.tokens.includes(t))).length : shared.length;
   let s = u.kind === 'function' ? Math.min(hits, 1.5) : hits;
   if (shared.length) why.push(L(`겹치는 단어: ${shared.join(', ')}`, `shared words: ${shared.join(', ')}`));
-  const parts = u.cond?.parts ?? [];
+  const parts = (u.cond?.parts ?? []).filter((p) => numberPart(req, p));
   const exact = parts.find((p) => litMatches(req, p.lit));
   const counted = req.numbers.length ? parts.find((p) => p.lit !== undefined && leftHits(req, p.left) > 0) : undefined;
   if (exact) {
@@ -159,6 +165,10 @@ type Found = { u: Unit; p: NumPart; score: number };
 const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'item', 'data', 'rate', 'ratio', 'percent'].map(stem));
 /** 무엇의 양인지는 말하지 않는 낱말 (배송비 · 반품비의 「비」). 설정값 이름에는 이것 말고 대상 낱말이 있어야 한다. */
 const MEASURE = new Set(['fee', 'price', 'cost', 'amount', 'total', 'sum', 'charge', 'tax'].map(stem));
+/** 영어 요구사항의 관계 낱말 (once per person 의 once · per) */
+const FILLER = new Set(['once', 'per', 'each', 'every', 'only', 'time', 'twice'].map(stem));
+/** 「한 번만 · 하나만 · 중복」이 들어간 요구사항의 개념 (unique exists duplicate taken) */
+const UNIQUE = stem('unique');
 /**
  * 설정값은 이름이 전부다. 이름(또는 그 값을 정한 문장)에 요구사항의 대상 낱말이 있어야 한다.
  * 요구사항이 「배송」비를 말하면 RETURN_FEE(반품비)는 같은 대상이 아니고, 「포인트」 적립률이면 TAX_RATE 는 아니다.
@@ -171,9 +181,28 @@ function configNamed(req: Requirement, f: Found): boolean {
   return req.tokens.filter((t) => !GENERIC.has(t)).some(said) || req.tokens.some((t) => tokenize(f.p.left).includes(t));
 }
 
+/**
+ * 무엇인지는 말하지 않는 이름 낱말: 시간 단위(day · minute)와 age(사람의 나이일 수도, maxAge 일 수도 있다).
+ * 이름에서 이것만 겹치면, 그 줄이 든 함수 · 문장이 요구사항의 대상을 말할 때만 같은 대상으로 본다.
+ * (LOCK_MINUTES = 15 와 「로그인 토큰은 15분 뒤 만료」, canRejoin 의 daysSinceLeft 와 「세션은 7일 뒤 만료」, 가입 양식의 age.min(14) 와 「무료 체험은 14일」)
+ */
+const WEAK_NAME = new Set(['day', 'minute', 'min', 'ms', 'sec', 'second', 'hour', 'week', 'month', 'age'].map(stem));
+
 function sameTarget(req: Requirement, f: Found): boolean {
   const hits = leftHits(req, f.p.left);
-  if (!hits) return false;
+  const said = new Set(req.tokens);
+  const subjectAround = () => {
+    const subject = req.tokens.filter((t) => !GENERIC.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t));
+    const around = new Set([...f.u.tokens, ...tokenize(f.u.fn ?? '')]);
+    return subject.some((t) => around.has(t));
+  };
+  if (!hits) {
+    // maxAge · max 처럼 이름 자체가 일반적인 설정값은, 그 값을 정한 문장이 대상을 말하면 같은 대상이다
+    // (「Sessions expire after 7 days」 ↔ session({ cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } }))
+    const toks = tokenize(f.p.left);
+    return f.p.source === 'config' && toks.length > 0 && toks.every((t) => GENERIC.has(t) || WEAK_NAME.has(t)) && subjectAround();
+  }
+  if (!tokenize(f.p.left).some((t) => said.has(t) && !WEAK_NAME.has(t)) && !subjectAround()) return false;
   if (f.p.source === 'config' && !configNamed(req, f)) return false;
   const specific = req.tokens.filter((t) => !GENERIC.has(t));
   const left = new Set(tokenize(f.p.left));
@@ -219,7 +248,7 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
     if (f.p.source !== 'config') return f;
     const name = f.p.left.split('.').pop()!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const uses = new RegExp(`(^|[^\\w$])${name}($|[^\\w$])`);
-    return all.filter((g) => (g.p.source === 'compare' || g.p.source === 'loop') && sameValue(c, g) && uses.test(g.p.expr)).sort((a, b) => rank(b) - rank(a))[0] ?? f;
+    return all.filter((g) => (g.p.source === 'compare' || g.p.source === 'loop') && fitsUnit(c, g.p) && sameValue(c, g) && uses.test(g.p.expr)).sort((a, b) => rank(b) - rank(a))[0] ?? f;
   };
   const take = (c: Constraint, found: Found) => {
     const f = decidingLine(c, found);
@@ -229,14 +258,14 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
   };
   // 1) 요구사항이 말하는 대상의 비교 가운데 값이 같은 것
   for (const c of req.constraints) {
-    const exact = all.filter((f) => sameValue(c, f) && (sameTarget(req, f) || timeDiffTarget(req, c, f))).sort((a, b) => rank(b) - rank(a));
+    const exact = all.filter((f) => fitsUnit(c, f.p) && sameValue(c, f) && (sameTarget(req, f) || timeDiffTarget(req, c, f))).sort((a, b) => rank(b) - rank(a));
     if (exact[0]) take(c, exact[0]);
   }
   // 2) 같은 대상인데 값이 다른 비교. 값을 아는 비교를 먼저 본다.
   for (const c of req.constraints) {
     if (out.has(c)) continue;
     const others = all
-      .filter((f) => !used.has(f.p) && (sameTarget(req, f) || timeDiffTarget(req, c, f)) && (f.p.op !== '!==' || c.rel === 'eq') && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
+      .filter((f) => !used.has(f.p) && fitsUnit(c, f.p) && (sameTarget(req, f) || timeDiffTarget(req, c, f)) && (f.p.op !== '!==' || c.rel === 'eq') && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
       // length > 0 처럼 비었는지 보는 조건은 이 숫자와 상관없다 (0.7 같은 비율은 빼지 않는다)
       .filter((f) => f.p.lit === undefined || f.p.source === 'loop' || c.unit === 'pct' || !(Math.abs(f.p.lit) <= 1 && c.value >= 3))
       .filter((f) => f.p.lit === undefined || sameThing(c, f.p) || timeDiffTarget(req, c, f))
@@ -249,7 +278,12 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
     // 설정값은 이름이 전부다: 이름에 요구사항의 대상이 없으면(TAX_RATE ↔ 포인트 적립률) 값이 같아도 쓰지 않는다
     // (이름이 limit 처럼 일반적이면 그 값을 정한 문장을 본다: const { limit = 20 } = query ↔ 조회)
     const named = (f: Found) => f.p.source !== 'config' || configNamed(req, f);
-    const loose = all.filter((f) => sameValue(c, f) && f.score >= 3 && named(f)).sort((a, b) => rank(b) - rank(a));
+    // 이름으로 이어지지 않은 줄이므로 값이 정확히 같아야 한다 (「최대 99개」와 다른 파일의 items.length > 100 은 하나 차이라도 다른 규칙이다)
+    const exactly = (f: Found) => {
+      const v = partValue(f.p);
+      return v !== undefined && c.scales.some((k) => Math.abs(v - c.value * k) < 1e-9);
+    };
+    const loose = all.filter((f) => fitsUnit(c, f.p) && sameValue(c, f) && exactly(f) && f.score >= 3 && named(f)).sort((a, b) => rank(b) - rank(a));
     if (loose[0]) take(c, loose[0]);
     else out.set(c, { b: missingBoundary(c), u: null });
   }
@@ -302,7 +336,19 @@ function findEvidence(req: Requirement, units: Unit[]): Evidence {
   const s = unit === best?.u ? best : { ...scoreUnit(req, unit), u: unit };
   // 확인하는 조건이 있어야 하는 요구사항인데 근거가 함수 전체뿐이면(이름만 겹침) 구현을 찾았다고 하지 않는다
   const onlyName = req.needsCheck && !judged.length && unit.kind === 'function';
-  const status = !onlyName && (judged.some((j) => j.u) || s.score >= 2) ? '발견' : '일부 발견';
+  // 키워드 없이 이은 함수 하나가 요구사항의 개념 절반도 담지 못하면(「이메일을 바꾸면 … 인증 메일을 보내야」 ↔ changeEmail 은 보내지 않는다) 구현을 찾았다고 하지 않는다
+  // 조건 줄은 그 줄이 든 함수의 이름까지 본다 (postComment 안의 if (user.suspended) throw 는 「정지된 사용자는 댓글을 못 쓴다」를 모두 말한다)
+  const around = new Set([...unit.tokens, ...tokenize(unit.fn ?? '')]);
+  // once · per · number 처럼 무엇인지 말하지 않는 낱말은 개념 수에 넣지 않는다
+  const ideas = req.concepts.filter((g) => !g.every((t) => GENERIC.has(t) || FILLER.has(t)));
+  const covered = ideas.filter((g) => g.some((t) => around.has(t))).length;
+  // 막지 않는 조건 줄도 같다. throw 로 막는 조건(if (!PHONE.test(phone)) throw)은 그 자체가 확인하는 코드라 그대로 둔다.
+  const thin = req.auto && !judged.length && (unit.kind === 'function' || (unit.kind === 'condition' && !unit.guard)) && ideas.length >= 3 && covered * 2 < ideas.length;
+  // 「한 번만 · 하나만」(중복 막기)인데 근거 줄이 다른 개수를 비교하면 중복을 보는 조건이 아니다
+  // (「상품 리뷰는 한 사람당 하나만」 ↔ 다른 파일의 if (items.length > 100) return 400)
+  const notDuplicateCheck =
+    !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE)) && unit.kind === 'condition' && (unit.cond?.parts ?? []).some((p) => p.lit !== undefined && Math.abs(p.lit) > 1);
+  const status = !onlyName && !thin && !notDuplicateCheck && (judged.some((j) => j.u) || s.score >= 2) ? '발견' : '일부 발견';
   const ev: Evidence = { unit, score: s.score, status, why: s.why };
   if (judged.length) {
     ev.boundaries = judged.map((j) => j.b);
@@ -323,9 +369,13 @@ const NEGATIVE_TEST = /(reject|den(y|ies|ied)|block|refus|forbid|fail|error|thro
 const plainNumbers = (s: string) => s.replace(/(\d),(?=\d{3}\b)/g, '$1');
 
 const WORD_NUMBER: Record<string, string> = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' };
-/** 검사 이름에 나온 숫자 (one ~ ten 포함) */
+const ORDINAL: Record<string, string> = { first: '1', second: '2', third: '3', fourth: '4', fifth: '5', sixth: '6', seventh: '7', eighth: '8', ninth: '9', tenth: '10' };
+/** 검사 이름에 나온 숫자 (one ~ ten, 「a sixth attempt」 같은 서수 포함. 「one second」의 second 는 시간이라 a · the 뒤만 본다) */
 const namedNumbers = (name: string) =>
-  [...plainNumbers(name).replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (w) => WORD_NUMBER[w.toLowerCase()]).matchAll(/\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+  [...plainNumbers(name)
+    .replace(/\b(a|an|the)\s+(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/gi, (_w, a: string, o: string) => `${a} ${ORDINAL[o.toLowerCase()]}`)
+    .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (w) => WORD_NUMBER[w.toLowerCase()])
+    .matchAll(/\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
 /** 한도 · 단위를 말할 뿐 무엇의 한도인지는 말해 주지 않는 낱말 */
 const BROAD = new Set([...GENERIC, ...['maximum', 'cap', 'minimum', 'counter', 'time', 'day', 'minute', 'hour', 'second', 'sec', 'ms', 'duration', 'window', 'period'].map(stem)]);
 
@@ -336,7 +386,9 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
     if (!settled) return false;
     const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
     const nums = namedNumbers(t.name);
-    return req.constraints.some((c) => nums.some((n) => matchScale(c, n) !== null)) && req.concepts.some((g) => g.some((x) => !BROAD.has(x) && names.has(x)));
+    // 거부를 말하는 검사는 처음 막히는 번째를 적는다: 「최대 5번」 ↔ 「a sixth attempt is rejected」
+    const firstRejected = (c: Constraint, n: number) => NEGATIVE_TEST.test(t.name) && ((c.rel === 'lte' && n === c.value + 1) || (c.rel === 'lt' && n === c.value));
+    return req.constraints.some((c) => nums.some((n) => matchScale(c, n) !== null || firstRejected(c, n))) && req.concepts.some((g) => g.some((x) => !BROAD.has(x) && names.has(x)));
   };
   // 숫자가 없는 규칙(형식 · 중복 · 동의): 요구사항 · 판단하는 조건 줄 · 검사 이름이 같은 대상을 말하면 잇는다.
   // 검사 이름이 요구사항 개념의 절반 이상(둘 이상)을 담고, 그 가운데 하나가 조건 줄에도 나와야 한다. 막는 요구사항이면 검사 이름도 거부를 말해야 한다.

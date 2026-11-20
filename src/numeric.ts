@@ -212,7 +212,25 @@ export function parseConstraints(text: string): Constraint[] {
   for (const m of text.matchAll(NATIVE_RE)) if (!onlyOnce(text, m)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
   for (const m of text.matchAll(WORD_RE)) add(makeConstraint(text, WORDS[m[1].toLowerCase()], m.index!, m.index! + m[0].length));
   wordBoundaries(text).forEach(add);
-  return out;
+  return onceEvery(text, out);
+}
+
+const GAP_UNIT = new Set<UnitKind>(['sec', 'min', 'hour', 'day', 'week', 'month']);
+/**
+ * 「닉네임은 30일에 한 번만 바꿀 수 있다」 · 「once every 30 days」는 「1번 · 30일 창」이 아니라
+ * 「지난번부터 30일이 지나야 다시 할 수 있다」는 뜻이다. 횟수 1 을 빼고 시간을 그만큼 지나야 하는 경계로 바꾼다.
+ */
+function onceEvery(text: string, out: Constraint[]): Constraint[] {
+  const ko = /(\d+)\s*(?:일|시간|분|주|개월|달)\s*(?:에|마다)\s*한\s*번/.exec(text);
+  const en = /\bonce\s+(?:every|per|in|each)\s+(\d+)\s+(?:days?|hours?|minutes?|weeks?|months?)\b/i.exec(text);
+  const m = ko ?? en;
+  if (!m) return out;
+  const value = Number(m[1]);
+  const i = out.findIndex((c) => c.value === value && !!c.unit && GAP_UNIT.has(c.unit));
+  if (i < 0) return out;
+  const old = out[i];
+  const gap: Constraint = { ...finish(text, value, old.unit, old.unitText, 'gte', old.raw), validSide: 'upper' };
+  return out.flatMap((c, j) => (j === i ? [gap] : c.unit === 'cnt' && c.value === 1 ? [] : [c]));
 }
 
 /** 문장에 나온 숫자들 (쉼표 · 「만」을 풀어서). 단위가 없어도 낸다. */
@@ -230,7 +248,8 @@ const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 export function matchScale(c: Constraint, lit: number): number | null {
   for (const k of c.scales) {
     const v = c.value * k;
-    if (near(lit, v) || (Number.isInteger(v) && Math.abs(lit - v) <= 1)) return k;
+    // 하나 차이 허용은 정수 경계(>= 6 과 「5 초과」)에만 쓴다. 0.01 과 「1%」의 1 처럼 소수를 1 과 견주면 0.02 도 맞다고 하게 된다
+    if (near(lit, v) || (Number.isInteger(v) && Number.isInteger(lit) && Math.abs(lit - v) <= 1)) return k;
   }
   return null;
 }
@@ -245,6 +264,20 @@ function closestScale(c: Constraint, lit: number): number {
     if (g < gap) [gap, best] = [g, k];
   }
   return best;
+}
+
+/** 시간 단위 하나가 몇 초인가 */
+const SEC_PER: Partial<Record<UnitKind, number>> = { sec: 1, min: 60, hour: 3600, day: 86400, week: 604800, month: 2592000 };
+/** 「로 · 으로」: 받침이 있으면(ㄹ 빼고) 「으로」. 숫자는 읽는 소리로 본다 (15분으로, 1일로, 3분으로) */
+function ro(word: string): string {
+  const ch = word.trim().slice(-1);
+  const code = ch.charCodeAt(0);
+  if (code >= 0xac00 && code <= 0xd7a3) {
+    const jong = (code - 0xac00) % 28;
+    return jong === 0 || jong === 8 ? '로' : '으로';
+  }
+  if (/[0-9]/.test(ch)) return '036'.includes(ch) ? '으로' : '로';
+  return '로';
 }
 
 const round = (n: number) => String(Math.round(n * 1e6) / 1e6);
@@ -314,7 +347,9 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   // 같은 변수를 1씩 올리는 코드가 있으면 「몇 번째에 동작하는가」로 본다
   if (p.incBefore !== null && p.source !== 'schema' && p.source !== 'cap' && isCountable(c) && c.rel !== 'eq' && c.rel !== 'value') {
     if (isCapacity(c)) {
-      const total = !p.incBefore || p.inCatch || !p.actionAfter ? stopAt : stopAt - 1;
+      // 먼저 세고(count++) 넘으면 throw 로 거부하면, 거부된 그 번은 허용된 횟수가 아니다 (뒤에 다른 호출이 없어도)
+      const rejectsThisOne = p.thenKind === 'reject' && !p.inCatch;
+      const total = !p.incBefore || p.inCatch || (!p.actionAfter && !rejectsThisOne) ? stopAt : stopAt - 1;
       return limitResult(total);
     }
     if (p.op !== '!==') {
@@ -329,11 +364,16 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   }
 
   const k = matchScale(c, lit);
-  const shown = k ?? closestScale(c, lit);
+  // '1h' · '7d' 처럼 글로 쓴 기간은 초로 읽었으므로, 값이 다를 때도 초 단위로 환산해 보여 준다 (3600 을 「2.5일」로 보이지 않게)
+  const secScale = p.secs && c.unit ? SEC_PER[c.unit] : undefined;
+  // 「1%」인데 코드가 0.5 처럼 1 보다 작은 비율이면 소수로 쓴 비율(50%)이다
+  const pctScale = c.unit === 'pct' && c.value >= 1 && Math.abs(lit) < 1 && c.scales.includes(0.01) ? 0.01 : undefined;
+  const shown = k ?? secScale ?? pctScale ?? closestScale(c, lit);
   const n = round(lit / shown);
   // 설정값(windowMs: 60000, expiresIn: '1h', setTimeout(fn, 5000)): 값이 같은지만 본다
   if (p.source === 'config') {
-    const set = T(`${withUnit(n, c)}로 설정됨`, `set to ${withUnit(n, c)}`);
+    const what = withUnit(n, c);
+    const set = T(`${what}${ro(what)} 설정됨`, `set to ${what}`);
     return { ...b, ok: k !== null, say: set };
   }
   const upperStyle = c.rel === 'gte' || c.rel === 'gt' || c.rel === 'after';

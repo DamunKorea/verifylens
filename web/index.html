@@ -101,6 +101,14 @@ textarea:focus, input:focus, select:focus, button:focus-visible { outline: 2px s
 .next b { display: block; margin-bottom: 4px; }
 footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; padding: 18px 0 28px; }
 footer ul { margin: 6px 0 0; padding-left: 18px; }
+.tests-note { margin: 8px 0 0; padding: 7px 10px; border-radius: 8px; background: var(--unk-soft); color: var(--text); }
+/* 좁은 화면에서는 결과가 입력 아래에 있어 처음엔 안 보인다: 아래에 결과 요약 막대를 띄운다 */
+.jumpbar { display: none; }
+@media (max-width: 900px) {
+  .jumpbar:not([hidden]) { display: flex; position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 10; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 10px; background: var(--text); color: var(--bg); font-weight: 600; font-size: 14px; text-decoration: none; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+  .jumpbar .go { white-space: nowrap; }
+  body.has-jumpbar { padding-bottom: 72px; }
+}
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 </head>
@@ -141,9 +149,10 @@ footer ul { margin: 6px 0 0; padding-left: 18px; }
         <p class="hint" data-t="testHint"></p>
         <div class="tests" id="tests"></div>
         <button type="button" class="add" id="add-test" data-t="addTest"></button>
+        <p class="hint tests-note" id="tests-note" role="status" hidden></p>
       </div>
     </section>
-    <section class="panel" aria-labelledby="out-h">
+    <section class="panel" id="out" aria-labelledby="out-h">
       <h2 id="out-h" data-t="result"></h2>
       <div class="result" aria-live="polite">
         <p class="status" id="status"></p>
@@ -157,6 +166,7 @@ footer ul { margin: 6px 0 0; padding-left: 18px; }
       </div>
     </section>
   </div>
+  <a class="jumpbar" id="jumpbar" href="#out" hidden><span class="what" id="jumpwhat"></span><span class="go" data-t="jump"></span></a>
 </main>
 <footer>
   <div class="wrap">

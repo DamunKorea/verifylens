@@ -23,6 +23,12 @@ export type NumPart = {
   thenKind: 'reject' | null;
   /** for 문의 시작값 */
   loopStart?: number;
+  /** 글자 수: name.length 처럼 문자열의 길이다. 「몇 번 · 몇 개」를 세는 값이 아니다 */
+  strLen?: boolean;
+  /** 개수: cart.items.length 처럼 목록의 길이다. 「30자까지」 같은 글자 수가 아니다 */
+  listLen?: boolean;
+  /** '1h' · '7d' 처럼 글로 쓴 기간을 초로 읽은 값 */
+  secs?: boolean;
 };
 
 export type CondInfo = {
