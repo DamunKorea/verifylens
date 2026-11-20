@@ -148,6 +148,56 @@ jobs:
 
 코드는 러너 안에서만 분석하고 밖으로 보내지 않습니다. 같은 검사를 PC 에서는 `node src/cli.ts ci --repo . --base origin/main --requirements .verifylens/requirements.md` 로 돌립니다.
 
+## AI 에이전트가 「끝났다」고 하기 전에 검사하기 (훅)
+
+`ci --hook` 은 에이전트가 방금 고친 코드를 커밋하기 전에 검사합니다. 작업 폴더(커밋한 것, 커밋 전 수정, 새 파일)를 `origin/main`과 비교하고, 없으면 `main` · `origin/master` · `master` 중 있는 것과 비교합니다. `--base` 로 정할 수도 있습니다. 커밋 전 코드 변경이 있을 때만 돌기 때문에, 에이전트가 질문에 답만 한 차례는 검사하지 않습니다.
+
+- 요구사항이 **「다름」** 이나 **「실패」** 면 에이전트에게 한 번 고치라고 돌려보냅니다. 요구사항, 이유, 근거 줄을 알려 주고, 요구사항 파일을 고치지 말고 사용자에게 물으라고 합니다.
+- 한 번 고친 뒤에도 그대로면 에이전트를 다시 막지 않고, 사용자에게 알림만 남깁니다.
+- **「미확인」** 은 `--fail-on different,failed,unverified` 를 넣을 때만 막습니다.
+- 요구사항 파일은 프로젝트의 `.verifylens/requirements.md` 입니다(`--requirements` 로 바꿈). 이 파일이 없는 프로젝트는 건너뛰므로, 훅을 사용자 설정에 넣어도 됩니다.
+- `--junit report.xml` 로 테스트 결과를 함께 봅니다. 코드보다 오래된 결과는 쓰지 않습니다.
+
+아래 `/path/to/verifylens` 는 VerifyLens 를 받아 설치한 폴더입니다([빠르게 해 보기](#빠르게-해-보기) 참고). Windows 에서도 `/` 를 쓰고, 경로에 빈칸이 있으면 따옴표로 감쌉니다.
+
+**Claude Code** — 프로젝트의 `.claude/settings.json`. Claude 는 이 말을 「멈추지 말고 계속할 이유」로 받습니다(`"decision": "block"`).
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook claude", "timeout": 120 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Cursor** — 프로젝트의 `.cursor/hooks.json`. Cursor 는 이 말을 에이전트에게 다음 메시지로 보냅니다(`followup_message`).
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      { "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook cursor" }
+    ]
+  }
+}
+```
+
+**git pre-commit** — `.git/hooks/pre-commit` (실행 권한을 줍니다). 「다름」 · 「실패」가 있으면 커밋을 멈춥니다. `--worktree` 는 스테이징하지 않은 변경도 봅니다. `git commit --no-verify` 로 건너뜁니다.
+
+```sh
+#!/bin/sh
+node --no-warnings /path/to/verifylens/src/cli.ts ci --worktree
+```
+
+Windows 에서 각 도구가 주는 훅 입력을 명령에 그대로 넣어 시험했습니다(`vscode/test/ci.test.ts`). 실제 Claude Code · Cursor 세션 안에서는 아직 돌려 보지 않았습니다.
+
 ## 리포트 읽는 법
 
 | 표시 | 뜻 |
@@ -172,7 +222,7 @@ jobs:
 ## 구성
 
 ```
-src/cli.ts          명령줄 (demo · extract · report · check)
+src/cli.ts          명령줄 (demo · extract · report · ci · check)
 src/analyze.ts      TypeScript AST 분석: 조건, 경계값, 동적 호출, 흐름 그래프
 src/engine.ts       요구사항 ↔ 근거 연결, 검사 연결, 결과 비교, 상태 판정
 src/requirements.ts 요구사항 읽기, PR 설명에서 초안 추출

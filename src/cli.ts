@@ -45,6 +45,10 @@ const HELP_EN = `VerifyLens — your code never leaves this machine (no network 
       For CI (GitHub Actions). Prints one line per requirement, marks the deciding lines on the pull request
       (when GITHUB_ACTIONS is set), writes the summary to GITHUB_STEP_SUMMARY, and exits with 1 when a
       requirement is Different or Failed (--fail-on also accepts unverified).
+      --worktree checks the working folder instead of a commit: committed, uncommitted and new files
+      compared to --base (origin/main, main, origin/master or master when not given). For git hooks.
+      --hook claude|cursor runs as an AI agent's stop hook: reads the hook's JSON on stdin, checks only
+      when code has uncommitted changes, and asks the agent once to fix a Different or Failed requirement.
 
   node src/cli.ts check   (engine check: prints the sample result as text)
 `;
@@ -65,6 +69,10 @@ const HELP = `VerifyLens — 코드는 이 PC 밖으로 나가지 않습니다 (
         [--junit report.xml] [--fail-on different,failed] [--lang en|ko]
       CI(GitHub Actions)용. 요구사항마다 한 줄씩 출력하고, GITHUB_ACTIONS 가 있으면 PR 의 근거 줄에 표시를 남기며,
       요약을 GITHUB_STEP_SUMMARY 에 쓴다. 「다름」 · 「실패」가 있으면 종료 코드 1 (--fail-on 에 unverified 도 넣을 수 있다).
+      --worktree 는 커밋 대신 작업 폴더를 본다: --base(없으면 origin/main · main · origin/master · master)와 비교해
+      커밋한 것 · 커밋 전 수정 · 새 파일. git 훅용.
+      --hook claude|cursor 는 AI 에이전트가 멈출 때 도는 훅용: 표준 입력의 훅 JSON 을 읽고, 커밋 전 코드 변경이 있을 때만
+      검사해 「다름」 · 「실패」가 있으면 에이전트에게 한 번 고치라고 돌려보낸다.
 
   node src/cli.ts check   (엔진 점검: 샘플 결과를 표로 출력)
 `;
@@ -81,7 +89,16 @@ export async function main(argv: string[]) {
   }
   if (cmd === 'ci') {
     const { runCi } = await import('./ci.ts');
-    process.exitCode = runCi(opts);
+    // 훅은 표준 입력으로 JSON 을 준다. 사람이 직접 돌릴 때(터미널)는 읽지 않는다.
+    let input: string | undefined;
+    if (opts.hook && !process.stdin.isTTY) {
+      try {
+        input = readFileSync(0, 'utf8');
+      } catch {
+        input = undefined;
+      }
+    }
+    process.exitCode = runCi(opts, input);
     return;
   }
   if (cmd === 'check' || cmd === 'demo' || cmd === 'report') {

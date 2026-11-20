@@ -139,6 +139,56 @@ jobs:
 
 The code is analyzed on the runner and is not sent anywhere. The same check runs locally with `node src/cli.ts ci --repo . --base origin/main --requirements .verifylens/requirements.md`.
 
+## Check before an AI agent says it is done (hooks)
+
+`ci --hook` checks the code the agent just changed, before anything is committed. It compares the working folder (committed, uncommitted and new files) with `origin/main`, or `main`, `origin/master` or `master` when that is missing; set `--base` to choose. It runs only when code files have uncommitted changes, so a turn where the agent only answered a question is not checked.
+
+- When a requirement is **Different** or **Failed**, the agent is asked once to fix it. The message names the requirement, the reason and the line, and tells the agent to ask you rather than edit the requirements file.
+- If the code is still wrong after that one try, the agent is not stopped again. You get a notice instead.
+- **Not verified** does not stop the agent unless you add `--fail-on different,failed,unverified`.
+- The requirements file is `.verifylens/requirements.md` in the project (`--requirements` to change). A project without one is skipped, so the hook can also go in your user settings.
+- `--junit report.xml` adds test results. A report older than the code is ignored.
+
+Below, `/path/to/verifylens` is the folder where you cloned and installed VerifyLens (see [Quick start](#quick-start)). Use forward slashes on Windows too, and quote the path if it has spaces.
+
+**Claude Code** — `.claude/settings.json` in your project. Claude receives the message as the reason to keep working (`"decision": "block"`).
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook claude --lang en", "timeout": 120 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Cursor** — `.cursor/hooks.json` in your project. Cursor sends the message to the agent as the next message (`followup_message`).
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      { "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook cursor --lang en" }
+    ]
+  }
+}
+```
+
+**Git pre-commit** — `.git/hooks/pre-commit`, made executable. The commit stops when a requirement is Different or Failed. `--worktree` also looks at changes you have not staged. `git commit --no-verify` skips it.
+
+```sh
+#!/bin/sh
+node --no-warnings /path/to/verifylens/src/cli.ts ci --worktree --lang en
+```
+
+These were tested by piping each tool's hook input into the command on Windows (`vscode/test/ci.test.ts`). They have not yet been tried inside a real Claude Code or Cursor session.
+
 ## Reading the report
 
 | Mark | Meaning |
@@ -161,7 +211,7 @@ The code is analyzed on the runner and is not sent anywhere. The same check runs
 ## Project layout
 
 ```
-src/cli.ts          command line (demo · extract · report · check)
+src/cli.ts          command line (demo · extract · report · ci · check)
 src/analyze.ts      TypeScript AST analysis: conditions, boundaries, dynamic calls, flow graph
 src/engine.ts       requirement ↔ evidence linking, test linking, result comparison, status
 src/requirements.ts requirement parsing, draft extraction from PR text
