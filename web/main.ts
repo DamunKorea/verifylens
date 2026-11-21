@@ -1,7 +1,7 @@
 import { palette, light, dark, tones, marks } from '../src/verdictStyle.ts';
 import { evidenceChain, attemptComparison, attemptChart, evidenceCSS } from '../src/evidenceView.ts';
 // 설치 없이 해 보는 페이지의 화면. 입력이 바뀌면 같은 엔진으로 다시 판정한다.
-import { runCheck, type TryResult, type TryTest } from './check.ts';
+import { codeFileName, runCheck, type TryResult, type TryRow, type TryTest } from './check.ts';
 import { EXAMPLES, type Example } from './examples.ts';
 
 type Lang = 'en' | 'ko';
@@ -141,6 +141,7 @@ function renderExamples() {
 }
 
 function load(ex: Example) {
+  clearTimeout(timer);
   current = ex;
   reqsEl.value = ex.requirements[lang];
   fileEl.value = ex.fileName;
@@ -218,7 +219,7 @@ function edited() {
     renderExamples();
   }
   clearTimeout(timer);
-  timer = window.setTimeout(run, 300);
+  timer = window.setTimeout(() => run(true), 300);
 }
 
 function diagram(markup: string): HTMLElement {
@@ -229,15 +230,125 @@ function diagram(markup: string): HTMLElement {
 
 const priority = (s: TryResult['rows'][number]['overall']) => s === '다름' || s === '실패' ? 0 : s === '미확인' ? 1 : 2;
 
-function run() {
+let lastRows: TryRow[] = [];
+let renderedCode = '';
+let renderedFile = '';
+
+function editEvidence(line: number, expression: string) {
+  const lines = codeEl.value.split('\n');
+  const source = lines[line - 1];
+  if (source === undefined) return;
+  const offset = lines.slice(0, line - 1).reduce((sum, text) => sum + text.length + 1, 0);
+  const column = expression ? source.indexOf(expression) : -1;
+  // Select the comparison when it ends in a simple operand. Otherwise select the evidence.
+  const comparison = expression.match(/(?:===?|!==?|>=?|<=?)\s*(?:-?[\d.]+|[\w.$]+)$/);
+  const start = column < 0 ? source.length - source.trimStart().length : column + (comparison?.index ?? 0);
+  const end = column < 0 ? source.length : column + expression.length;
+  codeEl.focus({ preventScroll: true });
+  codeEl.setSelectionRange(offset + start, offset + end);
+  codeEl.scrollTop = Math.max(0, (line - 0.5) * parseFloat(getComputedStyle(codeEl).lineHeight) - codeEl.clientHeight / 2);
+  codeEl.scrollIntoView({ block: 'center' });
+}
+
+function linkEvidence(card: HTMLElement, r: TryRow) {
+  const code = card.querySelector('.vl-code');
+  const line = r.line;
+  if (!code || !line) return;
+  const location = `${renderedFile}:${line}`;
+  const text = code.textContent ?? '';
+  if (text !== location && !text.startsWith(location + ' ')) return;
+  const expression = text.slice(location.length).trimStart();
+  const button = el('button', 'evidence-location', location);
+  button.type = 'button';
+  button.setAttribute('aria-label', lang === 'ko' ? `${location} 편집` : `Edit ${location}`);
+  button.addEventListener('click', () => {
+    if (codeEl.value !== renderedCode || codeFileName(fileEl.value) !== renderedFile) {
+      clearTimeout(timer);
+      run(true);
+      cardsEl.querySelector<HTMLButtonElement>(`[data-req="${CSS.escape(r.id)}"] .evidence-location`)?.click();
+      return;
+    }
+    editEvidence(line, expression);
+  });
+  code.replaceChildren(button, document.createTextNode(expression ? ' ' : ''), el('span', 'evidence-expression', expression));
+}
+
+// Start the short highlight when the edited evidence is actually on screen.
+function revealChange(node: HTMLElement) {
+  node.classList.add('just-changed');
+  window.setTimeout(() => {
+    node.classList.remove('just-changed');
+    node.querySelector('.previous-attempt')?.remove();
+  }, 2400);
+}
+const changesInView = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+  for (const entry of entries) if (entry.isIntersecting) {
+    changesInView!.unobserve(entry.target);
+    revealChange(entry.target as HTMLElement);
+  }
+}) : null;
+
+function highlight(node: HTMLElement | null) {
+  if (!node) return;
+  if (changesInView) changesInView.observe(node);
+  else revealChange(node);
+}
+
+function highlightChanges(card: HTMLElement, row: TryRow, prior: TryRow) {
+  for (const step of row.chain) {
+    const old = prior.chain.find(s => s.kind === step.kind);
+    if (old?.text === step.text && old.tone === step.tone) continue;
+    const cell = card.querySelector<HTMLElement>(`[data-step="${step.kind}"]`);
+    if (!cell) continue;
+    if (step.kind === 'code') {
+      const expr = cell.querySelector('.evidence-expression');
+      const current = expr?.textContent ?? '';
+      const oldExpr = old?.text.slice((cell.querySelector('.evidence-location')?.textContent?.length ?? 0) + 1);
+      const token = [...current.matchAll(/[<>=!]+/g)].find(m => {
+        const left = current.slice(0, m.index), right = current.slice(m.index + m[0].length);
+        if (!oldExpr?.startsWith(left) || !oldExpr.endsWith(right)) return false;
+        const before = oldExpr.slice(left.length, oldExpr.length - right.length);
+        return before !== m[0] && /^[<>=!]+$/.test(before);
+      });
+      if (token && expr) {
+        const mark = el('span', 'changed-token', token[0]);
+        expr.replaceChildren(document.createTextNode(current.slice(0, token.index)), mark,
+          document.createTextNode(current.slice(token.index + token[0].length)));
+        highlight(mark);
+        continue;
+      }
+    }
+    if (step.kind === 'act' && prior.dots && row.dots && prior.dots.at !== row.dots.at) {
+      const change = el('small', 'previous-attempt', `${prior.dots.at} → ${row.dots.at}`);
+      cell.lastElementChild?.prepend(change);
+    }
+    highlight(cell);
+  }
+  if (row.dots && prior.dots) {
+    if (row.dots.at !== prior.dots.at) highlight(card.querySelector('.vl-row:last-child .vl-active'));
+    if (row.dots.required !== prior.dots.required) highlight(card.querySelector('.vl-row:first-child .vl-active'));
+  }
+}
+
+function run(compare = false) {
   let res: TryResult;
   try {
     res = runCheck({ requirements: reqsEl.value, fileName: fileEl.value, code: codeEl.value, tests, lang });
   } catch (e) {
+    lastRows = [];
+    cardsEl.replaceChildren();
+    codewrapEl.hidden = true;
+    headlineEl.textContent = '';
+    showJump('');
     statusEl.textContent = T.error[lang] + (e instanceof Error ? e.message : String(e));
     return;
   }
   statusEl.textContent = '';
+  changesInView?.disconnect();
+  const previous = new Map((compare ? lastRows : []).map(row => [row.id, row]));
+  lastRows = res.rows;
+  renderedCode = codeEl.value;
+  renderedFile = codeFileName(fileEl.value);
   showJump(res.rows.length ? res.headline : '');
   if (!res.rows.length) {
     headlineEl.textContent = '';
@@ -248,8 +359,8 @@ function run() {
   headlineEl.textContent = res.headline;
   cardsEl.replaceChildren(
     ...[...res.rows].sort((a, b) => priority(a.overall) - priority(b.overall)).map((r) => {
-      const card = el('button', `card ${tones[r.overall]}`);
-      card.type = 'button';
+      const card = el('article', `card ${tones[r.overall]}`);
+      card.dataset.req = r.id;
       const top = el('div', 'top');
       top.append(el('span', `badge ${tones[r.overall]}`, marks[r.overall] + ' ' + r.verdict + (r.reason ? ` · ${r.reason}` : '')), el('span', 'rid', r.id), el('span', 'rtext', r.text));
       card.append(top);
@@ -259,7 +370,14 @@ function run() {
       if (r.chain.length) card.append(diagram(evidenceChain(r.chain, r.overall)));
       if (r.dots) card.append(el('p', 'summary', r.summary));
       const meta = [r.where, r.tests.length ? T.linked[lang] + r.tests.join(', ') : T.noLinked[lang]].filter(Boolean).join(' · ');
-      card.append(el('p', 'meta', meta));
+      const details = el('p', 'meta', meta);
+      if (r.line) {
+        const view = el('button', 'view-line', lang === 'ko' ? '근거 줄 보기' : 'View evidence line');
+        view.type = 'button';
+        view.addEventListener('click', () => jump(r.line!));
+        details.append(' · ', view);
+      }
+      card.append(details);
       // 몇 번째에 동작하는지 점 그림. 그릴 수 없으면 글자 줄
       if (r.dots) card.append(diagram(attemptChart(r.dots.max, r.dots.required, [{ label: lang === 'ko' ? '코드' : 'Code', at: r.dots.at }], lang)));
       else if (r.strip.length) card.append(el('div', 'strip', r.strip.join('\n')));
@@ -272,7 +390,12 @@ function run() {
         }
         card.append(todo);
       }
-      card.addEventListener('click', () => r.line && jump(r.line));
+      card.addEventListener('click', event => {
+        if (r.line && !(event.target as Element).closest('button')) jump(r.line);
+      });
+      linkEvidence(card, r);
+      const prior = previous.get(r.id);
+      if (prior?.text === r.text) highlightChanges(card, r, prior);
       return card;
     }),
   );
@@ -333,6 +456,7 @@ function setLangTo(next: Lang) {
   if (next === lang) return;
   // 예제를 그대로 보고 있었으면 같은 예제의 다른 언어 판을 연다
   const same = current;
+  clearTimeout(timer);
   lang = next;
   try {
     localStorage.setItem('verifylens.try.lang', lang);

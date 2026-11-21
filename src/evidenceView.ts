@@ -14,7 +14,7 @@ export function stepTone(step: ChainStep, overall?: Overall) {
 export function evidenceChain(steps: ChainStep[], overall: Overall): string {
   return '<span class="vl-chain">' + steps.map(step => {
     const tone = stepTone(step, overall);
-    return `<span class="vl-step vl-${tone}"><strong>${symbols[tone]}${esc(step.title)}</strong><span${step.kind === 'code' ? ' class="vl-code"' : ''}>${esc(step.text)}</span></span>`;
+    return `<span class="vl-step vl-${tone}" data-step="${step.kind}"><strong>${symbols[tone]}${esc(step.title)}</strong><span${step.kind === 'code' ? ' class="vl-code"' : ''}>${esc(step.text)}</span></span>`;
   }).join('<span class="vl-arrow" aria-hidden="true">→</span>') + '</span>';
 }
 
@@ -29,19 +29,27 @@ export function attemptComparison(required: number, at: number, label: string, t
 
 export function attemptChart(max: number, required: number, rows: { label: string; at: number }[], lang: 'ko' | 'en'): string {
   const ko = lang === 'ko';
-  function row(label: string, at: number, tone: string, note = '') {
+  function row(label: string, at: number, tone: string) {
     const dots = Array.from({ length: max }, (_, i) => {
       const n = i + 1;
       return `<span class="vl-dot${n === at ? ' vl-active vl-' + tone : n > at ? ' vl-after' : ''}">${n}</span>`;
     }).join('');
-    return `<span class="vl-row"><b>${esc(label)}</b><span class="vl-track">${dots}</span>${note ? `<strong class="vl-note vl-${tone}">${note}</strong>` : ''}</span>`;
+    return `<span class="vl-row"><b>${esc(label)}</b><span class="vl-track">${dots}</span></span>`;
   }
   const codeRows = rows.map(({label, at}) => {
     const d = at - required;
     const delta = d === 0 ? (ko ? '같은 시점' : 'same attempt') : ko ? `${Math.abs(d)}번 ${d > 0 ? '늦음' : '빠름'}` : `${Math.abs(d)} ${d > 0 ? 'late' : 'early'}`;
-    return row(label, at, d === 0 ? 'ok' : 'diff', (d === 0 ? '✓ ' : '⚠ ') + delta);
+    const tone = d === 0 ? 'ok' : 'diff';
+    const x = (n: number) => 100 * (n - 0.5) / max;
+    const from = x(required), to = x(at);
+    const hasDot = (n: number) => Number.isInteger(n) && n >= 1 && n <= max;
+    const line = hasDot(at) && hasDot(required)
+      ? `<svg aria-hidden="true" viewBox="0 0 100 32" preserveAspectRatio="none"><path d="M ${from} 0 V 24 H ${to} V 32" vector-effect="non-scaling-stroke"/></svg>`
+      : '';
+    const link = `<span class="vl-gap vl-${tone}" style="--mid:${(from + to) / 2}%">${line}<strong>${delta}</strong></span>`;
+    return `<span class="vl-pair">${row(ko ? '요구사항' : 'Required', required, 'plain')}${link}${row(label, at, tone)}</span>`;
   });
-  return `<span class="vl-dots">${row(ko ? '요구사항' : 'Required', required, 'plain')}${codeRows.join('')}</span>`;
+  return `<span class="vl-dots" style="--count:${max}">${codeRows.join('')}</span>`;
 }
 
 export const evidenceCSS = `
@@ -58,9 +66,13 @@ ${Object.keys(light).map(k => `.vl-${k}{--ink:var(--vl-${k});--tint:var(--vl-${k
 .vl-stat>span{font-size:12px}.vl-link{font-size:24px;color:var(--vl-miss)}
 .vl-test{align-self:center;background:var(--tint);color:var(--ink);border:1px solid var(--ink);border-radius:18px;padding:3px 9px;font-size:12px;white-space:nowrap}
 .vl-dots{display:grid;gap:6px;margin:12px 0;font-variant-numeric:tabular-nums}
-.vl-row{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:12px}
-.vl-dots{padding:10px 0;border-block:1px solid var(--vl-miss-bg)}.vl-row>b{min-width:58px}.vl-track{display:inline-flex;gap:3px;flex-wrap:wrap}
-.vl-dot{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1px solid var(--vl-miss);color:var(--vl-miss)}
+.vl-pair{display:grid;grid-template-columns:4.8em minmax(0,1fr);align-items:center;column-gap:6px;max-width:calc(4.8em + 6px + var(--count)*31px);font-size:12px}
+.vl-row{display:contents}.vl-track{display:grid;grid-template-columns:repeat(var(--count),minmax(0,1fr));justify-items:center}
+.vl-gap{position:relative;grid-column:2;height:32px;color:var(--ink)}
+.vl-gap svg{position:absolute;inset:0;width:100%;height:100%;stroke:currentColor;stroke-width:1.6;fill:none}
+.vl-gap strong{position:absolute;top:2px;left:clamp(3.3em,var(--mid),calc(100% - 3.3em));transform:translateX(-50%);white-space:nowrap;padding:0 4px;border-radius:4px;background:var(--tint);font-size:11px}
+.vl-dots{padding:10px 0;border-block:1px solid var(--vl-miss-bg)}
+.vl-dot{display:grid;place-items:center;width:min(24px,92%);max-width:100%;aspect-ratio:1;border-radius:50%;border:1px solid var(--vl-miss);color:var(--vl-miss);line-height:1}
 .vl-dot.vl-active{background:var(--ink);border:2px solid var(--ink);color:var(--tint);font-weight:800;outline:1px solid var(--ink);outline-offset:1px}
 .vl-after{border-style:dotted}.vl-note{white-space:nowrap}
 @media(max-width:640px){

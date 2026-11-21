@@ -76,6 +76,14 @@ textarea:focus, input:focus, select:focus, button:focus-visible { outline: 2px s
 .rtext { font-weight: 600; }
 .summary { margin: 6px 0 0; }
 .meta { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.evidence-location,.view-line{display:inline;border:0;padding:0;background:none;color:var(--accent);font:inherit;text-align:left;text-decoration:underline;text-underline-offset:3px;cursor:pointer;overflow-wrap:anywhere}
+.evidence-location:focus-visible,.view-line:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.just-changed{outline:2px solid var(--vl-plain);outline-offset:2px;animation:evidence-change 2.4s ease-out both}
+.vl-dot.vl-active.just-changed{outline:3px solid var(--vl-plain);outline-offset:2px}
+.changed-token.just-changed,.previous-attempt{border-radius:3px;background:var(--vl-plain-bg);color:var(--vl-plain);font-weight:700}
+.previous-attempt{display:inline-block;padding:0 4px;margin-right:5px;white-space:nowrap}
+@keyframes evidence-change{from{box-shadow:0 0 0 4px var(--vl-plain-bg)}to{box-shadow:0 0 0 0 transparent}}
+@media(prefers-reduced-motion:reduce){.just-changed{animation:none}}
 .todo { margin: 8px 0 0; padding: 8px 10px 8px 26px; background: var(--vl-miss-bg); border-radius: 8px; font-size: 13px; }
 .todo li + li { margin-top: 4px; }
 .todo b { color: var(--vl-miss); }
