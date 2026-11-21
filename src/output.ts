@@ -1,3 +1,6 @@
+import { palette, dark, marks } from './verdictStyle.ts';
+import { chainSteps, attemptDots } from './evidenceSteps.ts';
+import { evidenceChain, attemptChart, attemptComparison, evidenceCSS } from './evidenceView.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Evidence, FlowGraph, Report, ReqSummary, ResultSet } from './types.ts';
@@ -12,7 +15,7 @@ import { boundaryLine, boundaryShort, checkWord } from './numeric.ts';
 
 // ---------------------------------------------------------------- 작은 조각
 const cls = (o: string) => (o === '확인됨' ? 'ok' : o === '다름' ? 'diff' : o === '실패' ? 'fail' : 'unk');
-const pill = (o: string) => `<span class="pill ${cls(o)}">${wOverall(o)}</span>`;
+const pill = (o: ReqSummary['overall']) => `<span class="pill ${cls(o)}">${marks[o]} ${wOverall(o)}</span>`;
 const evCls = (s: string) => (s === '발견' ? 'ok' : s === '일부 발견' ? 'diff' : 'unk');
 const tsCls = (s: string) => (s === '통과' ? 'ok' : s === '실패' ? 'fail' : 'unk');
 const idDot = (k: 'A' | 'B') => `<i class="idd" style="background:${ID[k]}"></i>`;
@@ -131,6 +134,10 @@ function timeline(report: Report, id: string): string {
         chkName = t.name;
       }
     }
+  const data = attemptDots(report, id);
+  const plot = data ? attemptChart(data.max, data.required, data.rows.map(r => ({
+    label: report.sets.length > 1 ? r.key : L('코드', 'Code'), at: r.at,
+  })), getLang()) : '';
   const N = Math.max(7, req + 2, ...rows.map((r) => r.b!.attempts! + 1));
   const lock = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0B1423" stroke-width="2.6" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2" fill="#0B1423" stroke="none"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
   let head = '<div class="tr"><div class="tl"></div><div class="tcs">';
@@ -170,7 +177,7 @@ function timeline(report: Report, id: string): string {
       ? L(`「${esc(chkName)}」 검사는 이름으로 보면 ${chk}번째 시도 뒤의 잠금을 확인합니다 — ${marks}.${offNote}`, `Going by its name, the test "${esc(chkName)}" checks the lock after attempt ${chk} — ${marks}.${offNote}`)
       : L('이 조건을 직접 확인하는 검사가 연결되지 않았습니다.', 'No test that checks this condition directly is linked.');
   const order = before ? L(' 카운터를 올린 뒤 비교하는 코드로 읽었습니다.', ' Read as code that increments the counter before comparing.') : L(' 카운터 증가 순서는 코드에서 확인하세요.', ' Check in the code whether the counter is incremented before the comparison.');
-  return `<div class="card"><h4>${L('시도 횟수별 잠금 시점', 'When it locks, attempt by attempt')} <span class="mini">${L('조건 값에서 계산한 사실', 'computed from the condition')}</span></h4><div class="tline">${head}${reqRow}${resRows}</div><div class="cap">${cap}${order}</div><div class="lg"><span><i class="sw" style="background:#4285E8"></i>${L('요구사항', 'requirement')}</span><span><i class="sw" style="background:#34D399"></i>${L('요구사항과 같은 시점', 'same attempt as the requirement')}</span><span><i class="sw" style="background:#FBBF24"></i>${L('다른 시점', 'a different attempt')}</span><span><i class="sw miss"></i>${L('잠겨야 하는데 안 잠김', 'should be locked, but is not')}</span></div></div>`;
+  return `<div class="card"><h4>${L('시도 횟수별 잠금 시점', 'When it locks, attempt by attempt')} <span class="mini">${L('조건 값에서 계산한 사실', 'computed from the condition')}</span></h4>${plot}<details class="comparison" ${plot ? '' : 'open'}><summary>${L('시도별 검사와 잠금 상태', 'Test and lock state by attempt')}</summary><div class="tline">${head}${reqRow}${resRows}</div></details><div class="cap">${cap}${order}</div><div class="lg"><span><i class="sw" style="background:#4285E8"></i>${L('요구사항', 'requirement')}</span><span><i class="sw" style="background:var(--vl-ok)"></i>${L('요구사항과 같은 시점', 'same attempt as the requirement')}</span><span><i class="sw" style="background:var(--vl-diff)"></i>${L('다른 시점', 'a different attempt')}</span><span><i class="sw miss"></i>${L('잠겨야 하는데 안 잠김', 'should be locked, but is not')}</span></div></div>`;
 }
 
 // ---------------------------------------------------------------- 흐름 지도
@@ -199,7 +206,7 @@ function flowCard(report: Report, id: string): string {
       return `<div class="flowbox" data-set="${x.set.key}"${i === 0 ? '' : ' hidden'}><div class="fnn">${esc(x.g!.fn)}() · ${esc(x.g!.file)}</div>${svg}</div>`;
     })
     .join('');
-  return `<div class="card"><h4>${L('코드 흐름 지도', 'Code flow map')} <span class="mini">${L('시작 → 변경된 조건 경로를 강조', 'path from the start to the changed condition is highlighted')}</span></h4>${tabs}${boxes}<div class="lg"><span><i class="sw" style="background:#FBBF24"></i>${L('이 요구사항의 조건', "this requirement's condition")}</span><span><i class="sw line"></i>${L('시작부터 조건까지의 경로', 'path from the start to the condition')}</span><span><i class="sw dash"></i>${L('다른 결과에는 없는 문장이 든 단계', 'step with statements the other result lacks')}</span><span><i class="sw dim"></i>${L('흐린 단계는 이 요구사항과 무관', 'dimmed steps are unrelated to this requirement')}</span></div></div>`;
+  return `<div class="card"><h4>${L('코드 흐름 지도', 'Code flow map')} <span class="mini">${L('시작 → 변경된 조건 경로를 강조', 'path from the start to the changed condition is highlighted')}</span></h4>${tabs}${boxes}<div class="lg"><span><i class="sw" style="background:var(--vl-diff)"></i>${L('이 요구사항의 조건', "this requirement's condition")}</span><span><i class="sw line"></i>${L('시작부터 조건까지의 경로', 'path from the start to the condition')}</span><span><i class="sw dash"></i>${L('다른 결과에는 없는 문장이 든 단계', 'step with statements the other result lacks')}</span><span><i class="sw dim"></i>${L('흐린 단계는 이 요구사항과 무관', 'dimmed steps are unrelated to this requirement')}</span></div></div>`;
 }
 
 // ---------------------------------------------------------------- 요구사항 상세
@@ -220,12 +227,25 @@ function detail(report: Report, s: ReqSummary): string {
       return `<div class="ev"><span class="eid">E${i + 1}</span><span>${idDot(set.key)}<b>${set.label}</b> ${e.unit ? `<code>${esc(e.unit.file)}:${e.unit.startLine}</code> · ${e.unit.kind === 'function' ? L('함수 전체 단위', 'whole function') : L('조건 단위', 'single condition')}` : L('근거 없음', 'no evidence')}<br><small>${esc(e.why.join(' · ') || L('일치하는 단어·숫자 없음', 'no matching words or numbers'))} · ${L('점수', 'score')} ${e.score}</small></span></div>`;
     })
     .join('');
+  // Keep the result identity and index when bringing conflicting evidence to the front.
+  const lanes = report.sets.map((set, i) => {
+    const rr = set.perReq[id];
+    return { set, i, attention: rr.testStatus === '실패' || rr.evidence.boundary?.ok === false };
+  }).sort((a, b) => Number(b.attention) - Number(a.attention)).map(({ set, i }) => {
+    const steps = chainSteps(report, id, getLang(), i);
+    const b = set.perReq[id].evidence.boundary;
+    const label = report.sets.length > 1 ? set.label : L('코드 동작', 'Code acts');
+    const comparison = b?.attempts != null ? attemptComparison(b.required, b.attempts, label, steps.find(st => st.kind === 'test'), getLang())
+      : report.sets.length > 1 ? `<b class="lane-label">${esc(label)}</b>` : '';
+    return comparison + evidenceChain(steps, s.overall);
+  }).join('');
   const opts = ['미검토', '사용', '수정', '추가 검증', '보류'].map((v) => `<option value="${v}">${wJudge(v)}</option>`).join('');
   const judge = `<div class="card judge" data-req="${id}"><h4>${L('사람의 판단', 'Your decision')} <span class="mini">${L('근거를 보고 직접 정합니다', 'you decide from the evidence')}</span></h4><div class="jrow"><select>${opts}</select></div><textarea rows="3" placeholder="${L('이유나 남은 확인 사항', 'Reason, or what is left to check')}"></textarea></div>`;
   return `<section class="det" data-req="${id}" hidden>
 <div class="dh"><span class="rid">${id}</span><h2>${esc(s.req.text)}</h2>${pill(s.overall)}</div>
 <p class="lead">${headline(report, s)} <span class="next">${L('다음 행동', 'Next step')} · ${esc(nextAction(s, report))}</span></p>
-<div class="card"><h4>${L('근거 사슬', 'Evidence chain')} <span class="mini">${L('요구사항 → 코드 근거 → 검사 → 동작 시점 → 사람의 판단', 'requirement → code evidence → tests → when it acts → your decision')}</span></h4>${renderChain(report, s)}</div>
+<div class="card"><h4>${L('근거 사슬', 'Evidence chain')} <span class="mini">${L('요구사항 → 코드 근거 → 검사 → 동작 시점 → 사람의 판단', 'requirement → code evidence → tests → when it acts → your decision')}</span></h4>${lanes}
+<details class="comparison"><summary>${L('근거 상세와 사람의 판단', 'Detailed evidence and your decision')}</summary>${renderChain(report, s)}</details></div>
 <div class="g2"><div>
 <div class="card"><h4>${L('코드 비교', 'Code comparison')} <span class="mini">${mark ? L('다른 부분을 표시', 'differences are marked') : L('근거가 된 코드', 'the code used as evidence')}</span></h4><div class="panes">${panes}</div></div>
 <div class="card"><h4>${L('검사 결과', 'Test results')} <span class="mini">${L('실행된 검사 보고서(JUnit)에서 읽음', 'read from the executed test report (JUnit)')}</span></h4><table class="tt"><tbody>${tests}</tbody></table></div>
@@ -282,25 +302,25 @@ code{font-size:12px;color:#BFD3F2;background:#14223A;padding:0 5px;border-radius
 .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;color:#fff;letter-spacing:-.02em}.logo span{color:#8DB5F4}
 .top .meta{color:#7D8FAB;font-size:12px}.sp{flex:1}
 .badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;border:1px solid #2A4372;color:#9DB7E0;font-size:11.5px;font-weight:700;white-space:nowrap}
-.badge.g{border-color:rgba(52,211,153,.5);color:#6EE7B7}
+.badge.g{border-color:rgba(52,211,153,.5);color:var(--vl-ok)}
 .vt{display:flex;border:1px solid #27406B;border-radius:8px;overflow:hidden}.vt button{background:transparent;border:0;color:#9DAEC8;padding:5px 14px;font:inherit;cursor:pointer}.vt button.on{background:#16294A;color:#fff;font-weight:700}
 .wrap{max-width:1560px;margin:0 auto;padding:18px 22px 24px}
 .idd{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
 .pill{display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:11px;font-size:11.5px;font-weight:800;white-space:nowrap}
-.pill.ok{background:rgba(52,211,153,.15);color:#6EE7B7}.pill.diff{background:rgba(251,191,36,.16);color:#FCD34D}.pill.fail{background:rgba(248,113,113,.16);color:#FCA5A5}.pill.unk{background:rgba(148,163,184,.16);color:#CBD5E1}
+.pill.ok{background:rgba(52,211,153,.15);color:var(--vl-ok)}.pill.diff{background:rgba(251,191,36,.16);color:var(--vl-diff)}.pill.fail{background:rgba(248,113,113,.16);color:var(--vl-fail)}.pill.unk{background:rgba(148,163,184,.16);color:var(--vl-miss)}
 .ov{border:1px solid #1C2B46;border-radius:12px;background:#0C1628;padding:14px 16px 12px;margin-bottom:18px}
 .ovh{display:flex;align-items:center;gap:18px;margin-bottom:10px}.ovh h2{font-size:15px;color:#fff}
-.cnt{display:flex;gap:14px;font-size:12.5px}.cnt b{font-size:15px;margin-left:3px}.cnt .ok b{color:#6EE7B7}.cnt .diff b{color:#FCD34D}.cnt .fail b{color:#FCA5A5}.cnt .unk b{color:#CBD5E1}
+.cnt{display:flex;gap:14px;font-size:12.5px}.cnt b{font-size:15px;margin-left:3px}.cnt .ok b{color:var(--vl-ok)}.cnt .diff b{color:var(--vl-diff)}.cnt .fail b{color:var(--vl-fail)}.cnt .unk b{color:var(--vl-miss)}
 .hint{margin-left:auto;color:#6B7D9A;font-size:12px}
 table.mx{width:100%;border-collapse:separate;border-spacing:0}
 .mx th{text-align:left;font-size:11.5px;color:#7D8FAB;font-weight:700;padding:8px 12px;border-bottom:1px solid #1C2B46}.mx th small{display:block;font-weight:500;color:#5E7091;font-family:'Cascadia Mono',Consolas,monospace;font-size:10.5px}
 .mx td{padding:10px 12px;border-bottom:1px solid #14223A;vertical-align:middle}
 .mx tr.row{cursor:pointer}.mx tr.row:hover td{background:#0F1D35}.mx tr.row.on td{background:#11223F}.mx tr.row.on td:first-child{box-shadow:inset 3px 0 #4285E8}
 .mx .rq{color:#E6EDF8;font-weight:600;max-width:340px}.mx .rq b{color:#8DB5F4;margin-right:8px}
-.mc{display:flex;flex-direction:column;gap:3px;font-size:12px}.mc em{font-style:normal;color:#FCD34D;font-size:10.5px;margin-left:6px;border:1px solid rgba(251,191,36,.45);border-radius:8px;padding:0 6px}
-.mk{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.mk.ok{background:#34D399}.mk.diff{background:#FBBF24}.mk.fail{background:#F87171}.mk.unk{background:#64748B}
-.bd{font-size:11px;font-weight:700;margin-left:6px}.bd.ok{color:#6EE7B7}.bd.diff{color:#FCD34D}.bd.unk{color:#CBD5E1}
-.rel{font-size:12px;font-weight:700}.rel.same{color:#6EE7B7}.rel.diffs{color:#FCD34D}
+.mc{display:flex;flex-direction:column;gap:3px;font-size:12px}.mc em{font-style:normal;color:var(--vl-diff);font-size:10.5px;margin-left:6px;border:1px solid rgba(251,191,36,.45);border-radius:8px;padding:0 6px}
+.mk{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.mk.ok{background:var(--vl-ok)}.mk.diff{background:var(--vl-diff)}.mk.fail{background:var(--vl-fail)}.mk.unk{background:#64748B}
+.bd{font-size:11px;font-weight:700;margin-left:6px}.bd.ok{color:var(--vl-ok)}.bd.diff{color:var(--vl-diff)}.bd.unk{color:var(--vl-miss)}
+.rel{font-size:12px;font-weight:700}.rel.same{color:var(--vl-ok)}.rel.diffs{color:var(--vl-diff)}
 .jc{color:#7D8FAB;font-size:12px}.jc.done{color:#E6EDF8;font-weight:700}
 .unc{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:12px;color:#AEBBD0}.unc>b{color:#7D8FAB}
 .det{margin-bottom:18px}
@@ -317,23 +337,23 @@ svg.chain{display:block}.ct{font-size:11px;font-weight:700;fill:#8A9BB8}.cl2{fon
 .ph{display:flex;align-items:center;gap:4px;padding:8px 12px;background:#0F1B30;border-bottom:1px solid #1C2B46;font-size:12px;color:#E6EDF8}.ph .sub{margin-left:auto;color:#5E7091;font-family:'Cascadia Mono',Consolas,monospace;font-size:10.5px}
 .loc{padding:6px 12px 2px;color:#5E7091;font-size:11px}
 .code{padding:4px 0 8px;overflow:auto}
-.cl{display:flex;min-height:21px;line-height:21px;font-size:12px}.cl .ln{width:40px;flex:none;text-align:right;padding-right:12px;color:#3F5070}.cl .tx{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;padding-right:10px;padding-left:2.2em;text-indent:-2.2em}.cl.hit{background:rgba(251,191,36,.10);box-shadow:inset 3px 0 #FBBF24}.cl.hit .ln{color:#E6EDF8}
+.cl{display:flex;min-height:21px;line-height:21px;font-size:12px}.cl .ln{width:40px;flex:none;text-align:right;padding-right:12px;color:#3F5070}.cl .tx{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;padding-right:10px;padding-left:2.2em;text-indent:-2.2em}.cl.hit{background:rgba(251,191,36,.10);box-shadow:inset 3px 0 var(--vl-diff)}.cl.hit .ln{color:#E6EDF8}
 mark.xm{background:rgba(251,191,36,.18);color:inherit;border-radius:4px;outline:1px solid rgba(251,191,36,.55);padding:1px 2px}
-b.op{background:#FBBF24;color:#1A1203;border-radius:3px;padding:0 3px;margin:0 1px}
+b.op{background:var(--vl-diff);color:#1A1203;border-radius:3px;padding:0 3px;margin:0 1px}
 .k{color:#C792EA}.s{color:#9ED8A6}.n{color:#F2A07B}.f{color:#82AAFF}.ty{color:#7FDBCA}.c{color:#5C6F8F;font-style:italic}.p{color:#9DB7E0}.pu{color:#7F93B8}
 .empty{padding:16px 14px;color:#7D8FAB}
-table.tt{width:100%;border-collapse:collapse;font-size:12.5px}.tt td{padding:8px 8px;border-bottom:1px solid #14223A;vertical-align:top}.mute{color:#7D8FAB}.msg{margin-top:4px;color:#FCA5A5;font-size:11.5px}
+table.tt{width:100%;border-collapse:collapse;font-size:12.5px}.tt td{padding:8px 8px;border-bottom:1px solid #14223A;vertical-align:top}.mute{color:#7D8FAB}.msg{margin-top:4px;color:var(--vl-fail);font-size:11.5px}
 .ev{display:flex;gap:10px;margin-bottom:9px;font-size:12.5px}.eid{flex:none;width:26px;height:19px;border-radius:5px;background:#16294A;color:#8DB5F4;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px}.ev small{color:#7D8FAB}
 .tline .tr{display:flex;align-items:center;gap:10px;margin-bottom:8px}.tl{width:118px;flex:none}.tl b{font-size:12.5px;color:#E6EDF8;display:block;white-space:nowrap}.tl small{display:block;color:#6B7D9A;font-size:10.5px;font-family:'Cascadia Mono',Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tcs{display:flex;gap:7px}.tc{position:relative;width:30px;height:30px;border-radius:50%;border:2px solid #2A3A58;color:#6B7D9A;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
-.tc.lk.req{background:#4285E8;border-color:#4285E8}.tc.lk.good{background:#34D399;border-color:#34D399}.tc.lk.off{background:#FBBF24;border-color:#FBBF24}.tc.miss{border-color:#F87171;color:#F87171;background:rgba(248,113,113,.12);font-size:14px}
-.tk{position:absolute;right:-6px;top:-7px;width:16px;height:16px;border-radius:50%;font-style:normal;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid #0C1628}.tk.ok{background:#34D399;color:#062016}.tk.no{background:#F87171;color:#2A0707}.tk.na{background:#64748B;color:#0B1423}
+.tc.lk.req{background:#4285E8;border-color:#4285E8}.tc.lk.good{background:var(--vl-ok);border-color:var(--vl-ok)}.tc.lk.off{background:var(--vl-diff);border-color:var(--vl-diff)}.tc.miss{border-color:var(--vl-fail);color:var(--vl-fail);background:rgba(248,113,113,.12);font-size:14px}
+.tk{position:absolute;right:-6px;top:-7px;width:16px;height:16px;border-radius:50%;font-style:normal;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid #0C1628}.tk.ok{background:var(--vl-ok);color:#062016}.tk.no{background:var(--vl-fail);color:#2A0707}.tk.na{background:#64748B;color:#0B1423}
 .th{position:relative;width:30px;text-align:center;font-size:10.5px;color:#6B7D9A}.th.on{color:#8DB5F4;font-weight:800}.th i{position:absolute;left:50%;transform:translateX(-50%);top:-15px;font-style:normal;font-size:9.5px;color:#0B1423;background:#9DB7E0;border-radius:6px;padding:0 4px;white-space:nowrap}
 .tline{padding-top:12px}.cap{margin-top:6px;color:#AEBBD0;font-size:12px;line-height:1.6}
-.lg{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:11px;color:#7D8FAB}.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}.sw.miss{border:2px solid #F87171;border-radius:50%}.sw.line{height:3px;width:14px;background:#8DB5F4;vertical-align:2px}.sw.dash{border:1.5px dashed #C084FC;background:transparent}.sw.dim{background:#3E5784;opacity:.45}
+.lg{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:11px;color:#7D8FAB}.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}.sw.miss{border:2px solid var(--vl-fail);border-radius:50%}.sw.line{height:3px;width:14px;background:#8DB5F4;vertical-align:2px}.sw.dash{border:1.5px dashed #C084FC;background:transparent}.sw.dim{background:#3E5784;opacity:.45}
 .ftabs{display:flex;gap:6px;margin-bottom:8px}.ftab{background:#10213D;border:1px solid #27406B;color:#AEBBD0;border-radius:7px;padding:4px 12px;font:inherit;cursor:pointer}.ftab.on{background:#16294A;border-color:#4285E8;color:#fff;font-weight:700}
 .flowbox{overflow:auto;padding-top:4px}.fnn{color:#6B7D9A;font-size:11px;margin-bottom:8px;font-family:'Cascadia Mono',Consolas,monospace}
-svg.flow{display:block;max-width:none}.fl{fill:#E6EDF8;font-size:11.5px;font-weight:600;font-family:'Cascadia Mono',Consolas,monospace}.fl.hot{fill:#FCD34D}.fn2{fill:#5E7091;font-size:9.5px}.fe{fill:#7D8FAB;font-size:10.5px}.fo{font-size:9.5px;font-weight:800}
+svg.flow{display:block;max-width:none}.fl{fill:#E6EDF8;font-size:11.5px;font-weight:600;font-family:'Cascadia Mono',Consolas,monospace}.fl.hot{fill:var(--vl-diff)}.fn2{fill:#5E7091;font-size:9.5px}.fe{fill:#7D8FAB;font-size:10.5px}.fo{font-size:9.5px;font-weight:800}
 .judge select,.judge textarea{width:100%;background:#0A1424;border:1px solid #27406B;border-radius:7px;color:#E6EDF8;font:inherit;padding:7px 9px;margin-bottom:8px}
 .bar{position:fixed;left:0;right:0;bottom:0;height:44px;display:flex;align-items:center;gap:12px;padding:0 22px;background:#1F57B5;color:#E6EDF8;font-size:12.5px;z-index:6}.bar select,.bar button{background:#16294A;border:1px solid #3B63A6;color:#fff;border-radius:6px;padding:3px 10px;font:inherit;cursor:pointer}
 .text{display:none}.text .doc{max-width:900px;margin:0 auto;padding:26px 22px;color:#E6EDF8;font-size:14px;line-height:1.85}.text h2{font-size:18px;margin:0 0 14px}.text h3{font-size:15px;margin:22px 0 6px;color:#fff}.text ul{margin:0 0 4px 20px}.text .q{margin-top:22px;color:#9DAEC8}
@@ -430,7 +450,18 @@ export function renderHtml(report: Report, summaryMd: string): string {
   const t = { jl: JUDGE_LABELS(), text: L('글', 'text'), viz: L('시각화', 'visual'), stop: L('종료', 'Stop'), start: L('시작', 'Start'), rec: L('기록', 'recorded') };
   const data = { id, first: first.req.id, meta, t, reqs: report.summaries.map((s) => ({ id: s.req.id, text: s.req.text, status: s.overall })) };
   const mark = '<svg width="24" height="24" viewBox="0 0 64 64"><circle cx="27" cy="27" r="19" fill="none" stroke="#fff" stroke-width="6"/><path d="M18 27.5 L24.5 34 L36.5 20" fill="none" stroke="#4285E8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M41.5 41.5 L56 56" stroke="#fff" stroke-width="7.5" stroke-linecap="round"/></svg>';
-  return `<!doctype html><html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${L('VerifyLens 검증 리포트', 'VerifyLens verification report')}</title><style>${CSS}</style></head>
+  return `<!doctype html><html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${L('VerifyLens 검증 리포트', 'VerifyLens verification report')}</title><style>${CSS}
+:root{${palette(dark)}}${evidenceCSS}
+body{font-variant-ligatures:none}.comparison{margin:8px 0;overflow:auto}.comparison summary{cursor:pointer;color:#b1c3df}
+@media(max-width:700px){
+.top,.ovh,.dh,.cnt{flex-wrap:wrap}.top{height:auto;padding:6px 12px;gap:5px 12px}.top .meta{margin-right:auto}
+.wrap{padding:10px}.ov{overflow-x:auto}.g2,.panes{grid-template-columns:minmax(0,1fr)}.g2>div{min-width:0}
+.bar{overflow-x:auto;white-space:nowrap}.card h4{flex-wrap:wrap}.mini{margin-left:0}.text{overflow-wrap:anywhere}
+.comparison svg.chain{min-width:850px}
+}
+.lane-label{display:block;color:#aab8ca;margin-top:8px}.lane-label+.vl-chain{margin-top:4px}
+${(['ok','diff','fail','miss'] as const).map(k => `.pill.${k === 'miss' ? 'unk' : k}{color:var(--vl-${k});background:var(--vl-${k}-bg)}`).join('')}
+</style></head>
 <body data-view="viz">
 <div class="top"><div class="logo">${mark}<div>Verify<span>Lens</span></div></div><div class="meta">${L('검증 리포트 · 기준', 'Verification report · base')} <code>${esc(report.base)}</code></div><span class="sp"></span><span class="badge g">${L('로컬에서 생성 · 네트워크 사용 없음 · AI 추정 없음', 'Generated locally · no network · no AI inference')}</span><div class="vt"><button class="vtab on" data-view="viz">${L('시각화', 'Visual')}</button><button class="vtab" data-view="text">${L('글 요약', 'Text summary')}</button></div></div>
 <div class="wrap">${overview(report)}${report.summaries.map((s) => detail(report, s)).join('')}</div>

@@ -1,5 +1,7 @@
+import { palette, light, dark, tones, marks } from '../src/verdictStyle.ts';
+import { evidenceChain, attemptComparison, attemptChart, evidenceCSS } from '../src/evidenceView.ts';
 // 설치 없이 해 보는 페이지의 화면. 입력이 바뀌면 같은 엔진으로 다시 판정한다.
-import { runCheck, type TryResult, type TryRow, type TryTest } from './check.ts';
+import { runCheck, type TryResult, type TryTest } from './check.ts';
 import { EXAMPLES, type Example } from './examples.ts';
 
 type Lang = 'en' | 'ko';
@@ -13,11 +15,9 @@ const LINKS = {
 
 // 고정 문구만 담는다. 사용자가 넣은 글은 이 표를 거치지 않고 textContent 로만 그린다.
 const T: Record<string, { en: string; ko: string }> = {
-  title: { en: 'Try VerifyLens in your browser', ko: '설치 없이 VerifyLens 해 보기' },
-  lead: {
-    en: 'Paste a requirement and the code an AI wrote for it. VerifyLens shows, per requirement, whether the code is Verified, Different or still Unverified, and the line that decides it.',
-    ko: '요구사항과 AI가 짠 코드를 넣으면, 요구사항마다 확인됨 · 다름 · 미확인 가운데 무엇인지와 그 판단의 근거가 된 줄을 보여 줍니다.',
-  },
+  title: { en: 'Check code against a requirement', ko: '요구사항대로 동작하는지 확인하세요' },
+  lead: { en: 'Follow the code line and test result behind each verdict.', ko: '각 판정의 근거가 된 코드 줄과 테스트 결과를 따라가 보세요.' },
+  edit: { en: 'Try your own code', ko: '내 코드로 해 보기' },
   privacy: {
     en: '🔒 Runs entirely in this page. Nothing you paste is sent anywhere, and no LLM is used.',
     ko: '🔒 이 페이지 안에서만 돌아갑니다. 넣은 내용은 어디로도 보내지 않고, AI 판정도 쓰지 않습니다.',
@@ -53,11 +53,6 @@ const T: Record<string, { en: string; ko: string }> = {
   codecap: { en: 'each verdict is shown under the line it is based on', ko: '판정은 근거가 된 줄 바로 아래에 있습니다' },
   linked: { en: 'Linked tests: ', ko: '이어진 테스트: ' },
   noLinked: { en: 'No linked test', ko: '이어진 테스트 없음' },
-  dotsReq: { en: 'required', ko: '요구사항' },
-  dotsCode: { en: 'code', ko: '코드' },
-  dotsSame: { en: '✓ same attempt', ko: '✓ 같은 시점' },
-  dotsLate: { en: '✗ {n} late', ko: '✗ {n}번 늦음' },
-  dotsEarly: { en: '✗ {n} early', ko: '✗ {n}번 빠름' },
   nextTitle: { en: 'Use it on your own repository', ko: '내 저장소에서 쓰기' },
   nextBody: {
     en: `The extension checks your whole working tree against the base branch and reads your real test reports: <a href="${LINKS.vscode}">VS Code</a> · <a href="${LINKS.openvsx}">Cursor (Open VSX)</a> · <a href="${LINKS.jetbrains}">JetBrains (preview)</a> · <a href="${LINKS.github}">GitHub</a>`,
@@ -226,7 +221,13 @@ function edited() {
   timer = window.setTimeout(run, 300);
 }
 
-const tone = (overall: string) => (overall === '확인됨' ? 'ok' : overall === '다름' || overall === '실패' ? 'bad' : 'unk');
+function diagram(markup: string): HTMLElement {
+  const t = document.createElement('template');
+  t.innerHTML = markup; // The shared renderer escapes all evidence and labels.
+  return t.content.firstElementChild as HTMLElement;
+}
+
+const priority = (s: TryResult['rows'][number]['overall']) => s === '다름' || s === '실패' ? 0 : s === '미확인' ? 1 : 2;
 
 function run() {
   let res: TryResult;
@@ -246,18 +247,21 @@ function run() {
   }
   headlineEl.textContent = res.headline;
   cardsEl.replaceChildren(
-    ...res.rows.map((r) => {
-      const card = el('button', `card ${tone(r.overall)}`);
+    ...[...res.rows].sort((a, b) => priority(a.overall) - priority(b.overall)).map((r) => {
+      const card = el('button', `card ${tones[r.overall]}`);
       card.type = 'button';
       const top = el('div', 'top');
-      top.append(el('span', `badge ${tone(r.overall)}`, r.verdict + (r.reason ? ` · ${r.reason}` : '')), el('span', 'rid', r.id), el('span', 'rtext', r.text));
-      card.append(top, el('p', 'summary', r.summary));
-      // 근거 사슬 그림: 어느 칸이 어긋났는지(빨강) · 비었는지(회색 점선)를 한눈에
-      if (r.chain.length) card.append(chainEl(r.chain));
+      top.append(el('span', `badge ${tones[r.overall]}`, marks[r.overall] + ' ' + r.verdict + (r.reason ? ` · ${r.reason}` : '')), el('span', 'rid', r.id), el('span', 'rtext', r.text));
+      card.append(top);
+      if (r.dots) card.append(diagram(attemptComparison(r.dots.required, r.dots.at, lang === 'ko' ? '코드 동작' : 'Code acts', r.chain.find(st => st.kind === 'test'), lang)));
+      else card.append(el('p', 'summary', r.summary));
+      // 근거 사슬 그림: 어느 칸이 어긋났는지(주황) · 비었는지(회색 점선)를 한눈에
+      if (r.chain.length) card.append(diagram(evidenceChain(r.chain, r.overall)));
+      if (r.dots) card.append(el('p', 'summary', r.summary));
       const meta = [r.where, r.tests.length ? T.linked[lang] + r.tests.join(', ') : T.noLinked[lang]].filter(Boolean).join(' · ');
       card.append(el('p', 'meta', meta));
       // 몇 번째에 동작하는지 점 그림. 그릴 수 없으면 글자 줄
-      if (r.dots) card.append(dotsEl(r.dots));
+      if (r.dots) card.append(diagram(attemptChart(r.dots.max, r.dots.required, [{ label: lang === 'ko' ? '코드' : 'Code', at: r.dots.at }], lang)));
       else if (r.strip.length) card.append(el('div', 'strip', r.strip.join('\n')));
       if (r.todo.length) {
         const todo = el('ul', 'todo');
@@ -273,34 +277,6 @@ function run() {
     }),
   );
   renderCode(res);
-}
-
-/** 근거 사슬: 요구사항 → 코드 줄 → 검사 → 동작 (확장 · PR 요약과 같은 모델) */
-function chainEl(steps: TryRow['chain']): HTMLElement {
-  const wrap = el('div', 'chain');
-  steps.forEach((st, i) => {
-    if (i) wrap.append(el('span', 'arrow', '→'));
-    const box = el('div', `step ${st.tone}`);
-    box.append(el('span', 'st', st.title), el('span', 'sx', st.text));
-    wrap.append(box);
-  });
-  return wrap;
-}
-
-/** 시도 횟수 점 그림: 요구사항(파랑)과 코드(초록 = 같음 · 빨강 = 다름)가 몇 번째에 잠그는가 */
-function dotsEl(d: NonNullable<TryRow['dots']>): HTMLElement {
-  const wrap = el('div', 'dots');
-  const row = (label: string, at: number, cls: string, note?: HTMLElement) => {
-    const r = el('div', 'drow');
-    r.append(el('span', 'dl', label));
-    for (let i = 1; i <= d.max; i++) r.append(el('span', `dot${i === at ? ` act ${cls}` : i > at ? ' after' : ''}`, i === at ? '🔒' : String(i)));
-    if (note) r.append(note);
-    return r;
-  };
-  const diff = d.at - d.required;
-  const note = diff === 0 ? el('span', 'dnote ok', T.dotsSame[lang]) : el('span', 'dnote off', (diff > 0 ? T.dotsLate[lang] : T.dotsEarly[lang]).replace('{n}', String(Math.abs(diff))));
-  wrap.append(row(T.dotsReq[lang], d.required, 'req'), row(T.dotsCode[lang], d.at, diff === 0 ? 'ok' : 'off', note));
-  return wrap;
 }
 
 // 결과 칸이 화면에 보이면 막대를 숨긴다 (좁은 화면에서만 보이는 막대다)
@@ -334,13 +310,13 @@ function renderCode(res: TryResult) {
     ...lines.map((text, i) => {
       const no = i + 1;
       const notes = byLine.get(no) ?? [];
-      const worst = notes.some((n) => n.severity === 'warn') ? 'warn' : notes.some((n) => n.severity === 'info') ? 'info' : notes.length ? 'ok' : '';
-      const row = el('div', `ln${worst ? ` hl-${worst}` : ''}`);
+      const worst = [...notes].sort((a, b) => priority(a.overall) - priority(b.overall))[0];
+      const row = el('div', `ln${worst ? ' hl-' + tones[worst.overall] : ''}`);
       row.id = `L${no}`;
       row.append(el('span', 'no', String(no)), el('span', 'tx', text || ' '));
       if (!notes.length) return [row];
       // 좁은 화면에서도 잘리지 않게, 판정은 그 줄 바로 아래에 줄을 바꿔 보여 준다
-      return [row, ...notes.map((n) => el('div', `ln-note ${n.severity}`, `↑ ${n.head}${n.note ? ` · ${n.note}` : ''}`))];
+      return [row, ...notes.map((n) => el('div', `ln-note ${tones[n.overall]}`, `↑ ${n.head}${n.note ? ` · ${n.note}` : ''}`))];
     }).flat(),
   );
 }
@@ -395,6 +371,9 @@ codeEl.addEventListener('keydown', (e) => {
   edited();
 });
 
+const style = el('style');
+style.textContent = `:root{${palette(light)}}@media(prefers-color-scheme:dark){:root{${palette(dark)}}}${evidenceCSS}`;
+document.head.append(style);
 applyTexts();
 statusEl.textContent = T.loading[lang];
 load(EXAMPLES[0]);

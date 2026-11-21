@@ -194,10 +194,10 @@ These were tested by piping each tool's hook input into the command on Windows (
 
 | Mark | Meaning |
 |---|---|
-| Verified | Implementation evidence found in every result and all linked tests passed |
-| Different | Results disagree on a condition, the code's boundary doesn't match the number in the requirement, or only one side's test fails |
-| Failed | A linked test failed |
-| Not verified | Weak evidence, or no linked test ran |
+| ✅ Verified | Implementation evidence found in every result and all linked tests passed |
+| ⚠️ Different | Results disagree on a condition, the code's boundary doesn't match the number in the requirement, or only one side's test fails |
+| ❌ Failed | A linked test failed |
+| ❔ Not verified | Weak evidence, or no linked test ran |
 
 ## Limitations
 
