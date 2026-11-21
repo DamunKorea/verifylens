@@ -29,6 +29,10 @@ export type NumPart = {
   listLen?: boolean;
   /** '1h' · '7d' 처럼 글로 쓴 기간을 초로 읽은 값 */
   secs?: boolean;
+  /** 센 값이 시간으로 거른 것이다 (recent = log.filter((t) => now - t < HOUR) · count({ where: { createdAt: { gte: startOfDay(…) } } })) */
+  timed?: boolean;
+  /** 센 목록을 달력으로 같은 기간만 걸렀다 (getMonth() === now.getMonth() → month · isSameDay → day) */
+  calendar?: 'hour' | 'day' | 'week' | 'month';
 };
 
 export type CondInfo = {
@@ -65,6 +69,10 @@ export type Unit = {
   guard: boolean;
   changed: boolean;
   cond?: CondInfo;
+  /** 함수 줄만: 몸통에서 부르는 함수 이름 */
+  calls?: string[];
+  /** 함수 줄만: 몸통에서 쓰는 이름(변수 · 상수) */
+  refs?: string[];
 };
 
 export type DynCall = { file: string; line: number; text: string };
@@ -149,6 +157,8 @@ export type Evidence = {
   caveat?: Text;
   /** 요구사항이 말하는 입력을 검사 없이 받는 곳 (다른 곳의 검사로 확인됐다고 하지 않는다) */
   unchecked?: Text;
+  /** 「하루에 N번」인데 세는 줄에 기간이 보이지 않음 (전부 센다) */
+  noWindow?: boolean;
 };
 
 export type TestStatus = '통과' | '실패' | '미실행';

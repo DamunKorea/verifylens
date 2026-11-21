@@ -6,7 +6,8 @@ import { numbersIn, parseConstraints } from './numeric.ts';
 
 /** 「관리자만」 · only: 다른 경우를 빼는 요구사항 */
 const ONLY_CUE = /[가-힣]만(?=\s|$)|\bonly\b/i;
-const GUARD_CUE = /(않|차단|거부|막|금지|불가|reject|deny|block|forbid|refuse|must not|cannot)/i;
+// 「선물할 수 없다」 · 「로그인할 수 없다」도 막으라는 말이다 (0.17.0 전에는 영어 cannot 만 읽었다)
+const GUARD_CUE = /(않|차단|거부|막|금지|불가|수\s*없|reject|deny|block|forbid|refuse|must not|cannot|can't)/i;
 /** 무엇을 확인하거나 막는 조건이 코드에 있어야 하는 요구사항 (함수 이름만 겹쳐서는 근거가 되지 않는다) */
 const CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있|\bonce\s+(?:per|a|each|for)\b|\bonly once\b|\bonly one\b|한\s*번(?:씩)?만|하나만|중복/i;
 

@@ -22,8 +22,19 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     return false;
   };
 
+  // 같은 파일의 두 클래스에 같은 이름의 메서드가 있으면(CartService.add · WishlistService.add) 클래스 이름을 붙여 구별한다
+  const methodCount = new Map<string, number>();
+  const countMethods = (n: ts.Node) => {
+    if (ts.isClassDeclaration(n)) for (const m of n.members) if (ts.isMethodDeclaration(m) && m.name) methodCount.set(m.name.getText(sf), (methodCount.get(m.name.getText(sf)) ?? 0) + 1);
+    ts.forEachChild(n, countMethods);
+  };
+  countMethods(sf);
   const fnName = (n: ts.Node): string | null => {
-    if ((ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)) && n.name) return n.name.getText(sf);
+    if (ts.isMethodDeclaration(n) && n.name) {
+      const m = n.name.getText(sf);
+      return (methodCount.get(m) ?? 0) > 1 && ts.isClassDeclaration(n.parent) && n.parent.name ? `${n.parent.name.text}.${m}` : m;
+    }
+    if (ts.isFunctionDeclaration(n) && n.name) return n.name.getText(sf);
     if (ts.isArrowFunction(n) || ts.isFunctionExpression(n)) {
       const p = n.parent;
       if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name)) return p.name.text;
@@ -218,6 +229,62 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     scan(fnBody);
     return found;
   };
+  /** 이름 하나의 선언 값 (const n = … 의 …) */
+  const initOf = (name: string, fnBody: ts.Node | null): ts.Expression | undefined => {
+    if (!fnBody || !/^[A-Za-z_$][\w$]*$/.test(name)) return undefined;
+    let init: ts.Expression | undefined;
+    const scan = (n: ts.Node) => {
+      if (!init && ts.isVariableDeclaration(n) && n.name.getText(sf) === name && n.initializer) init = n.initializer;
+      ts.forEachChild(n, scan);
+    };
+    scan(fnBody);
+    return init;
+  };
+  /**
+   * const n = log.filter(…).length · const count = await db.comment.count(…) 처럼 이미 있는 개수를 담은 이름이고,
+   * 그 뒤에 같은 곳에 더하면(log.push · db.comment.create) 넣기 전 개수다. count >= 10 이면 10개까지 들어간다.
+   */
+  const countedBeforeAdd = (left: string, at: ts.Node, fnBody: ts.Node | null): boolean => {
+    const init = initOf(left, fnBody);
+    if (!init || !fnBody) return false;
+    let e = unwrap(init);
+    if (ts.isAwaitExpression(e)) e = unwrap(e.expression);
+    if (ts.isPropertyAccessExpression(e) && /^(?:length|size)$/.test(e.name.text)) {
+      let src: ts.Expression = e.expression;
+      while (ts.isCallExpression(src) && ts.isPropertyAccessExpression(src.expression) && /^(?:filter|slice|map|concat)$/.test(src.expression.name.text)) src = src.expression.expression;
+      return addsAfter(`${src.getText(sf)}.length`, at, fnBody);
+    }
+    if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression) && /^(?:count|countDocuments)$/.test(e.expression.name.text)) {
+      const model = e.expression.expression.getText(sf);
+      let found = false;
+      const scan = (n: ts.Node) => {
+        if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.pos >= at.pos && n.expression.expression.getText(sf) === model && /^(?:create|insert|insertOne|save|add)$/.test(n.expression.name.text)) found = true;
+        ts.forEachChild(n, scan);
+      };
+      scan(fnBody);
+      return found;
+    }
+    return false;
+  };
+  /** 센 값을 시간으로 걸렀는가: 그 이름의 선언에 시각 차이 · 오늘 0시 · since 가 있다 */
+  const TIMED = /\bnow\b\s*-|Date\.now\(\)\s*-|getTime\(\)\s*-|isSame(?:Day|Hour|Week|Month)|startOf|toDateString|\bsince\b|\btoday\b|sub(?:Days|Hours|Minutes|Weeks|Months)\b|86400|3600|60\s*\*\s*60|24\s*\*\s*60/;
+  const timedCount = (left: string, fnBody: ts.Node | null): boolean => {
+    const init = initOf(left.replace(/\.(?:length|size)$/, ''), fnBody);
+    return !!init && (TIMED.test(init.getText(sf)) || !!calendarOf(left, fnBody));
+  };
+  /** 달력으로 같은 기간만 세는가 (작은 기간이 먼저: 같은 달 · 같은 날을 함께 보면 같은 날) */
+  const CALENDAR: [RegExp, 'hour' | 'day' | 'week' | 'month'][] = [
+    [/isSameHour|startOfHour|getHours\(\)\s*===/, 'hour'],
+    [/isSameDay|startOfDay|isToday|toDateString\(\)\s*===|getDate\(\)\s*===/, 'day'],
+    [/isSameWeek|startOfWeek|isThisWeek/, 'week'],
+    [/isSameMonth|startOfMonth|isThisMonth|getMonth\(\)\s*===/, 'month'],
+  ];
+  const calendarOf = (left: string, fnBody: ts.Node | null): 'hour' | 'day' | 'week' | 'month' | undefined => {
+    const init = initOf(left.replace(/\.(?:length|size)$/, ''), fnBody);
+    if (!init) return undefined;
+    const text = init.getText(sf);
+    return CALENDAR.find(([re]) => re.test(text))?.[1];
+  };
   /** const recent = attempts.filter(…) 처럼 다른 목록에서 걸러 낸 목록이면 원래 목록의 이름 (recent.length 는 attempts 의 개수를 센다) */
   const derivedFrom = (left: string, fnBody: ts.Node | null): string | undefined => {
     const name = left.replace(/\.(?:length|size)$/, '');
@@ -325,7 +392,9 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       line: line(e.getStart(sf)),
       source: loop ? 'loop' : 'compare',
       incBefore: loop ? null : counterOrder(left, ctx.at, ctx.fnBody),
-      preAdd: addsAfter(left, ctx.at, ctx.fnBody) || (!!src && addsAfter(`${src}.length`, ctx.at, ctx.fnBody)),
+      preAdd: addsAfter(left, ctx.at, ctx.fnBody) || (!!src && addsAfter(`${src}.length`, ctx.at, ctx.fnBody)) || countedBeforeAdd(left, ctx.at, ctx.fnBody),
+      ...(timedCount(left, ctx.fnBody) ? { timed: true } : {}),
+      ...(calendarOf(left, ctx.fnBody) ? { calendar: calendarOf(left, ctx.fnBody) } : {}),
       inCatch: insideCatch(ctx.at),
       actionAfter: actionFollows(ctx.at),
       thenKind: ctx.reject ? 'reject' : null,
@@ -438,6 +507,20 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     const startLine = line(fn.getStart(sf));
     const endLine = line(fn.getEnd());
     const bodyText = fn.getText(sf);
+    // 이 함수가 부르는 함수 이름 (uploadDocument 가 checkSize 를 부르면 checkSize 의 검사도 그 기능의 검사다)
+    const calls = new Set<string>();
+    // 몸통에서 쓰는 이름 (MAX_VIDEO_BYTES 를 쓰는 함수가 그 설정값의 주인이다)
+    const refs = new Set<string>();
+    const scanCalls = (n: ts.Node) => {
+      if (ts.isCallExpression(n)) {
+        const e = n.expression;
+        if (ts.isIdentifier(e)) calls.add(e.text);
+        else if (ts.isPropertyAccessExpression(e)) calls.add(e.name.text);
+      }
+      if (ts.isIdentifier(n)) refs.add(n.text);
+      ts.forEachChild(n, scanCalls);
+    };
+    if (fn.body) scanCalls(fn.body);
     units.push({
       id: `${file}#fn${seq++}`,
       kind: 'function',
@@ -449,6 +532,8 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       tokens: [...new Set(tokenize(name + ' ' + bodyText))],
       guard: false,
       changed: isChanged(startLine, endLine),
+      calls: [...calls],
+      refs: [...refs],
     });
     if (body) flows.push(buildFlow(name, fn as FnNode & { body: ts.Block }));
   };
@@ -657,7 +742,47 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     for (let p: ts.Node | undefined = n.parent; p; p = p.parent) if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name)) return p.name.text;
     return L('(최상위)', '(top level)');
   };
+  // class-validator 데코레이터: @IsEmail() · @IsUrl() · @IsUUID() · @Matches(/^\d{6}$/) 는 형식 검사, @IsString() 만 있으면 검사 없이 받는 칸
+  const DECO_FORMAT = /^(?:IsEmail|IsUrl|IsURL|IsUUID|Matches|IsPhoneNumber|IsMobilePhone|IsISO8601|IsDateString|IsAlphanumeric|IsNumberString|IsPostalCode|IsHexColor|IsIP|IsJWT)$/;
+  const DECO_LENGTH = /^(?:MinLength|MaxLength|Length)$/;
+  const visitDecorated = (n: ts.PropertyDeclaration) => {
+    const decos = ts.canHaveDecorators(n) ? (ts.getDecorators(n) ?? []) : [];
+    if (!decos.length) return;
+    const calls = decos.map((d) => d.expression).filter(ts.isCallExpression).filter((c) => ts.isIdentifier(c.expression));
+    const names = calls.map((c) => (c.expression as ts.Identifier).text);
+    const l = line(n.getStart(sf));
+    if (!isChanged(l, line(n.getEnd()))) return;
+    const name = n.name.getText(sf);
+    const stringy = names.includes('IsString') || n.type?.getText(sf) === 'string';
+    if (stringy) fields.push({ file, line: l, name, checked: names.some((x) => DECO_FORMAT.test(x) || DECO_LENGTH.test(x)) });
+    if (!names.some((x) => DECO_FORMAT.test(x) || x === 'Length')) return;
+    const parts: NumPart[] = [];
+    for (const c of calls) {
+      const arg = c.arguments[0];
+      // @Length(11, 11) 은 정확히 11자, @Length(2, 12) 는 2자 이상 12자 이하
+      if ((c.expression as ts.Identifier).text === 'Length' && arg) {
+        const lo = evalNum(arg);
+        const hi = c.arguments[1] ? evalNum(c.arguments[1]) : undefined;
+        if (lo !== undefined && hi === lo) parts.push({ ...simplePartBase(c, `${name} length`, '==='), lit: lo, strLen: true });
+        else {
+          if (lo !== undefined) parts.push({ ...simplePartBase(c, `${name} length`, '>='), lit: lo, strLen: true });
+          if (hi !== undefined) parts.push({ ...simplePartBase(c, `${name} length`, '<='), lit: hi, strLen: true });
+        }
+        continue;
+      }
+      if ((c.expression as ts.Identifier).text !== 'Matches' || !arg || !ts.isRegularExpressionLiteral(arg)) continue;
+      const m = arg.text.match(/^\/\^(?:\\d|\[0-9\])\{(\d+)\}\$\/[a-z]*$/);
+      if (m) parts.push({ ...simplePartBase(c, `${name} length`, '==='), lit: Number(m[1]), strLen: true });
+    }
+    let host = L('(최상위)', '(top level)');
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) if (ts.isClassDeclaration(p) && p.name) { host = p.name.text; break; }
+    const text = n.getText(sf);
+    const cond: CondInfo = { expr: clip(text.replace(/\s+/g, ' '), 80), parts, single: parts.length === 1 };
+    syncPrimary(cond);
+    units.push({ id: `${file}#d${seq++}`, kind: 'condition', file, fn: host, startLine: l, endLine: line(n.getEnd()), text: clip(text.replace(/\s+/g, ' '), 120), tokens: [...new Set(tokenize(`${host} ${text}`))], guard: true, changed: true, cond });
+  };
   const visitFields = (n: ts.Node) => {
+    if (ts.isPropertyDeclaration(n)) visitDecorated(n);
     if (ts.isPropertyAssignment(n) && ts.isCallExpression(n.initializer)) {
       const calls: string[] = [];
       const callNodes: ts.CallExpression[] = [];

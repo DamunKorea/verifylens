@@ -10,6 +10,14 @@ Most of these were found by writing new cases ourselves or by trying VerifyLens 
 
 | Fixed in | What happened before |
 |---|---|
+| 0.17.0 | In a file named for the requirement (`signup.ts`), the email check in `subscribe` made "sign-up rejects an invalid email" Verified while `signup` checks nothing. Found by our promotion team on the try page, not a user report. |
+| 0.17.0 | "~할 수 없다" was not read as a rejection rule, so for "만료된 쿠폰은 선물할 수 없다" a gift function without the check was Verified when the apply function had one. |
+| 0.17.0 | A shared check counted for every feature: `assertValidEmail` called only by `subscribe` verified "registration rejects an invalid email". |
+| 0.17.0 | `WishlistService.add` checking stock verified "out-of-stock items cannot be added to the cart" while `CartService.add` did not. Found on the first run of the last batch; fixed before release. |
+| 0.17.0 | "At most 3 invites per day" was Verified for `if (sent.length >= 3)`, which counts every invite ever sent. It is now Not verified: "no time window". |
+| 0.17.0 | "A customer can request a refund at most twice per order" was Verified for `refunds.length > 2`, which allows three: "twice" was not read as 2. |
+| 0.17.0 | `owned > 3` after `const owned = await db.workspace.count(…)` was Verified for "at most 3 workspaces", although it allows 4. |
+| 0.17.0 | With keywords, a test that does it once ("adds a member to the team") was linked to "a team can have at most 10 members", so the limit was Verified with no test of it. While 0.17.0 was being made the same happened to an hourly mail limit; fixed before release. |
 | 0.16.0 | Code that computes a fixed discount as a percentage (`total * (1 - v / 100)` in the `fixed` branch) was Verified when a test for it passed. |
 | 0.16.0 | A check in a function for another action counted: `getFile` checks the id, so "deleting a file with an invalid id is rejected" was Verified while `deleteFile` checks nothing. |
 | 0.16.0 | With keywords, a happy-path test ("saves a profile with a homepage") was linked to a rejection rule. This appeared while 0.16.0 was being made; fixed before release. |
@@ -33,6 +41,8 @@ Most of these were found by writing new cases ourselves or by trying VerifyLens 
 
 | Fixed in | What happened before |
 |---|---|
+| 0.17.0 | A count kept in a variable before adding (`const count = await db.comment.count(…)`, then `count >= 10`, then `create`) was read as including the new one, so correct code for "at most 10 a day" was Different. |
+| 0.17.0 | A first rule for time windows matched too widely and made "3하루로 설정됨" false alarms in older sets. It was replaced before release. |
 | 0.15.0 | Without keywords, a 5,000 won flat coupon was compared with a 50,000 won free-shipping line in another file. |
 | 0.13.0 | "Password reset mail can be sent at most 3 times a day" was matched to `pw.length < 8` in the same file. |
 | 0.13.0 | Counting first and then rejecting (`count++; if (count > 3) throw`) was read as allowing 4. |
@@ -50,10 +60,12 @@ These stay Not verified, or show a weaker evidence line. Add `| keywords: ...` t
 - When `expiresIn` of a JWT cannot be read, the evidence line can come from another file.
 - "Only admins" shows the reason "whole function" instead of "extra condition".
 - Without keywords, a rate limit can be linked to a retry file, and English sentences sometimes pick a weaker evidence line.
-- "N times an hour" when the code has no time window.
-- class-validator decorators such as `@IsEmail()` are not read as checks.
+- A time window written another way than a time difference, a calendar check (`isSameDay`, `getMonth() ===`), `startOfDay` / `subHours`, or a name such as `today` / `recent`.
+- "Once a day" written as a list filtered to today (`today.length >= 1`) stays Not verified.
+- With keywords, a check in the right function stays Not verified when the keywords do not cover the test name.
+- class-validator decorators other than the format checks, `@Length`, `@MinLength` / `@MaxLength` and `@Min` / `@Max`.
 - Formulas are judged only for a fixed-amount branch (`if`, a ternary, `switch` or an object of functions named `fixed` / `flat` / `amount`). Other formulas are not judged.
-- Without keywords, some duplicate checks (`answers.some(...)`, an idempotency key) stay Not verified because the test name does not cover enough of the sentence.
+- Without keywords, some duplicate checks (`answers.some(...)`, a sent-id list) stay Not verified because the test name does not cover enough of the sentence. There are fewer since 0.17.0 (an idempotency key, "the same coupon again").
 
 ## Always true
 
@@ -75,6 +87,14 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 
 | 고친 판 | 전에 있던 일 |
 |---|---|
+| 0.17.0 | 요구사항 이름의 파일(`signup.ts`) 안에서 `subscribe` 의 이메일 검사로, `signup` 은 검사하지 않는데 「이메일이 틀리면 가입 거부」가 「확인됨」. 우리 홍보 세션이 체험 페이지에서 찾음(사용자 제보 아님) |
+| 0.17.0 | 「~할 수 없다」를 막는 규칙으로 읽지 못해, 「만료된 쿠폰은 선물할 수 없다」에 검사 없는 선물 함수가 쿠폰 적용 함수의 검사 때문에 「확인됨」 |
+| 0.17.0 | 함께 쓰는 검사 함수를 모든 기능의 근거로 씀: `subscribe` 만 부르는 `assertValidEmail` 로 「가입 시 잘못된 이메일 거부」가 「확인됨」 |
+| 0.17.0 | `WishlistService.add` 의 재고 검사로, `CartService.add` 는 검사하지 않는데 「재고 없는 상품은 장바구니에 담을 수 없다」가 「확인됨」. 마지막 묶음 첫 결과에서 찾아 공개 전에 고침 |
+| 0.17.0 | 「하루에 초대는 3번까지」에 지금까지 보낸 초대를 전부 세는 `if (sent.length >= 3)` 이 「확인됨」. 이제 「미확인 · 기간 안에서 세는지 못 찾음」 |
+| 0.17.0 | 「환불 요청은 주문마다 최대 두 번(twice)」에 세 번까지 되는 `refunds.length > 2` 가 「확인됨」. twice 를 2로 읽지 못함 |
+| 0.17.0 | `const owned = await db.workspace.count(…)` 뒤 `owned > 3` 이 「워크스페이스는 3개까지」에 「확인됨」. 실제로는 4개까지 됨 |
+| 0.17.0 | 키워드가 있으면 한 번 하는 검사(「팀에 멤버를 넣는다」)를 「팀은 최대 10명」에 이어, 한도를 시험한 적 없는데 「확인됨」. 0.17.0 을 만들던 중 한 시간 메일 한도에도 같은 일이 생겼고 공개 전에 고침 |
 | 0.16.0 | 정액 할인을 비율로 계산하는 코드(`fixed` 갈래의 `total * (1 - v / 100)`)가 그 검사가 통과하면 「확인됨」 |
 | 0.16.0 | 다른 동작의 함수에 있는 검사를 근거로 씀: `getFile` 이 id 를 검사해서, `deleteFile` 은 아무것도 검사하지 않는데 「잘못된 id 로 파일 삭제는 거부」가 「확인됨」 |
 | 0.16.0 | 키워드가 있으면 성공만 보는 검사(「홈페이지가 있는 프로필을 저장한다」)를 거부 규칙에 이음. 0.16.0 을 만들던 중에 생겼고 공개 전에 고침 |
@@ -98,6 +118,8 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 
 | 고친 판 | 전에 있던 일 |
 |---|---|
+| 0.17.0 | 더하기 전에 변수에 담은 개수(`const count = await db.comment.count(…)` 뒤 `count >= 10`, 그다음 `create`)를 새것까지 센 값으로 읽어, 「하루 10개까지」의 맞는 코드를 「다름」 |
+| 0.17.0 | 처음 만든 시간 창 규칙이 너무 넓게 걸려 예전 묶음에 「3하루로 설정됨」 거짓 경보가 생김. 공개 전에 바꿈 |
 | 0.15.0 | 키워드 없이 쓰면 5,000원 정액 쿠폰을 다른 파일의 5만 원 무료 배송 줄과 견줌 |
 | 0.13.0 | 「비밀번호 재설정 메일은 하루 3번까지」를 같은 파일의 `pw.length < 8` 에 붙임 |
 | 0.13.0 | 먼저 세고 막는 코드(`count++; if (count > 3) throw`)를 4번까지 허용으로 읽음 |
@@ -115,10 +137,12 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 - JWT 의 `expiresIn` 값을 못 읽으면 다른 파일 줄이 근거로 나올 수 있음
 - 「관리자만」의 이유가 「조건이 더 있음」 대신 「함수 전체」로 나옴
 - 키워드 없이 쓰면 요청 횟수 제한이 재시도 파일에 이어질 수 있고, 영어 문장에서 근거 줄을 덜 맞게 고를 때가 있음
-- 「한 시간에 N번」인데 코드에 시간 창이 없는 경우
-- class-validator 의 `@IsEmail()` 같은 데코레이터는 검사로 읽지 않음
+- 시각 차이 · 달력 비교(`isSameDay` · `getMonth() ===`) · `startOfDay` / `subHours` · `today` / `recent` 같은 이름이 아닌 다른 방법으로 쓴 시간 창
+- 오늘 것만 거른 목록으로 쓴 「하루에 한 번」(`today.length >= 1`)은 「미확인」으로 남음
+- 키워드가 검사 이름을 덮지 못하면, 맞는 함수에 검사가 있어도 「미확인」으로 남음
+- class-validator 데코레이터 가운데 형식 검사 · `@Length` · `@MinLength` / `@MaxLength` · `@Min` / `@Max` 가 아닌 것
 - 계산식은 정액 갈래(`if` · 삼항식 · `switch` · `fixed` / `flat` / `amount` 라는 이름의 함수 객체)만 판단함. 다른 계산식은 판단하지 않음
-- 키워드 없이 쓰면 일부 중복 막기(`answers.some(...)`, 결제 요청 키)는 검사 이름이 문장을 충분히 담지 못해 「미확인」으로 남음
+- 키워드 없이 쓰면 일부 중복 막기(`answers.some(...)`, 보낸 id 목록)는 검사 이름이 문장을 충분히 담지 못해 「미확인」으로 남음. 0.17.0 에서 줄었음(결제 요청 키 · 「같은 쿠폰을 다시」)
 
 ### 늘 그런 것
 

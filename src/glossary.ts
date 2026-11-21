@@ -100,6 +100,7 @@ const GLOSSARY: [RegExp, string][] = [
   [/장바구니/, 'cart basket'],
   [/가격|금액|요금|배송비/, 'price amount fee cost total subtotal'],
   [/할인|쿠폰/, 'discount coupon'],
+  [/선물/, 'gift present'],
   // 금액을 말하면 코드에서는 amount · price · total 같은 이름으로 나온다 (10만 원을 넘는 환불 ↔ amount > 100000)
   [/\d[\d,]*\s*(?:만|천|백)?\s*원|[$₩]\s*\d|\d\s*(?:dollars?|won|usd|krw)\b/i, 'amount price total fee cost'],
   [/재고/, 'stock inventory'],
@@ -118,6 +119,10 @@ const GLOSSARY: [RegExp, string][] = [
   [/첨부/, 'attachment attach'],
   [/동영상|영상|비디오/, 'video'],
   [/프로필/, 'profile avatar'],
+  [/자기\s*소개|소개\s*글/, 'bio introduction'],
+  // 「리뷰를 쓸 수 없다」의 쓰다는 작성, 「쿠폰을 쓸 수 없다」의 쓰다는 사용이라 둘 다 둔다
+  [/작성/, 'write'],
+  [/쓸\s*수|쓰지|쓴다|쓰는|써서|쓰기/, 'write use'],
   [/폴더/, 'folder directory'],
   [/주소/, 'address'],
   [/카테고리|분류/, 'category'],
@@ -192,6 +197,8 @@ export function normalizePhrases(text: string): string {
     .replace(/\bsign(?:s|ed|ing)?[\s-]+in\b/gi, 'signin')
     .replace(/\bsign(?:s|ed|ing)?[\s-]+out\b/gi, 'signout')
     .replace(/\bsign(?:s|ed|ing)?[\s-]+up\b/gi, 'signup')
+    // 「Registration rejects …」 ↔ register()
+    .replace(/\bregistrations?\b/gi, 'register')
     .replace(/\bcheck(?:s|ed|ing)?[\s-]+out\b/gi, 'checkout')
     .replace(/\btime(?:s|d)?[\s-]+out\b/gi, 'timeout');
 }

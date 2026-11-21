@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { Boundary, Constraint, Evidence, NumPart, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, SchemaField, TestCase, TestStatus, Unit, UnitKind } from './types.ts';
 import { analyzeFile, resolveRefs } from './analyze.ts';
-import { boundaryNote, judge, matchScale, missingBoundary, partValue, pick } from './numeric.ts';
+import { boundaryNote, calendarBoundary, judge, matchScale, missingBoundary, partValue, pick } from './numeric.ts';
 import { changedFiles, changedLines, mergeBase, shortSha, showFile, trackedFiles, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
 import { parseTestReport } from './tests.ts';
 import { tokenize, stem } from './tokens.ts';
@@ -99,7 +99,11 @@ const leftHits = (req: Requirement, left: string) => {
 
 /** 「하루에 3번」 · 「20개까지」는 횟수 · 개수다: 문자열의 길이(pw.length)와 견주지 않는다. 「30자까지」는 글자 수다: 목록의 길이(items.length)와 견주지 않는다. */
 const COUNTED: (UnitKind | null)[] = ['cnt', 'qty'];
-const fitsUnit = (c: Constraint, p: NumPart) => !(p.strLen && COUNTED.includes(c.unit)) && !(p.listLen && c.unit === 'char');
+/** 목록의 개수(thisMonth.length · 넣기 전에 센 값)는 기간(「한 달에」의 1달)이 아니다 */
+const COUNT_LEFT = /\.(?:length|size)\b/;
+const PERIOD_UNITS: (UnitKind | null)[] = ['sec', 'min', 'hour', 'day', 'week', 'month'];
+const fitsUnit = (c: Constraint, p: NumPart) =>
+  !(p.strLen && COUNTED.includes(c.unit)) && !(p.listLen && c.unit === 'char') && !((p.listLen || p.preAdd || COUNT_LEFT.test(p.left)) && PERIOD_UNITS.includes(c.unit));
 /** 요구사항의 숫자 조건 어느 것과도 단위가 맞지 않는 길이 비교(글자 수 ↔ 횟수 · 개수)는 숫자 근거로 치지 않는다 */
 const numberPart = (req: Requirement, p: NumPart) => (!p.strLen && !p.listLen) || !req.constraints.length || req.constraints.some((c) => fitsUnit(c, p));
 
@@ -169,11 +173,19 @@ const MEASURE = new Set(['fee', 'price', 'cost', 'amount', 'total', 'sum', 'char
 const FILLER = new Set(['once', 'per', 'each', 'every', 'only', 'time', 'twice'].map(stem));
 /** 「한 번만 · 하나만 · 중복」이 들어간 요구사항의 개념 (unique exists duplicate taken) */
 const UNIQUE = stem('unique');
+/** 숫자 없이 말한 세는 기간: 「per day」 · 「daily」 · 「하루에」 · 「시간당」 */
+const PER_PERIOD = /\b(?:per|a|an|each|every)\s+(?:day|hour|minute|week|month)\b|\b(?:daily|hourly|weekly|monthly)\b|하루|매일|일일|시간당|분당|주당|일주일|한\s*달|매달|매월/i;
+/** 세는 값의 이름에 든 기간 (sentToday · MAX_RESET_PER_DAY · changesThisMonth) */
+const PERIOD_NAME = /today|daily|per_?day|this_?(?:day|week|month|hour)|hourly|weekly|monthly|per_?(?:hour|minute|week|month)|recent|window|since/i;
+/** 시간을 비교하는 코드 (now - t < 86400000 · Date.now() - at · isSameDay) */
+const TIME_CMP = /\bnow\b\s*-|Date\.now\(\)\s*-|getTime\(\)|isSame(?:Day|Hour|Week|Month)|startOf|toDateString|86400|3600|60\s*\*\s*60|24\s*\*\s*60/;
+/** 무엇인지 말하지 않는 낱말 (same · again) — 검사 잇기에서 개념 수에 넣지 않는다 */
+const SAME_AGAIN = new Set(['same', 'again'].map(stem));
 /** 정액 할인 · 쿠폰 요구사항 (「정액 쿠폰은 금액을 그대로 뺀다」 · 「a fixed discount subtracts its amount」) */
 const FIXED_REQ = /정액|\bfixed\b|\bflat\b/i;
 const FIXED_MONEY = /할인|쿠폰|금액|discount|coupon|voucher|amount|\boff\b/i;
 /** 중복 막기 요구사항(한 번만 · 하나만)의 검사는 이름에도 두 번 · 중복을 말해야 한다. 한 번만 누르는 검사는 근거가 아니다 (X 에서 받은 버그) */
-const TWICE_TEST = /twice|second|again|duplicat|already|only (?:one|once)|more than once|\bused\b|reus|re-us|redeemed|consumed|retr(?:y|ied|ies|ying)|resen[dt]|same key|두\s*번|중복|이미|다시|한\s*번만|하나만|사용한|사용된|재사용/i;
+const TWICE_TEST = /twice|second|again|duplicat|already|only (?:one|once)|more than once|\bused\b|reus|re-us|redeemed|consumed|retr(?:y|ied|ies|ying)|resen[dt]|repeat|same key|두\s*번|중복|이미|다시|반복|한\s*번만|하나만|사용한|사용된|재사용/i;
 const isUniqueReq = (req: Requirement) => !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE));
 /** 「이미 있으면」을 보는 조건의 낱말: if (existing) · if (prev) return prev · if (seen.has(id)) */
 const DUP_GUARD = new Set(['uniqu', 'exist', 'duplicat', 'taken', 'prev', 'previou', 'already', 'seen', 'done', 'processed', 'found'].map(stem));
@@ -194,6 +206,15 @@ function configNamed(req: Requirement, f: Found): boolean {
  * 이름에서 이것만 겹치면, 그 줄이 든 함수 · 문장이 요구사항의 대상을 말할 때만 같은 대상으로 본다.
  * (LOCK_MINUTES = 15 와 「로그인 토큰은 15분 뒤 만료」, canRejoin 의 daysSinceLeft 와 「세션은 7일 뒤 만료」, 가입 양식의 age.min(14) 와 「무료 체험은 14일」)
  */
+/** 요구사항의 대상 낱말 (일반 낱말 · 시간 낱말 빼고). 키워드를 줬어도 문장의 낱말(「리뷰를 쓸 수 없다」의 write)을 함께 본다 */
+const subjectOf = (req: Requirement) => new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t)));
+/** 이름(함수 · 파일)에 든 요구사항 낱말. 함수 이름에 든 낱말을 파일 이름에만 든 낱말보다 두 배로 친다 */
+function nameScore(subject: Set<string>, u: Unit): number {
+  const fn = new Set(tokenize(u.fn ?? '').filter((t) => subject.has(t)));
+  const file = new Set(tokenize(u.file.split('/').pop()!.replace(/\.[^.]+$/, '')).filter((t) => subject.has(t) && !fn.has(t)));
+  return fn.size * 2 + file.size;
+}
+const AGE = stem('age');
 const WEAK_NAME = new Set(['day', 'minute', 'min', 'ms', 'sec', 'second', 'hour', 'week', 'month', 'age'].map(stem));
 
 function sameTarget(req: Requirement, f: Found): boolean {
@@ -208,16 +229,24 @@ function sameTarget(req: Requirement, f: Found): boolean {
     // maxAge · max 처럼 이름 자체가 일반적인 설정값은, 그 값을 정한 문장이 대상을 말하면 같은 대상이다
     // (「Sessions expire after 7 days」 ↔ session({ cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 } }))
     const toks = tokenize(f.p.left);
-    return f.p.source === 'config' && toks.length > 0 && toks.every((t) => GENERIC.has(t) || WEAK_NAME.has(t)) && subjectAround();
+    if (f.p.source === 'config' && toks.length > 0 && toks.every((t) => GENERIC.has(t) || WEAK_NAME.has(t)) && subjectAround()) return true;
+    // 더하기 전에 세고 막는 줄(week.length >= 2 뒤 history.push · count >= 10 뒤 db.comment.create)은 그 함수가 하는 일을 센다.
+    // 이름(history · count)이 요구사항 낱말이 아니어도, 함수가 요구사항의 대상을 말하면(withdraw ↔ 출금) 같은 대상이다
+    return f.p.source === 'compare' && f.p.thenKind === 'reject' && f.p.preAdd && subjectAround();
   }
-  if (!tokenize(f.p.left).some((t) => said.has(t) && !WEAK_NAME.has(t)) && !subjectAround()) return false;
+  // age 는 maxAge(쿠키) · 「30 days」처럼 사람 나이가 아닐 때가 많아 약한 이름이다.
+  // 요구사항이 나이를 직접 말하고(Age must be … · 나이) 이름이 그 낱말 하나(dto.age · age)면 바로 그것이다
+  const bare = stem(f.p.left.split(/[.\s]/).pop()!.toLowerCase());
+  const ownAge = (t: string) => t === AGE && bare === AGE && /\bages?\b|나이|연령/i.test(req.text);
+  if (!tokenize(f.p.left).some((t) => said.has(t) && (!WEAK_NAME.has(t) || ownAge(t))) && !subjectAround()) return false;
   if (f.p.source === 'config' && !configNamed(req, f)) return false;
   const specific = req.tokens.filter((t) => !GENERIC.has(t));
   const left = new Set(tokenize(f.p.left));
   // 일반적인 낱말이라도 둘 이상 겹치면(minLength ↔ min, length) 같은 대상으로 본다
   if (!specific.length || hits >= 2 || specific.some((t) => left.has(t))) return true;
-  // max: 10 처럼 이름이 일반적이면, 그 값이 들어 있는 문장(loginLimit = rateLimit({ … }))을 본다
-  return specific.some((t) => f.u.tokens.includes(t));
+  // max: 10 처럼 이름이 일반적이면, 그 값이 들어 있는 문장(loginLimit = rateLimit({ … }))이나 그 줄이 든 함수(createGroup 의 size)를 본다
+  const fnWords = tokenize(f.u.fn ?? '');
+  return specific.some((t) => f.u.tokens.includes(t) || (f.p.source === 'compare' && fnWords.includes(t)));
 }
 
 const TIME_UNIT = new Set<UnitKind>(['sec', 'min', 'hour', 'day', 'week', 'month']);
@@ -243,7 +272,9 @@ const TIME_WORDS = new Set(['day', 'minute', 'min', 'ms', 'sec', 'second', 'hour
 function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Unit | null }[] {
   const all: Found[] = units.flatMap((u) => (u.cond?.parts ?? []).map((p) => ({ u, p, score: scoreUnit(req, u).score })));
   // 요구사항의 낱말이 더 많이 겹치는 비교가 먼저, 그다음 이번에 바뀐 줄, 그다음 실제로 판단하는 비교
-  const rank = (f: Found) => leftHits(req, f.p.left) * 1000 + (f.u.changed ? 500 : 0) + SOURCE_RANK[f.p.source] + f.score;
+  // 나머지가 같으면 요구사항의 기능 이름을 가진 함수의 줄이 먼저다 (uploadAvatar 와 uploadDocument 에 같은 크기 검사가 있으면 「문서 업로드」는 uploadDocument)
+  const subject = subjectOf(req);
+  const rank = (f: Found) => (leftHits(req, f.p.left) * 1000 + (f.u.changed ? 500 : 0) + SOURCE_RANK[f.p.source] + f.score) * 16 + Math.min(15, nameScore(subject, f.u));
   const used = new Set<NumPart>();
   const out = new Map<Constraint, { b: Boundary; u: Unit | null }>();
   const chosen = new Map<Constraint, NumPart>();
@@ -283,6 +314,14 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
   // 3) 대상 이름은 안 겹치지만 값이 같고, 줄 자체가 요구사항과 이어지는 비교 (마지막 수단)
   for (const c of req.constraints) {
     if (out.has(c)) continue;
+    // 「한 달에 두 번」의 1달: 횟수로 고른 줄이 센 목록을 달력으로 같은 달만 걸렀으면(getMonth() === now.getMonth()) 그 창이다
+    if (c.window && c.value === 1) {
+      const cal = all.find((g) => g.p.calendar === c.unit && [...chosen.values()].includes(g.p));
+      if (cal) {
+        out.set(c, { b: calendarBoundary(c, cal.p), u: cal.u });
+        continue;
+      }
+    }
     // 설정값은 이름이 전부다: 이름에 요구사항의 대상이 없으면(TAX_RATE ↔ 포인트 적립률) 값이 같아도 쓰지 않는다
     // (이름이 limit 처럼 일반적이면 그 값을 정한 문장을 본다: const { limit = 20 } = query ↔ 조회)
     const named = (f: Found) => f.p.source !== 'config' || configNamed(req, f);
@@ -368,20 +407,52 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
   // 막는 조건이 요구사항이 말하는 기능이 아닌 다른 함수에 있으면 근거가 아니다 (X 에서 받은 버그:
   // 「잘못된 이메일이면 가입 거부」 ↔ 가입은 검사하지 않고 newsletter 의 subscribe 만 이메일을 검사).
   // 요구사항의 낱말을 이름(함수 · 파일)에 가진 다른 함수가 있으면 그쪽을 근거로 두고 「일부 발견」으로 둔다.
+  // 이름(함수 · 파일)에 요구사항 낱말을 더 많이 담은 다른 함수가 있으면 그쪽이 요구사항의 기능이다
+  // (「잘못된 id 로 파일 삭제는 거부」 ↔ getFile 의 검사가 아니라 deleteFile). 함수 이름이 파일 이름보다 앞선다:
+  // signup.ts 안의 subscribe 는 가입 함수가 아니다 (국내 홍보 세션이 체험 페이지에서 찾은 0.16.0 오판).
+  // 숫자 조건은 같은 파일 안에서만 본다(설정값 · 도우미 함수는 다른 파일에 흔하다). 그 함수가 검사 함수를 부르면 그 검사도 그 기능의 것이다.
   let foreign = false;
-  if (!judged.length && unit.kind === 'condition' && unit.guard) {
-    const subject = new Set(req.tokens.filter((t) => !GENERIC.has(t) && !FILLER.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t)));
-    // 이름(함수 · 파일)에 든 요구사항 낱말 수. 막는 조건이 든 함수보다 더 많이 담은 다른 함수가 있으면 그쪽이 요구사항의 기능이다
-    // (「잘못된 id 로 파일 삭제는 거부」 ↔ getFile 의 검사가 아니라 deleteFile)
-    const nameHits = (u: Unit) => new Set([...tokenize(u.fn ?? ''), ...tokenize(u.file.split('/').pop()!.replace(/\.[^.]+$/, ''))].filter((t) => subject.has(t))).size;
-    const mine = nameHits(unit);
-    const own = units
-      .filter((u) => u.fn !== unit.fn && nameHits(u) > mine)
-      .map((u) => ({ u, score: scoreUnit(req, u).score }))
-      .sort((a, b) => b.score - a.score)[0];
-    if (own && own.score >= 1) {
-      unit = own.u;
-      foreign = true;
+  const isFn = (file: string, fn: string) => units.some((x) => x.kind === 'function' && x.file === file && x.fn === fn);
+  // 함수 밖의 설정값(const MAX_VIDEO_BYTES = …)이면 그 이름
+  const configName = unit.kind === 'condition' && !isFn(unit.file, unit.fn) ? (unit.cond?.parts ?? []).find((p) => p.source === 'config')?.left.split('.').pop() : undefined;
+  // 막는 조건, 설정값, 그리고 숫자를 판정한 조건(삼항식 total >= FREE_SHIPPING_MIN ? 0 : 3000 도)은 그 주인 함수를 본다
+  // (함수 밖의 스키마 · 객체는 주인 함수가 없으므로 숫자 판정만으로는 보지 않는다: signupSchema 의 age.min(14))
+  if (unit.kind === 'condition' && (unit.guard || configName || (judged.length > 0 && isFn(unit.file, unit.fn)))) {
+    const subject = subjectOf(req);
+    // 검사의 주인은 그 검사를 쓰는 함수다: 검사 함수를 부르는 함수(assertValidEmail ← register), 같은 파일에서 설정값을 쓰는 함수(MAX_VIDEO_BYTES ← uploadImage).
+    // 쓰는 함수가 없으면 검사가 든 함수 자신이다. 검사 함수 이름(assertValidEmail 의 email)은 기능 이름이 아니므로 부르는 함수가 있으면 그쪽 이름으로 본다
+    const callee = unit.fn.split('.').pop()!;
+    const users = units.filter((x) => x.kind === 'function' && (configName ? x.file === unit.file && !!x.refs?.includes(configName) : !!x.calls?.includes(callee)));
+    if (configName && !users.length) {
+      // 아무 함수도 쓰지 않는 설정값은 예전처럼 그대로 둔다
+    } else {
+    const owners = new Set(users.map((x) => `${x.file}#${x.fn}`));
+    const mine = users.length ? Math.max(...users.map((x) => nameScore(subject, x))) : nameScore(subject, unit);
+    const pool = units.filter((u) => u.fn !== unit.fn && !owners.has(`${u.file}#${u.fn}`) && nameScore(subject, u) > mine && (!judged.length || u.file === unit.file));
+    if (pool.length) {
+      const top = Math.max(...pool.map((u) => nameScore(subject, u)));
+      const theirs = pool.filter((u) => nameScore(subject, u) === top);
+      const words = new Set([...req.tokens, ...req.concepts.flat()]);
+      // 그 함수 안의 막는 조건이 요구사항의 대상을 말하는가 (함수 이름 말고 조건 글에서), 또는 같은 검사인가
+      const said = (u: Unit) => {
+        const own = new Set(tokenize(u.fn ?? ''));
+        return tokenize(u.text).some((t) => words.has(t) && !own.has(t) && !GENERIC.has(t));
+      };
+      const same = (u: Unit) => u.text.replace(/\s+/g, ' ') === unit.text.replace(/\s+/g, ' ');
+      const check = theirs
+        .filter((u) => u.kind === 'condition' && u.guard && (said(u) || same(u)))
+        .map((u) => ({ u, score: scoreUnit(req, u).score }))
+        .sort((a, b) => b.score - a.score)[0];
+      if (check) {
+        if (!judged.length) unit = check.u;
+      } else {
+        const own = theirs.map((u) => ({ u, score: scoreUnit(req, u).score })).sort((a, b) => b.score - a.score)[0];
+        if (own && own.score >= 1) {
+          unit = own.u;
+          foreign = true;
+        }
+      }
+    }
     }
   }
   let dupInner = false;
@@ -416,8 +487,16 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
     found && !judged.length && (req.guardCue || req.needsCheck)
       ? fields.find((f) => !f.checked && tokenize(f.name).some((t) => words.has(t)) && !(f.file === unit.file && f.line >= unit.startLine && f.line <= unit.endLine))
       : undefined;
-  const status = found && !unchecked ? '발견' : '일부 발견';
+  // 「하루에 3번까지」 · 「at most 3 invites per day」인데 세는 줄의 이름(sentToday · MAX_PER_DAY)에도, 같은 함수의 시간 비교(now - t < …)에도
+  // 기간이 없으면(sent.length >= 3) 기간과 상관없이 전부 센다. 숫자만 맞는다고 확인됐다고 하지 않는다.
+  const perPeriod =
+    PER_PERIOD.test(req.text) && !req.constraints.some((c) => c.window) && req.constraints.some((c) => (c.rel === 'lte' || c.rel === 'lt') && (c.unit === 'cnt' || c.unit === 'qty' || c.unit === null));
+  const noWindow =
+    // 오류 글(throw new Error('DAILY_LIMIT'))의 「daily」는 세는 값이 아니므로 따옴표 안 글은 빼고 본다.
+    found && perPeriod && judged.length > 0 && unit.kind === 'condition' && !unit.cond?.parts?.some((p) => p.timed) && !PERIOD_NAME.test(unit.text.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, "''")) && !units.some((u) => u.file === unit.file && u.fn === unit.fn && u.kind === 'condition' && TIME_CMP.test(u.text));
+  const status = found && !unchecked && !noWindow ? '발견' : '일부 발견';
   const ev: Evidence = { unit, score: s.score, status, why: s.why };
+  if (noWindow) ev.noWindow = true;
   if (unchecked) {
     const at = `${unchecked.file.split('/').pop()}:${unchecked.line}`;
     ev.unchecked = { ko: `${unchecked.name} 을(를) 검사 없이 받는 곳이 있음 (${at})`, en: `${unchecked.name} is accepted without a check at ${at}` };
@@ -436,7 +515,29 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
   return ev;
 }
 
-const NEGATIVE_TEST = /(reject|den(y|ies|ied)|block|refus|forbid|fail|error|throw|invalid|cannot|can't|does not|doesn't|should not|must not|unauthori|locked out|거부|차단|실패|막|않)/i;
+/** 검사 이름의 서수: a fourth invite · the 11th comment · 세 번째 출금 · 4번째 */
+const ORD_EN: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20, thirtieth: 30, fiftieth: 50, hundredth: 100 };
+const ORD_KO: Record<string, number> = { 첫: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9, 열: 10, 열한: 11, 열두: 12, 열세: 13, 열네: 14, 열다섯: 15, 스무: 20 };
+function ordinals(name: string): number[] {
+  const out: number[] = [];
+  for (const m of name.matchAll(/\b(\d+)(?:st|nd|rd|th)\b|(\d+)\s*(?:번째|회째)/gi)) out.push(Number(m[1] ?? m[2]));
+  for (const m of name.matchAll(/\b([a-z]+)\b/gi)) {
+    const w = m[1].toLowerCase();
+    if (!ORD_EN[w]) continue;
+    // 「1 second · per second · wait a second before …」의 second 는 시간이다. 「a second invite」처럼 뒤에 무엇이 오면 서수다
+    if (w === 'second' && (/(?:\d|one|per|each|every|half a|a few)\s*$/i.test(name.slice(0, m.index)) || !/^\s+(?!(?:later|after|before|ago|delay|timeout|window|interval|passes|elapses)\b)[a-z]/i.test(name.slice(m.index! + w.length)))) continue;
+    out.push(ORD_EN[w]);
+  }
+  for (const m of name.matchAll(/(?<![가-힣])(열다섯|열한|열두|열세|열네|다섯|여섯|일곱|여덟|아홉|스무|첫|두|세|네|열)\s*번째/g)) out.push(ORD_KO[m[1]]);
+  return out;
+}
+/** 「하루에 3번까지」의 경계 검사인가: 검사 이름이 바로 다음 서수(네 번째 · a fourth)를 말한다 */
+function boundaryTest(req: Requirement, name: string): boolean {
+  const ords = ordinals(name);
+  if (!ords.length) return false;
+  return req.constraints.some((c) => (c.unit === 'cnt' || c.unit === 'qty' || c.unit === null) && !c.window && ((c.rel === 'lte' && ords.includes(c.value + 1)) || (c.rel === 'lt' && ords.includes(c.value))));
+}
+const NEGATIVE_TEST = /(reject|den(y|ies|ied)|block|refus|forbid|fail|error|throw|invalid|cannot|can't|does not|doesn't|should not|must not|unauthori|locked out|거부|차단|실패|막|않|수\s*없|불가|금지|못\s*(?:하|받|씀|써|보|넣|가))/i;
 
 /** 검사 이름의 50,000 을 50000 으로 */
 const plainNumbers = (s: string) => s.replace(/(\d),(?=\d{3}\b)/g, '$1');
@@ -448,7 +549,9 @@ const namedNumbers = (name: string) =>
   [...plainNumbers(name)
     .replace(/\b(a|an|the)\s+(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/gi, (_w, a: string, o: string) => `${a} ${ORDINAL[o.toLowerCase()]}`)
     .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (w) => WORD_NUMBER[w.toLowerCase()])
-    .matchAll(/\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+    .matchAll(/\d+(?:\.\d+)?/g)].map((m) => Number(m[0])).concat(ordinals(name));
+/** 「3번까지」 같은 개수 제한을 시험하는 검사 이름: 거부 · 한도를 말하거나 숫자 · 서수를 적는다 (「sends a reset mail」은 한도를 시험하지 않는다) */
+const LIMIT_TEST = /limit|too many|exceed|\bmax|at most|up to|quota|throttl|rate|한도|초과|넘|최대|까지|제한/i;
 /** 한도 · 단위를 말할 뿐 무엇의 한도인지는 말해 주지 않는 낱말 */
 const BROAD = new Set([...GENERIC, ...['maximum', 'cap', 'minimum', 'counter', 'time', 'day', 'minute', 'hour', 'second', 'sec', 'ms', 'duration', 'window', 'period'].map(stem)]);
 
@@ -481,24 +584,38 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
     const covered = req.concepts.filter((g) => g.some((x) => names.has(x))).length;
     return shared && covered >= 2 && covered * 2 >= req.concepts.length && (!req.guardCue || NEGATIVE_TEST.test(t.name));
   };
+  // 개수 제한(3번까지 · at most 10 per day)에는 한도를 시험하는 검사만 잇는다: 거부 · 한도를 말하거나 숫자 · 서수를 적는다.
+  // 「sends a reset mail」처럼 한 번 하는 검사는 「1시간에 3번까지」의 근거가 아니다
+  const capReq = req.constraints.some((c) => (c.rel === 'lte' || c.rel === 'lt') && !c.window && (c.unit === 'cnt' || c.unit === 'qty' || (c.unit === null && PER_PERIOD.test(req.text))));
+  const limitOk = (t: TestCase) => !capReq || NEGATIVE_TEST.test(t.name) || LIMIT_TEST.test(t.name) || namedNumbers(t.name).length > 0;
   if (!req.auto) {
     const set = new Set([...req.tokens, ...req.numbers.map(String)]);
     // 키워드가 하나뿐이면 그 낱말 하나로 잇는다 (둘을 요구하면 영영 이어지지 않는다)
     const need = Math.min(2, set.size);
     // 막는 요구사항이면 키워드로 잇는 검사도 거부를 말해야 한다 (「저장한다」 검사는 「형식이 틀리면 저장하지 않는다」의 근거가 아니다)
     const negOk = (t: TestCase) => !req.guardCue || NEGATIVE_TEST.test(t.name);
-    return tests.filter((t) => sameRule(t) || agrees(t) || (twiceOk(t) && negOk(t) && new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= need));
+    // 「3번까지」의 경계 검사(a fourth … is rejected)는 서수가 숫자 하나 몫을 한다
+    const edge = (t: TestCase) => (boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) ? 1 : 0);
+    return tests.filter((t) => sameRule(t) || agrees(t) || (twiceOk(t) && negOk(t) && limitOk(t) && new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size + edge(t) >= need));
   }
   // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
   // 조건: 요구사항의 개념(숫자 포함) 가운데 3분의 2 이상을 검사 이름이 담고, 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
   const groups = [...req.concepts, ...req.numbers.map((n) => [String(n)])];
+  const scope = new Set([...req.text.matchAll(/\b(?:per|each|every)\s+([a-z]+)/gi)].map((m) => stem(m[1].toLowerCase())).filter((s) => !TIME_WORDS.has(s) && !WEAK_NAME.has(s)));
   return tests.filter((t) => {
     if (sameRule(t) || agrees(t)) return true;
     const names = testWords(t.name);
-    if (groups.length < 2 || !twiceOk(t)) return false;
+    if (groups.length < 2 || !twiceOk(t) || !limitOk(t)) return false;
     if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
-    const covered = groups.filter((g) => g.some((x) => names.has(x))).length;
-    return covered >= 2 && covered / groups.length >= 2 / 3;
+    // 중복 막기 요구사항이면 「두 번 · 다시 · 같은 키」를 말하는 검사 이름이 「한 번만」 개념을 담은 것으로 본다
+    // (「같은 이벤트에는 한 번만 참여」 ↔ 「joining the same event twice is rejected」)
+    const uniqueSaid = isUniqueReq(req) && TWICE_TEST.test(t.name);
+    // 「same · again · once」처럼 무엇인지 말하지 않는 낱말 묶음과 「per account · each user」의 범위 낱말은 개념 수에 넣지 않는다
+    const real = groups.filter((g) => !g.every((x) => FILLER.has(x) || SAME_AGAIN.has(x) || scope.has(x)));
+    // 「하루에 3번까지」 ↔ 「a fourth invite on the same day is rejected」: 바로 다음 서수와 거부를 말하면 대상 하나만 겹쳐도 경계 검사다
+    if (boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) && real.some((g) => !/^\d/.test(g[0]) && g.some((x) => names.has(x)))) return true;
+    const covered = real.filter((g) => g.some((x) => names.has(x)) || (uniqueSaid && g.includes(UNIQUE))).length;
+    return covered >= 2 && covered / real.length >= 2 / 3;
   });
 }
 

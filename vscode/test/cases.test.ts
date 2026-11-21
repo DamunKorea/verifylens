@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -319,4 +319,82 @@ test('a key that returns the earlier result is a duplicate check, and a happy-pa
   assert.equal(many('같은 결제 요청을 다시 보내도 결제는 한 번만 된다 | keywords: payment, idempotencyKey', { 'src/payment.ts': pay }, 'a retried payment request with the same key charges once').overall, '확인됨');
   const profile = { 'src/schemas/profile.ts': "import { z } from 'zod';\nexport const profileSchema = z.object({ homepage: z.string().url() });\n" };
   assert.equal(many('홈페이지 주소가 URL 형식이 아니면 저장하지 않는다 | keywords: homepage, profile', profile, 'saves a profile with a homepage').overall, '미확인');
+});
+
+test('class-validator decorators are checks: format, @Length, @Min / @Max', () => {
+  const dto = (decos: string, prop: string, type = 'string') => `import { IsEmail, IsString, IsInt, Length, Matches, Max, Min } from 'class-validator';\nexport class Dto {\n  ${decos}\n  ${prop}!: ${type};\n}\n`;
+  assert.equal(many('Sign-up rejects an invalid email address', { 'src/signup.dto.ts': dto('@IsEmail()', 'email') }, 'sign-up rejects an invalid email address').overall, '확인됨');
+  assert.equal(many('Sign-up rejects an invalid email address', { 'src/signup.dto.ts': dto('@IsString()', 'email') }, 'sign-up rejects an invalid email address').overall, '미확인');
+  assert.equal(many('휴대폰 번호는 숫자 11자리만 받는다 | keywords: phone, dto', { 'src/phone.dto.ts': dto('@Length(11, 11)', 'phone') }, 'rejects a phone number that is not 11 digits').overall, '확인됨');
+  assert.equal(many('게시글 제목은 2자 이상 50자 이하다 | keywords: title, dto', { 'src/post.dto.ts': dto('@Length(2, 100)', 'title') }, 'rejects a title shorter than 2 or longer than 50 characters').overall, '다름');
+  // between 14 and 120 에 @Min(13) 이면 14 를 넣든 빼든 틀렸다
+  assert.equal(many('Age must be between 14 and 120', { 'src/age.dto.ts': dto('@IsInt()\n  @Min(13)\n  @Max(120)', 'age', 'number') }, 'rejects an age outside 14 to 120').overall, '다름');
+  assert.equal(many('Age must be between 14 and 120', { 'src/age.dto.ts': dto('@IsInt()\n  @Min(14)\n  @Max(120)', 'age', 'number') }, 'rejects an age outside 14 to 120').overall, '확인됨');
+});
+
+test('a per-day limit that counts everything is not verified, and says there is no time window', () => {
+  const req = 'Each user can send at most 3 invites per day';
+  const t = 'a fourth invite on the same day is rejected';
+  const all = "export function sendInvite(sent: number[], now: number) {\n  if (sent.length >= 3) throw new Error('DAILY_LIMIT');\n  sent.push(now);\n}\n";
+  const today = "export function sendInvite(sent: number[], now: number) {\n  const today = sent.filter((t) => now - t < 24 * 60 * 60 * 1000);\n  if (today.length >= 3) throw new Error('DAILY_LIMIT');\n  sent.push(now);\n}\n";
+  const set = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { 'src/invite.ts': all }, tests: [{ name: t, status: 'pass', message: '' }] });
+  const r = evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main');
+  assert.equal(r.summaries[0].overall, '미확인');
+  assert.ok(undecidedReasons(r, r.summaries[0]).includes('no-window'));
+  assert.equal(many(req, { 'src/invite.ts': today }, t).overall, '확인됨');
+  // 오늘 0시부터 센 DB 개수, 달력으로 같은 달만 센 목록도 기간이다
+  const db = "import { startOfDay } from 'date-fns';\nexport async function postComment(db: any, userId: string, body: string) {\n  const count = await db.comment.count({ where: { userId, createdAt: { gte: startOfDay(new Date()) } } });\n  if (count >= 10) throw new Error('LIMIT');\n  return db.comment.create({ data: { userId, body } });\n}\n";
+  assert.equal(many('Each user can post at most 10 comments per day', { 'src/comment.ts': db }, 'an eleventh comment in one day is rejected').overall, '확인됨');
+  const month = "export function claimCoupon(claims: Date[], now: Date) {\n  const thisMonth = claims.filter((c) => c.getMonth() === now.getMonth() && c.getFullYear() === now.getFullYear());\n  if (thisMonth.length >= 2) throw new Error('MONTHLY_LIMIT');\n  claims.push(now);\n}\n";
+  assert.equal(many('쿠폰은 한 달에 두 번까지만 받을 수 있다 | keywords: coupon, claim', { 'src/claim.ts': month }, '한 달에 세 번째 쿠폰은 받을 수 없다').overall, '확인됨');
+});
+
+test('a count kept in a variable before adding is the current count', () => {
+  const ws = (op: string) => `export async function createWorkspace(db: any, userId: string, name: string) {\n  const owned = await db.workspace.count({ where: { ownerId: userId } });\n  if (owned ${op} 3) throw new Error('WORKSPACE_LIMIT');\n  return db.workspace.create({ data: { ownerId: userId, name } });\n}\n`;
+  assert.equal(many('Each user can create at most 3 workspaces', { 'src/workspace.ts': ws('>=') }, 'creating a fourth workspace fails').overall, '확인됨');
+  assert.equal(many('Each user can create at most 3 workspaces', { 'src/workspace.ts': ws('>') }, 'creating a fourth workspace fails').overall, '다름');
+  const sms = "export function sendSms(log: number[]) {\n  const sentThisHour = log.filter((t) => Date.now() - t < 3600_000).length;\n  if (sentThisHour >= 5) throw new Error('TOO_MANY');\n  log.push(Date.now());\n}\n";
+  assert.equal(many('인증 문자는 한 시간에 5번까지만 보낼 수 있다', { 'src/sms.ts': sms }, '한 시간 안에 여섯 번째 문자는 막는다').overall, '확인됨');
+});
+
+test('tests are linked to a count limit by the next ordinal, and a test that does it once is not', () => {
+  const reset = "export function sendResetMail(sent: number[], now: number) {\n  const recent = sent.filter((t) => now - t < 60 * 60 * 1000);\n  if (recent.length >= 3) throw new Error('TOO_MANY');\n  sent.push(now);\n}\n";
+  const req = '비밀번호 재설정 메일은 1시간에 3번까지 보낼 수 있다 | keywords: reset, mail';
+  assert.equal(many(req, { 'src/reset.ts': reset }, 'sends a reset mail').overall, '미확인');
+  assert.equal(many(req, { 'src/reset.ts': reset }, '1시간 안에 네 번째 재설정 메일은 막는다').overall, '확인됨');
+  const refund = (op: string) => `export function requestRefund(order: { refunds: string[] }, reason: string) {\n  if (order.refunds.length ${op} 2) throw new Error('REFUND_LIMIT');\n  order.refunds.push(reason);\n}\n`;
+  assert.equal(many('A customer can request a refund at most twice per order', { 'src/refund.ts': refund('>=') }, 'a third refund request for the same order is rejected').overall, '확인됨');
+  assert.equal(many('A customer can request a refund at most twice per order', { 'src/refund.ts': refund('>') }, 'a third refund request for the same order is rejected').overall, '다름');
+  assert.deepEqual(parseConstraints('Users can change their display name at most twice a month').map((c) => [c.value, c.unit, c.rel]), [[2, 'cnt', 'lte']]);
+});
+
+test('a check in another feature\'s function of the same file is not evidence, even when the file is named for the requirement', () => {
+  // 국내 홍보 세션이 체험 페이지에서 찾은 0.16.0 오판: signup.ts 안 subscribe 의 검사로 「가입 거부」가 확인됨
+  const re = 'const EMAIL_RE = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\n';
+  const sub = "export function subscribe(email: string) { if (!EMAIL_RE.test(email)) throw new Error('INVALID_EMAIL'); return newsletter.add(email); }\n";
+  const req = '이메일 형식이 올바르지 않으면 가입을 거부한다';
+  const t = 'signup rejects an invalid email';
+  for (const file of ['src/signup.ts', 'src/account.ts']) {
+    assert.equal(many(req, { [file]: re + sub + 'export function signup(email: string, password: string) { return users.create({ email, password }); }\n' }, t).overall, '미확인', file);
+  }
+  const fixed = many(req, { 'src/signup.ts': re + sub + "export function signup(email: string, password: string) { if (!EMAIL_RE.test(email)) throw new Error('INVALID_EMAIL'); return users.create({ email, password }); }\n" }, t);
+  assert.equal(fixed.overall, '확인됨');
+  // 「~할 수 없다」도 막는 규칙이다
+  const gift = (check: boolean) => `export function applyCoupon(c: { expiresAt: number }, now: number) {\n  if (c.expiresAt < now) throw new Error('EXPIRED');\n  return c;\n}\nexport function giftCoupon(c: { expiresAt: number }, now: number, to: string) {\n${check ? "  if (c.expiresAt < now) throw new Error('EXPIRED');\n" : ''}  return gifts.send(c, to);\n}\n`;
+  assert.equal(many('만료된 쿠폰은 선물할 수 없다', { 'src/coupon.ts': gift(false) }, '만료된 쿠폰 선물은 거부한다').overall, '미확인');
+  assert.equal(many('만료된 쿠폰은 선물할 수 없다', { 'src/coupon.ts': gift(true) }, '만료된 쿠폰 선물은 거부한다').overall, '확인됨');
+});
+
+test('a check belongs to the functions that call it or use its setting', () => {
+  const helper = (caller: 'register' | 'subscribe') => `const EMAIL_RE = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nfunction assertValidEmail(email: string) {\n  if (!EMAIL_RE.test(email)) throw new Error('INVALID_EMAIL');\n}\nexport function register(email: string, password: string) {\n${caller === 'register' ? '  assertValidEmail(email);\n' : ''}  return users.create({ email, password });\n}\nexport function subscribe(email: string) {\n${caller === 'subscribe' ? '  assertValidEmail(email);\n' : ''}  return newsletter.add(email);\n}\n`;
+  const req = 'Registration rejects an invalid email address';
+  const t = 'registration with an invalid email is rejected';
+  assert.equal(many(req, { 'src/register.ts': helper('register') }, t).overall, '확인됨');
+  assert.equal(many(req, { 'src/register.ts': helper('subscribe') }, t).overall, '미확인');
+  const ship = (owner: 'fee' | 'bonus') => `const FREE_SHIPPING_MIN = 50000;\nexport function shippingFee(total: number) {\n  return ${owner === 'fee' ? 'total >= FREE_SHIPPING_MIN ? 0 : 3000' : '3000'};\n}\nexport function pointsBonus(total: number) {\n  return total >= ${owner === 'bonus' ? 'FREE_SHIPPING_MIN' : '100000'} ? 100 : 0;\n}\n`;
+  assert.equal(many('5만 원 이상 주문은 배송비가 무료다', { 'src/shipping.ts': ship('bonus') }, '5만 원 이상 주문의 배송비는 0원이다').overall, '미확인');
+  // 두 클래스의 같은 이름 메서드는 클래스 이름으로 구별한다
+  const svc = (inCart: boolean) => `export class CartService {\n  add(item: { stock: number }) {\n${inCart ? "    if (item.stock <= 0) throw new Error('OUT_OF_STOCK');\n" : ''}    return cart.push(item);\n  }\n}\nexport class WishlistService {\n  add(item: { stock: number }) {\n${inCart ? '' : "    if (item.stock <= 0) throw new Error('OUT_OF_STOCK');\n"}    return wishlist.push(item);\n  }\n}\n`;
+  assert.equal(many('재고가 없는 상품은 장바구니에 담을 수 없다', { 'src/services.ts': svc(false) }, '재고가 없는 상품을 장바구니에 담으면 거부한다').overall, '미확인');
+  assert.equal(many('재고가 없는 상품은 장바구니에 담을 수 없다', { 'src/services.ts': svc(true) }, '재고가 없는 상품을 장바구니에 담으면 거부한다').overall, '확인됨');
 });

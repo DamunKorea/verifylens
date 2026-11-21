@@ -216,6 +216,14 @@ export function parseConstraints(text0: string): Constraint[] {
   }
   for (const m of text.matchAll(NATIVE_RE)) if (!onlyOnce(text, m)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
   for (const m of text.matchAll(WORD_RE)) add(makeConstraint(text, WORDS[m[1].toLowerCase()], m.index!, m.index! + m[0].length));
+  // 「at most twice a month」 · 「up to three times」의 twice · thrice 는 횟수다. 앞말(at most · up to · only)이 있을 때만 제한으로 본다
+  for (const m of text.matchAll(/\b(twice|thrice)\b/gi)) {
+    const head = text.slice(Math.max(0, m.index! - 30), m.index!);
+    let rel: NumRelation | null = null;
+    for (const [re, r] of BEFORE) if (re.test(head)) { rel = r; break; }
+    if (!rel && /\bonly\s*$/i.test(head)) rel = 'lte';
+    if (rel === 'lte' || rel === 'lt' || rel === 'gte' || rel === 'gt') add(finish(text, m[1].toLowerCase() === 'twice' ? 2 : 3, 'cnt', '', rel, m[0]));
+  }
   wordBoundaries(text).forEach(add);
   return onceEvery(text, out);
 }
@@ -309,6 +317,12 @@ const isCapacity = (c: Constraint) => c.rel === 'lte' || c.rel === 'lt';
 
 function base(c: Constraint, p: NumPart | null): Boundary {
   return { required: c.value, attempts: null, ok: null, before: p?.incBefore ?? null, kind: 'value', want: constraintText(c), line: p?.line };
+}
+
+/** 「한 달에 두 번」의 1달: 센 목록을 달력으로 같은 달(같은 날 · 주 · 시간)만 걸렀으면 그 창이다 */
+export function calendarBoundary(c: Constraint, p: NumPart): Boundary {
+  const word = { hour: ['시간', 'hour'], day: ['날', 'day'], week: ['주', 'week'], month: ['달', 'month'] }[p.calendar ?? 'day'];
+  return { ...base(c, p), ok: true, say: T(`달력으로 같은 ${word[0]}만 셈`, `counts only the same calendar ${word[1]}`) };
 }
 
 /** 이 숫자 조건을 뒷받침할 비교를 코드에서 찾지 못했을 때 */
@@ -462,8 +476,11 @@ export function judge(c: Constraint, p: NumPart): Boundary {
     const trueSide = p.op === '>' || p.op === '>=' ? 'upper' : 'lower';
     if (trueSide === c.validSide) return { ...b, ok: false, why: 'inverted', say: T(`${say.ko}: 허용해야 할 쪽을 막고 있음`, `${say.en}: it rejects the side that should be allowed`) };
   }
-  // between 1 and 10 은 끝값 포함 여부가 문장에 없다
-  if (c.soft && Math.abs(cut - wanted) === 1) return { ...b, why: 'edge', say: T(`${say.ko}. 「${c.raw}」의 끝값 포함 여부가 문장에 없음`, `${say.en}. "${c.raw}" does not say whether the end value counts`) };
+  // between 1 and 10 은 끝값 포함 여부가 문장에 없다. 코드가 다른 쪽으로 읽은 경계와 같을 때만 그렇게 말한다
+  // (between 14 and 120 에 @Min(13) 이면 14 를 넣든 빼든 틀렸다)
+  const altRel: NumRelation = c.rel === 'gte' ? 'gt' : c.rel === 'gt' ? 'gte' : c.rel === 'lte' ? 'lt' : 'lte';
+  const altWanted = (altRel === 'gte' || altRel === 'lt' ? v : v + 1) - (p.preAdd && isCapacity(c) ? 1 : 0);
+  if (c.soft && cut !== wanted && cut === altWanted) return { ...b, why: 'edge', say: T(`${say.ko}. 「${c.raw}」의 끝값 포함 여부가 문장에 없음`, `${say.en}. "${c.raw}" does not say whether the end value counts`) };
   return { ...b, ok: cut === wanted, say };
 }
 
@@ -493,7 +510,7 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
  * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
  * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
  */
-export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-test' | 'stale';
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'stale';
 const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   wording: {
     label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
@@ -537,6 +554,10 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   'unchecked-input': {
     label: { ko: '검사 없이 받는 곳 있음', en: 'accepted unchecked elsewhere' },
     action: { ko: '그 입력을 받는 곳마다 검사를 넣거나, 요구사항이 어느 곳을 말하는지 「| keywords: 코드에 나오는 영어 단어」로 정한다.', en: 'Add the check wherever that input is accepted, or say which place the requirement means with “| keywords: words in the code”.' },
+  },
+  'no-window': {
+    label: { ko: '기간 안에서 세는지 못 찾음', en: 'no time window' },
+    action: { ko: '「하루에 · 1시간에」처럼 그 기간 안의 것만 세는지 확인한다(기간이 지나면 다시 세는 코드나, sentToday 처럼 기간이 든 이름).', en: 'Check that only the period is counted (code that resets after a day or an hour, or a name such as sentToday).' },
   },
   'no-test': {
     label: { ko: '검사 없음', en: 'no test' },
