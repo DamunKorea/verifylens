@@ -75,6 +75,15 @@ These stay Not verified, or show a weaker evidence line. Add `| keywords: ...` t
 - Formulas are judged only for a fixed-amount branch (`if`, a ternary, `switch` or an object of functions named `fixed` / `flat` / `amount`). Other formulas are not judged.
 - Without keywords, some duplicate checks (`answers.some(...)`, a sent-id list) stay Not verified because the test name does not cover enough of the sentence. There are fewer since 0.17.0 (an idempotency key, "the same coupon again").
 
+## Tests changed in this change (since 0.19.0)
+
+This is a note next to the verdict, not a verdict. What it gets wrong:
+
+- **False alarm:** moving an assertion into a helper function (`expectLockedAfter(5)`) reads as "1 fewer check".
+- **Missed:** a changed test is shown only when the test is linked to the requirement. A Korean test name that does not share the requirement's keywords (「잠금」 against 「잠근다」) is not linked, so its change is not shown.
+- **Not compared:** parameterised tests (`it.each`), snapshot files, and tests whose name is built at run time.
+- **Found on the way and fixed before release:** renaming input values inside `expect(...)` (`'fig'` → `'jam'`) was shown as a changed expected value. Only values in the expected part, and numbers anywhere, count now.
+
 ## Always true
 
 - TypeScript and JavaScript only.
@@ -159,6 +168,15 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 - class-validator 데코레이터 가운데 형식 검사 · `@Length` · `@MinLength` / `@MaxLength` · `@Min` / `@Max` 가 아닌 것
 - 계산식은 정액 갈래(`if` · 삼항식 · `switch` · `fixed` / `flat` / `amount` 라는 이름의 함수 객체)만 판단함. 다른 계산식은 판단하지 않음
 - 키워드 없이 쓰면 일부 중복 막기(`answers.some(...)`, 보낸 id 목록)는 검사 이름이 문장을 충분히 담지 못해 「미확인」으로 남음. 0.17.0 에서 줄었음(결제 요청 키 · 「같은 쿠폰을 다시」)
+
+### 이번 변경에서 바뀐 검사 (0.19.0 부터)
+
+판정이 아니라 판정 옆에 붙는 알림입니다. 틀리는 것:
+
+- **헛경보:** 확인 줄을 도우미 함수로 옮긴 정리(`expectLockedAfter(5)`)를 「확인 줄 1개 줄어듦」으로 봄
+- **놓침:** 요구사항에 이어진 검사만 보여 줌. 한국어 검사 이름이 요구사항 키워드와 안 겹치면(「잠금」과 「잠근다」) 이어지지 않아 바뀐 것이 안 보임
+- **견주지 않음:** 매개변수 검사(`it.each`), 스냅샷 파일, 실행할 때 이름을 만드는 검사
+- **만들던 중 찾아 공개 전에 고침:** `expect(...)` 안의 입력 값 이름만 바꾼 것(`'fig'` → `'jam'`)을 기대값이 바뀐 것으로 보임. 이제 기대값 자리의 값과, 어디서든 바뀐 숫자만 셈
 
 ### 늘 그런 것
 

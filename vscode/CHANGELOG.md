@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.19.0
+
+The same picture wherever you look, and tests that were changed to pass. The picture work follows our own review ("make the gap visible in seconds"); the changed-test check came from several people on X describing agents that make a suite green by editing the test. They are not VerifyLens users, and none of this comes from user reports.
+
+- **The evidence chain everywhere.** Requirement → code line → tests → when it acts, with the step that disagrees marked and empty steps shown as grey dashed boxes. It is on every card of the browser page, at the top of the VS Code report, in the GitHub PR summary as a Mermaid diagram (for requirements that are not Verified), and as one line in the agent hook message.
+- **Attempt dots.** When the requirement and the code count attempts, two rows of dots show where each acts: "required 5 · code 6 · 1 late".
+- **One set of verdict colours and marks.** ✅ Verified green, ⚠️ Different amber, ❌ Failed red, ❔ Not verified grey, the same on the browser page, the report and the PR summary. Before, Different was red on the page and amber in the report.
+- **The browser page shows the result first.** The first Different card and its chain are on screen without scrolling, also on a phone. Clicking the file and line in a card selects that condition in the code box; after an edit, the parts that changed are highlighted for a moment.
+- **The VS Code report opens on the requirement that needs a look.** Its verdict, "required n → code m" and the evidence chain come first, and the table of all requirements is right below; choosing another requirement in the table changes the chain and the code evidence with it. The task timer, used when timing how long a reader takes, is now behind a "Task timer" button.
+- **Tests that were changed in this change.** Each test file is compared with the merge base, test by test, and changed tests are linked to requirements by the same name rules as test results. VerifyLens reports a changed number (5 → 6, 429 → 200), a changed expected value on an assertion line ('LOCKED' → 'BAD_LOGIN'), a weaker or flipped assertion (`toBe(0)` → `toBeGreaterThanOrEqual(0)`, `toThrow(…)` → `not.toThrow()`), fewer assertions, a removed, skipped or todo test, and a changed number in a test helper file that the test imports. It appears in the tests step of the chain (amber, not the red of a failing test), in the PR summary under "Tests changed in this change", in CLI lines, as a GitHub annotation on the test line, in the sidebar, and in the agent hook, which asks once even when the requirement is Verified. Verdict words do not change.
+- **How far to trust the changed-test check.** 0.18.0 showed none of these changes. On 11 cases written after building it, the first run was right for 6 (5 of 9 changed tests shown, 1 false alarm); we fixed what it missed. On 8 more cases written after that, the first run was right for 7: all 5 changed tests were shown, with 1 false alarm (an assertion moved into a helper function reads as "1 fewer check"). A test with a Korean name that is not linked to its requirement is not shown. Verdicts are unchanged on all 845 verdict cases.
+
 ## 0.18.0
 
 Re-run the tests that failed, and checks on the wrong state. The re-run idea came from a comment on X; the verdict fixes were found by writing cases in areas we had not covered (order states, roles, reminders, single-use codes, bookings). None are user reports.

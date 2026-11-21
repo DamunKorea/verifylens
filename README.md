@@ -8,6 +8,10 @@
 
 The AI says "Done, all requirements implemented", and **every test passes.** The requirement can still be unmet.
 
+![A Different card from the browser page: the requirement says attempt 5, the code acts on attempt 6, and the test passes. The chain shows requirement, code line src/auth.ts:10 user.failures > 5, the passing test, and "attempt 6 (required 5), 1 late"; two rows of dots show where each acts.](docs/chain-card.png)
+
+<sub>A card from the [browser page](https://damunkorea.github.io/verifylens/), as the engine drew it. Requirement → code line → tests → when it acts: only the last step disagrees, and the test still passes.</sub>
+
 ```text
 Requirement    Lock the account after 5 consecutive failures
 AI's code      if (user.failures > 5) { user.locked = true }
@@ -149,6 +153,7 @@ The code is analyzed on the runner and is not sent anywhere. The same check runs
 - The requirements file is `.verifylens/requirements.md` in the project (`--requirements` to change). A project without one is skipped, so the hook can also go in your user settings.
 - `--junit report.xml` adds test results. A report older than the code is ignored.
 - **Tests that failed must be run again.** The names of failed tests are kept inside the git folder (`.git/verifylens-failed-tests.json`, never committed). After the code changes, if a new report does not include them, or the report is older than the code, they are reported as not run again. The hook asks the agent once to run those tests again, and a Failed requirement lists its failed tests by name. A test that passes is removed from the list. (The idea came from a comment on X: before calling a bug fixed, re-run the exact step that failed.)
+- **Tests changed to pass.** Each test file is compared with the base, test by test. If a test linked to a requirement had a number changed (`i < 5` → `i < 6`), an expected value changed, an assertion weakened or flipped (`toBe(0)` → `toBeGreaterThanOrEqual(0)`), an assertion removed, or the test removed or skipped, the hook asks the agent once to make the test check the requirement again, even when the requirement is Verified. The same line appears in the PR summary and as an annotation on the test. (Several people on X describe agents that make a suite green by editing the test.)
 
 Below, `/path/to/verifylens` is the folder where you cloned and installed VerifyLens (see [Quick start](#quick-start)). Use forward slashes on Windows too, and quote the path if it has spaces.
 
