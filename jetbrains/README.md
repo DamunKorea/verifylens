@@ -7,7 +7,7 @@ This is the JetBrains counterpart of the [VS Code extension](../vscode/README.md
 - **No LLM, and your code never leaves your machine.** Static analysis (TypeScript compiler API) + local git + your JUnit test results. No network use, no telemetry.
 - **Unknown stays unknown.** No test or an unresolved call means "not verified", never "looks fine".
 
-> Preview 0.10.0. Analyzes **TypeScript and JavaScript**. The UI is in **English or Korean** and follows the IDE language (**Tools | VerifyLens | Language…** changes it). Run in IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried yet. See [what was checked](#what-was-checked-and-what-was-not).
+> Preview 0.11.0. Analyzes **TypeScript and JavaScript**. The UI is in **English or Korean** and follows the IDE language (**Tools | VerifyLens | Language…** changes it). Run in IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried yet. See [what was checked](#what-was-checked-and-what-was-not).
 
 ## What it does
 
@@ -31,7 +31,7 @@ Node is looked up in this order: the path you picked with **Tools | VerifyLens |
 
 ## Install
 
-The plugin has been submitted to JetBrains Marketplace and is awaiting review, so it cannot be found by search yet. Download `verifylens-jetbrains-0.10.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.10.0) (do not unzip it) and install it with **Settings | Plugins | ⚙ | Install Plugin from Disk…**. You can also build the zip yourself (below); it lands in `build/distributions/`.
+The plugin has been submitted to JetBrains Marketplace and is awaiting review, so it cannot be found by search yet. Download `verifylens-jetbrains-0.11.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.11.0) (do not unzip it) and install it with **Settings | Plugins | ⚙ | Install Plugin from Disk…**. You can also build the zip yourself (below); it lands in `build/distributions/`.
 
 ## Use it on your branch
 
@@ -82,7 +82,7 @@ You need Node.js 22.18+ and a JDK 21 or newer.
 npm install
 cd vscode && npm install && cd ..      # esbuild is taken from here
 cd jetbrains
-./gradlew buildPlugin                  # build/distributions/verifylens-jetbrains-0.10.0.zip
+./gradlew buildPlugin                  # build/distributions/verifylens-jetbrains-0.11.0.zip
 ./gradlew test                         # starts a headless IDE and drives the plugin
 ```
 
@@ -97,8 +97,8 @@ Checked on Windows 11 with Node 24:
 
 | | IntelliJ IDEA 2026.3 (build 263.7307) | Android Studio 2026.1.3 (platform 261.26222) |
 |---|---|---|
-| `./gradlew test` (10 tests in a headless IDE), 0.10.0 | pass | pass |
-| `./gradlew verifyPlugin -PverifyIde=<IDE folder>` (Plugin Verifier), 0.10.0 | compatible | compatible |
+| `./gradlew test` (10 tests in a headless IDE), 0.11.0 | pass | pass |
+| `./gradlew verifyPlugin -PverifyIde=<IDE folder>` (Plugin Verifier), 0.11.0 | compatible | compatible |
 | `./gradlew runIde` (real window, check run on a copy of a practice repository) | 0.2.0, English and Korean | 0.1.0, Korean |
 
 - The tests open a repository as a project, press **Check my changes** and assert the tool window rows, the gutter icon, the line-end note (Korean `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과` and English `← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes`), navigation to line 21, the re-check after saving a file (the old test result is dropped), the demo, the missing-requirements and missing-Node messages, and that the engine is found inside the installed plugin folder.
@@ -124,7 +124,7 @@ VS Code 확장과 **같은 분석 엔진**을 IntelliJ IDEA · WebStorm 같은 J
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC 의 **Node.js 18 이상**, git. Node 를 찾지 못하면 무엇을 설치해야 하는지 알림으로 알려 줍니다.
 - **화면 언어:** IDE 화면 언어를 따릅니다(한국어 IDE 면 한국어, 아니면 영어). **Tools | VerifyLens | Language…**(한국어 IDE 에서는 「화면 언어…」)에서 고정할 수 있습니다.
-- **설치:** [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.10.0)에서 `verifylens-jetbrains-0.10.0.zip` 을 받아(압축을 풀지 말고) **Settings | Plugins | ⚙ | Install Plugin from Disk…** 에서 고릅니다.
+- **설치:** [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.11.0)에서 `verifylens-jetbrains-0.11.0.zip` 을 받아(압축을 풀지 말고) **Settings | Plugins | ⚙ | Install Plugin from Disk…** 에서 고릅니다.
 - **처음 써 보기:** 왼쪽 VerifyLens 도구 창에서 **샘플로 해 보기**를 누르세요.
 - **내 변경 확인:** `.verifylens/requirements.md` 에 요구사항을 한 줄씩 적고 **내 변경 확인**을 누르세요. 커밋하지 않아도 됩니다. 그 뒤로는 파일이 저장될 때마다 스스로 다시 확인합니다.
 - **보이는 것:** 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄(누르면 그 줄로 이동), 근거 줄의 아이콘과 줄 끝 설명(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`).
