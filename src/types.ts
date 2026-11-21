@@ -44,6 +44,8 @@ export type CondInfo = {
   andTerms?: string[];
   /** 조건식 전체가 비교 하나인가 */
   single?: boolean;
+  /** 「정액이면」 갈래(kind === 'fixed')의 계산: 비율(÷100)인가 금액 빼기인가 */
+  fixedBranch?: 'percent' | 'subtract';
 };
 
 export type UnitKind = 'money' | 'age' | 'char' | 'month' | 'week' | 'day' | 'hour' | 'min' | 'sec' | 'pct' | 'cnt' | 'qty' | 'kb' | 'mb' | 'gb';

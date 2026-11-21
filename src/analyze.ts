@@ -33,6 +33,15 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   };
 
   const isTerminal = (s: ts.Statement) => ts.isThrowStatement(s) || ts.isReturnStatement(s);
+  /** 정액 갈래의 이름: kind === 'fixed' · case 'flat': */
+  const FIXED_CASE = /['"`](?:fixed|flat|amount)['"`]/i;
+  /** 정액 갈래가 돌려주는 값: 비율(÷100 · ×0.x)이면 percent, 금액을 빼면 subtract */
+  const fixedKind = (ret: ts.Expression | undefined): 'percent' | 'subtract' | undefined => {
+    const e = ret ? ret.getText(sf) : '';
+    if (/\/\s*100\b|\*\s*0\.\d/.test(e)) return 'percent';
+    if (/(?:^|[\s(])[\w.]+\s*-\s*[\w.]+/.test(e)) return 'subtract';
+    return undefined;
+  };
   const stmtsOf = (s: ts.Statement): readonly ts.Statement[] => (ts.isBlock(s) ? s.statements : [s]);
 
   // ---------------------------------------------------------------- 숫자 상수
@@ -559,7 +568,32 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       const el = ts.isIfStatement(n) ? line(n.thenStatement.getEnd()) : line(n.getEnd());
       const guard = consequent.some(isTerminal);
       const text = ts.isIfStatement(n) ? n.getText(sf).slice(0, n.thenStatement.getEnd() - n.getStart(sf)) : n.getText(sf);
-      addCond(n, cur, text, sl, el, guard, buildCond(cond, { at: n, fnBody, reject: ts.isIfStatement(n) && rejects(n.thenStatement) }));
+      const info = buildCond(cond, { at: n, fnBody, reject: ts.isIfStatement(n) && rejects(n.thenStatement) });
+      // 「정액이면」 갈래의 계산이 비율(÷100)인지 금액 빼기인지 본다 (X 에서 받은 버그: 정액 쿠폰을 비율로 계산)
+      if (FIXED_CASE.test(cond.getText(sf))) {
+        const ret = ts.isIfStatement(n) ? consequent.find(ts.isReturnStatement)?.expression : n.whenTrue;
+        const fb = fixedKind(ret);
+        if (fb) info.fixedBranch = fb;
+      }
+      addCond(n, cur, text, sl, el, guard, info);
+    } else if (ts.isPropertyAssignment(n) && /^['"`]?(?:fixed|flat|amount)['"`]?$/i.test(n.name.getText(sf)) && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))) {
+      // { fixed: (total, v) => total - v, rate: … } 처럼 객체에 담은 계산식도 같은 갈래로 본다
+      const f = n.initializer;
+      const body = f.body;
+      const ret = ts.isBlock(body) ? body.statements.find(ts.isReturnStatement)?.expression : body;
+      const fb = fixedKind(ret);
+      if (fb) {
+        const sl = line(n.getStart(sf));
+        addCond(n, cur, `${cur?.name ?? ''} ${clip(n.getText(sf), 200)}`, sl, line(n.getEnd()), true, { expr: `${n.name.getText(sf)}: ${clip(ret!.getText(sf), 60)}`, fixedBranch: fb });
+      }
+    } else if (ts.isCaseClause(n) && FIXED_CASE.test(n.expression.getText(sf))) {
+      // switch (c.type) { case 'fixed': return … } 도 같은 갈래로 본다
+      const fb = fixedKind(n.statements.find(ts.isReturnStatement)?.expression);
+      if (fb) {
+        const sl = line(n.getStart(sf));
+        const subject = ts.isSwitchStatement(n.parent.parent) ? n.parent.parent.expression.getText(sf) : 'switch';
+        addCond(n, cur, `${subject} ${clip(n.getText(sf), 200)}`, sl, line(n.getEnd()), true, { expr: `${subject} === ${n.expression.getText(sf)}`, fixedBranch: fb });
+      }
     } else if (ts.isWhileStatement(n) || ts.isDoStatement(n)) {
       const sl = line(n.expression.getStart(sf));
       addCond(n, cur, n.getText(sf), sl, sl, false, buildCond(n.expression, { at: n, fnBody, reject: false, inLoopHead: true }));
@@ -617,17 +651,41 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   // 「잘못된 이메일은 거부한다」에서, 바뀐 스키마가 그 칸을 검사 없이 받는지(email: z.string()) 본다 (X 에서 받은 버그)
   const fields: SchemaField[] = [];
   const STRING_CHECK = new Set(['email', 'url', 'uuid', 'cuid', 'cuid2', 'ulid', 'regex', 'matches', 'pattern', 'min', 'max', 'length', 'nonempty', 'startsWith', 'endsWith', 'includes', 'refine', 'superRefine', 'ip', 'datetime', 'emoji']);
+  // 형식을 보는 검사(.email() · .url() · .uuid() · .regex(…))는 그 자체로 잘못된 값을 막는 조건이다 → 근거가 될 수 있게 조건 줄로 둔다
+  const FORMAT_CHECK = new Set(['email', 'url', 'uuid', 'cuid', 'cuid2', 'ulid', 'regex', 'matches', 'pattern', 'ip', 'datetime', 'emoji']);
+  const schemaName = (n: ts.Node): string => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name)) return p.name.text;
+    return L('(최상위)', '(top level)');
+  };
   const visitFields = (n: ts.Node) => {
     if (ts.isPropertyAssignment(n) && ts.isCallExpression(n.initializer)) {
       const calls: string[] = [];
+      const callNodes: ts.CallExpression[] = [];
       let e: ts.Expression = n.initializer;
       while (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
         calls.push(e.expression.name.text);
+        callNodes.push(e);
         e = e.expression.expression;
       }
       const l = line(n.getStart(sf));
       if (calls.at(-1) === 'string' && ts.isIdentifier(e) && /^(z|yup|joi|Joi)$/.test(e.text) && isChanged(l, l)) {
-        fields.push({ file, line: l, name: n.name.getText(sf).replace(/['"`]/g, ''), checked: calls.slice(0, -1).some((c) => STRING_CHECK.has(c)) });
+        const name = n.name.getText(sf).replace(/['"`]/g, '');
+        fields.push({ file, line: l, name, checked: calls.slice(0, -1).some((c) => STRING_CHECK.has(c)) });
+        if (calls.some((c) => FORMAT_CHECK.has(c))) {
+          // regex(/^\d{5}$/) 는 글자 수가 정확히 5 (우편번호 · 인증번호)
+          const parts: NumPart[] = [];
+          for (const c of callNodes) {
+            const arg = c.arguments[0];
+            if (!/^(?:regex|matches|pattern)$/.test((c.expression as ts.PropertyAccessExpression).name.text) || !arg || !ts.isRegularExpressionLiteral(arg)) continue;
+            const m = arg.text.match(/^\/\^(?:\\d|\[0-9\])\{(\d+)\}\$\/[a-z]*$/);
+            if (m) parts.push({ ...simplePartBase(c, `${name} length`, '==='), lit: Number(m[1]), strLen: true });
+          }
+          const text = n.getText(sf);
+          const host = schemaName(n);
+          const cond: CondInfo = { expr: clip(text, 80), parts, single: parts.length === 1 };
+          syncPrimary(cond);
+          units.push({ id: `${file}#s${seq++}`, kind: 'condition', file, fn: host, startLine: l, endLine: line(n.getEnd()), text: clip(text, 120), tokens: [...new Set(tokenize(`${host} ${text}`))], guard: true, changed: true, cond });
+        }
       }
     }
     ts.forEachChild(n, visitFields);

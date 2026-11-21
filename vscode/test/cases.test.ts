@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -285,4 +285,38 @@ test('a coupon amount is a setting, and "checked out" is checkout', () => {
   assert.equal(many('5,000원 정액 쿠폰은 결제 금액에서 5,000원을 뺀다', coupon(3000), 'a 5000 won flat coupon takes 5000 off the total').overall, '다름');
   const checkout = "export function checkout(cart: { checkedOutAt?: number }) {\n  if (cart.checkedOutAt) throw new Error('ALREADY_CHECKED_OUT');\n  cart.checkedOutAt = Date.now();\n}\n";
   assert.equal(many('Each cart can be checked out only once', { 'src/checkout.ts': checkout }, 'a second checkout of the same cart is rejected').overall, '확인됨');
+});
+
+// ---------------------------------------------------------------- 0.16.0: 스키마 검사 · 정액 계산식 · 키로 막는 중복
+test('a format check in a schema is evidence for a rejection rule', () => {
+  const schema = (chain: string) => ({ 'src/schemas/order.ts': `import { z } from 'zod';\nexport const orderSchema = z.object({ orderId: ${chain}, note: z.string() });\n` });
+  assert.equal(many('Requests with an invalid order id are rejected | keywords: orderId, schema', schema('z.string().uuid()'), 'rejects an order id that is not a uuid').overall, '확인됨');
+  assert.equal(many('Requests with an invalid order id are rejected | keywords: orderId, schema', schema('z.string()'), 'rejects an order id that is not a uuid').overall, '미확인');
+  // regex(/^\d{11}$/) 는 글자 수 11 로 읽는다
+  const phone = (n: number) => ({ 'src/schemas/signup.ts': `import { z } from 'zod';\nexport const signupSchema = z.object({ phone: z.string().regex(/^\\d{${n}}$/) });\n` });
+  assert.equal(many('휴대폰 번호는 숫자 11자리여야 한다 | keywords: phone, signup', phone(11), 'rejects a phone number that is not 11 digits').overall, '확인됨');
+  assert.equal(many('휴대폰 번호는 숫자 11자리여야 한다 | keywords: phone, signup', phone(10), 'rejects a phone number that is not 11 digits').overall, '다름');
+});
+
+test('a fixed amount computed as a percentage is different, in if, ternary, switch and object form', () => {
+  const req = 'A fixed discount subtracts its amount, never a percentage of the total';
+  const t = 'a fixed discount of 10 takes 10 off the total';
+  const shapes = (right: boolean) => {
+    const f = right ? 'Math.max(0, total - v)' : 'total * (1 - v / 100)';
+    return [
+      `export function a(total: number, d: { kind: string; v: number }) {\n  const v = d.v;\n  if (d.kind === 'fixed') return ${f};\n  return total;\n}\n`,
+      `export const b = (total: number, d: { kind: string; v: number }, v = d.v) => (d.kind === 'fixed' ? ${f} : total);\n`,
+      `export function c(total: number, d: { kind: string; v: number }) {\n  const v = d.v;\n  switch (d.kind) {\n    case 'fixed':\n      return ${f};\n    default:\n      return total;\n  }\n}\n`,
+      `export const rules = {\n  fixed: (total: number, v: number) => ${f},\n};\n`,
+    ];
+  };
+  for (const code of shapes(false)) assert.equal(many(`${req} | keywords: discount, fixed`, { 'src/discount.ts': code }, t).overall, '다름', code);
+  for (const code of shapes(true)) assert.notEqual(many(`${req} | keywords: discount, fixed`, { 'src/discount.ts': code }, t).overall, '다름', code);
+});
+
+test('a key that returns the earlier result is a duplicate check, and a happy-path test is not linked to a rejection rule', () => {
+  const pay = 'export async function pay(db: any, idempotencyKey: string, amount: number) {\n  const prev = await db.payment.findUnique({ where: { idempotencyKey } });\n  if (prev) return prev;\n  return db.payment.create({ data: { idempotencyKey, amount } });\n}\n';
+  assert.equal(many('같은 결제 요청을 다시 보내도 결제는 한 번만 된다 | keywords: payment, idempotencyKey', { 'src/payment.ts': pay }, 'a retried payment request with the same key charges once').overall, '확인됨');
+  const profile = { 'src/schemas/profile.ts': "import { z } from 'zod';\nexport const profileSchema = z.object({ homepage: z.string().url() });\n" };
+  assert.equal(many('홈페이지 주소가 URL 형식이 아니면 저장하지 않는다 | keywords: homepage, profile', profile, 'saves a profile with a homepage').overall, '미확인');
 });

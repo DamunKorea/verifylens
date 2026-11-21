@@ -93,6 +93,8 @@ const GLOSSARY: [RegExp, string][] = [
   [/집계|통계|지표/, 'metric metrics count stat'],
   // 거래
   [/결제|지불/, 'payment pay charge'],
+  [/정액/, 'fixed flat'],
+  [/위시\s*리스트|찜/, 'wishlist wish favorite'],
   [/환불/, 'refund'],
   [/주문/, 'order'],
   [/장바구니/, 'cart basket'],

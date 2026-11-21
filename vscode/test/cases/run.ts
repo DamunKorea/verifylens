@@ -21,6 +21,9 @@ import { HOLDOUT16 } from './holdout16.ts';
 import { HOLDOUT17 } from './holdout17.ts';
 import { HOLDOUT18 } from './holdout18.ts';
 import { HOLDOUT19 } from './holdout19.ts';
+import { HOLDOUT20 } from './holdout20.ts';
+import { HOLDOUT21 } from './holdout21.ts';
+import { HOLDOUT22 } from './holdout22.ts';
 
 export type Row = { c: Case; v: Variant; got: string; note: string };
 
@@ -35,7 +38,7 @@ export function runVariant(c: Case, v: Variant, withKeywords = true): { got: str
 }
 
 export const allRows = (withKeywords = true, cases: Case[] = CASES): Row[] => cases.flatMap((c) => c.variants.map((v) => ({ c, v, ...runVariant(c, v, withKeywords) })));
-export { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19 };
+export { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22 };
 
 export function score(rows: Row[]) {
   const bads = rows.filter((r) => r.v.expect === '다름');

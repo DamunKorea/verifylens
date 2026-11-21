@@ -10,6 +10,9 @@ Most of these were found by writing new cases ourselves or by trying VerifyLens 
 
 | Fixed in | What happened before |
 |---|---|
+| 0.16.0 | Code that computes a fixed discount as a percentage (`total * (1 - v / 100)` in the `fixed` branch) was Verified when a test for it passed. |
+| 0.16.0 | A check in a function for another action counted: `getFile` checks the id, so "deleting a file with an invalid id is rejected" was Verified while `deleteFile` checks nothing. |
+| 0.16.0 | With keywords, a happy-path test ("saves a profile with a homepage") was linked to a rejection rule. This appeared while 0.16.0 was being made; fixed before release. |
 | 0.15.0 | A check in a function for another feature counted. With no email check in sign-up, the newsletter's email check made "sign-up rejects an invalid email" Verified. The same happened with a refund (a cancel check), a verification code (a profile phone check) and a duplicate sign-up (a newsletter duplicate check). Found from real bugs someone shared on X. |
 | 0.15.0 | A schema that takes `email: z.string()` without `.email()` was Verified for "invalid email addresses are rejected" because another file checks emails. |
 | 0.15.0 | A test that does it only once ("refunds a paid order") was linked to "an order can be refunded only once". |
@@ -48,8 +51,9 @@ These stay Not verified, or show a weaker evidence line. Add `| keywords: ...` t
 - "Only admins" shows the reason "whole function" instead of "extra condition".
 - Without keywords, a rate limit can be linked to a retry file, and English sentences sometimes pick a weaker evidence line.
 - "N times an hour" when the code has no time window.
-- A rule checked only by a schema's `.url()` ("an invalid website URL is rejected") and "send twice delivers once" with `if (sent.has(id)) return` stay Not verified.
-- Whether a formula is right (a flat coupon computed as a percentage) is not judged. It stays Not verified unless a linked test fails.
+- class-validator decorators such as `@IsEmail()` are not read as checks.
+- Formulas are judged only for a fixed-amount branch (`if`, a ternary, `switch` or an object of functions named `fixed` / `flat` / `amount`). Other formulas are not judged.
+- Without keywords, some duplicate checks (`answers.some(...)`, an idempotency key) stay Not verified because the test name does not cover enough of the sentence.
 
 ## Always true
 
@@ -71,6 +75,9 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 
 | 고친 판 | 전에 있던 일 |
 |---|---|
+| 0.16.0 | 정액 할인을 비율로 계산하는 코드(`fixed` 갈래의 `total * (1 - v / 100)`)가 그 검사가 통과하면 「확인됨」 |
+| 0.16.0 | 다른 동작의 함수에 있는 검사를 근거로 씀: `getFile` 이 id 를 검사해서, `deleteFile` 은 아무것도 검사하지 않는데 「잘못된 id 로 파일 삭제는 거부」가 「확인됨」 |
+| 0.16.0 | 키워드가 있으면 성공만 보는 검사(「홈페이지가 있는 프로필을 저장한다」)를 거부 규칙에 이음. 0.16.0 을 만들던 중에 생겼고 공개 전에 고침 |
 | 0.15.0 | 다른 기능의 함수에 있는 검사를 근거로 씀. 가입에는 이메일 검사가 없는데 뉴스레터의 검사 때문에 「잘못된 이메일이면 가입 거부」가 「확인됨」. 환불(취소의 검사) · 인증 문자(프로필의 번호 검사) · 중복 가입(뉴스레터의 중복 검사)도 같았음. X 에서 받은 실제 버그로 찾음 |
 | 0.15.0 | `.email()` 없이 `email: z.string()` 으로 받는 스키마가, 다른 파일의 검사 때문에 「잘못된 이메일은 거부」에 「확인됨」 |
 | 0.15.0 | 한 번만 하는 검사(「결제한 주문을 환불한다」)를 「한 번만 환불할 수 있다」에 이음 |
@@ -109,8 +116,9 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 - 「관리자만」의 이유가 「조건이 더 있음」 대신 「함수 전체」로 나옴
 - 키워드 없이 쓰면 요청 횟수 제한이 재시도 파일에 이어질 수 있고, 영어 문장에서 근거 줄을 덜 맞게 고를 때가 있음
 - 「한 시간에 N번」인데 코드에 시간 창이 없는 경우
-- 스키마의 `.url()` 로만 확인하는 규칙(「잘못된 웹사이트 주소는 거부」)과 `if (sent.has(id)) return` 으로 막는 「두 번 눌러도 한 번 보냄」은 「미확인」으로 남음
-- 계산식이 맞는지(정액 쿠폰을 비율로 계산)는 판단하지 않음. 연결된 검사가 실패해야 보임
+- class-validator 의 `@IsEmail()` 같은 데코레이터는 검사로 읽지 않음
+- 계산식은 정액 갈래(`if` · 삼항식 · `switch` · `fixed` / `flat` / `amount` 라는 이름의 함수 객체)만 판단함. 다른 계산식은 판단하지 않음
+- 키워드 없이 쓰면 일부 중복 막기(`answers.some(...)`, 결제 요청 키)는 검사 이름이 문장을 충분히 담지 못해 「미확인」으로 남음
 
 ### 늘 그런 것
 

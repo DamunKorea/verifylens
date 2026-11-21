@@ -49,7 +49,8 @@ export const HOLDOUT19: Case[] = [
     bad('5', 'export const COUPON_AMOUNT = 5;\nexport const withCoupon = (total: number) => Math.max(0, total - COUPON_AMOUNT);\n', SHIP10),
   ] },
   { id: 's-fixed-happy', area: '테스트가 다른 경우만', req: '정액 할인은 금액을 그대로 빼고 비율로 계산하지 않는다', keywords: 'discount, fixed', test: '10% 할인이 적용된다', file: 'src/discount.ts', variants: [
-    unk('정액을 비율로 계산 · 비율 테스트뿐', FIXED_AS_RATE, PERCENT),
+    // 0.16.0 에서 바로잡음: 틀린 계산식이라 원래 「다름」이 맞다. 0.15.0 까지는 계산식을 판단하지 못해 「미확인」을 기대값으로 적었었다.
+    bad('정액을 비율로 계산 · 비율 테스트뿐', FIXED_AS_RATE, PERCENT),
     unk('맞게 계산 · 비율 테스트뿐', FIXED_OK, PERCENT),
   ] },
   { id: 's-nickname', area: '길이', req: '닉네임은 2자 이상 12자 이하다', keywords: 'nickname, length', test: 'nickname must be 2 to 12 characters', file: 'src/nickname.ts', variants: [

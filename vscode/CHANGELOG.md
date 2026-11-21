@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.0
+
+Formulas and schema checks. This follows the third bug shared on X (a flat coupon applied wrongly), which 0.15.0 could only mark Not verified.
+
+- **A fixed amount computed as a percentage is Different.** In a branch for `fixed`, `flat` or `amount` (an `if`, a ternary, a `switch` case, or a function in an object), `total * (1 - v / 100)` is reported as "computes the fixed amount as a percentage (÷100)". Subtracting the amount is the evidence. This holds even when a test passes, because the test can share the same mistake.
+- **A format check in a schema is evidence.** `z.string().uuid()`, `.email()`, `.url()`, yup and Joi `.email()` count as checks for "invalid X is rejected". `regex(/^\d{11}$/)` is read as exactly 11 characters, so `\d{10}` against "11 digits" is Different.
+- **A check in a function for another action is not evidence.** If `deleteFile` checks nothing, the id check in `getFile` does not verify "deleting a file with an invalid id is rejected".
+- **Duplicate checks by key.** `if (prev) return prev` and `findFirst` results count as duplicate checks, and "retried with the same key" counts as a test of doing it twice.
+- **With keywords, a rejection rule links only tests that say reject**, as it already did without keywords.
+- **How far to trust it.** On the last 20 cases, written after all these changes, 0.15.0 gave the expected verdict for 12 with keywords and 10 without, calling wrong code Verified 2 times each. 0.16.0 gave 18 and 16, with no wrong verdict with keywords and one without. That one (a fixed discount written as a function in an object) was fixed before release. On the 20 cases written before the changes, 0.15.0 gave 13 and 13 with 1 wrong Verified each; 0.16.0 gives 20 and 18. All 685 cases run with the tests and none gets a wrong verdict. Two expected verdicts in earlier sets were corrected from Not verified to Different: they are wrong formulas, which 0.15.0 could not judge. The fixed open-source set is unchanged.
+- Not read yet: class-validator decorators such as `@IsEmail()`, and formulas outside a fixed-amount branch.
+
 ## 0.15.0
 
 Three real bugs someone shared on X, after testing a verification agent at a hackathon: an invalid email got through, paying twice made two orders, and a flat coupon was applied wrongly. In each case the tests never went there: they used valid emails only, paid once, and used percent coupons. We turned them into requirements and cases.

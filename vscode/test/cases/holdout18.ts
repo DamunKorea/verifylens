@@ -63,7 +63,8 @@ export const HOLDOUT18: Case[] = [
     bad('3000', 'export const FLAT_COUPON = 3000;\nexport const applyFlat = (total: number) => Math.max(0, total - FLAT_COUPON);\n', SHIP5000),
   ] },
   { id: 'r-flat-happy', area: '테스트가 다른 경우만', req: 'A flat coupon takes its fixed amount off the total, not a percentage', keywords: 'coupon, flat', test: 'applies a 10% coupon', file: 'src/coupon.ts', variants: [
-    unk('정액을 정률로 계산 · 정률 테스트뿐', FLAT_AS_PERCENT, PERCENT),
+    // 0.16.0 에서 바로잡음: 틀린 계산식이라 원래 「다름」이 맞다. 0.15.0 까지는 계산식을 판단하지 못해 「미확인」을 기대값으로 적었었다.
+    bad('정액을 정률로 계산 · 정률 테스트뿐', FLAT_AS_PERCENT, PERCENT),
     unk('맞게 계산 · 정률 테스트뿐', FLAT_RIGHT, PERCENT),
   ] },
   { id: 'r-flat-minimum', area: '정액 쿠폰', req: '정액 쿠폰은 1만 원 이상 주문에만 쓸 수 있다', keywords: 'coupon, total', test: 'a flat coupon needs an order of at least 10000 won', file: 'src/coupon.ts', variants: [
