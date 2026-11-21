@@ -162,7 +162,28 @@ export type Evidence = {
 };
 
 export type TestStatus = '통과' | '실패' | '미실행';
-export type ReqResult = { evidence: Evidence; tests: TestCase[]; testStatus: TestStatus };
+/**
+ * 이번 변경에서 바뀐 검사 하나 (기준 커밋의 검사 파일과 견줌).
+ * 에이전트가 단언의 숫자를 바꾸거나 검사를 지워 「모두 통과」를 만든 경우를 보이려고 쓴다.
+ */
+export type TestEdit = {
+  file: string;
+  /** 지금 줄 (지운 검사면 기준 커밋의 줄) */
+  line: number;
+  title: string;
+  /** describe 이름까지 붙인 이름 */
+  full: string;
+  /** 이름이 바뀌었으면 전 이름 */
+  was?: string;
+  kind: 'changed' | 'removed' | 'skipped';
+  /** 짝이 맞는 줄에서 바뀐 값 (5 → 6, 'LOCKED' → 'BAD_LOGIN') */
+  values: { from: string; to: string }[];
+  /** 줄어든 확인(expect · assert) 수 */
+  fewerChecks: number;
+  /** 검사 자체가 아니라 그것이 가져오는 도우미 · 준비 파일이 바뀐 경우 그 파일 */
+  via?: string;
+};
+export type ReqResult = { evidence: Evidence; tests: TestCase[]; testStatus: TestStatus; /** 이 요구사항의 검사 가운데 이번 변경에서 바뀐 것 */ edits?: TestEdit[] };
 
 export type ResultSet = {
   key: 'A' | 'B';
@@ -176,6 +197,8 @@ export type ResultSet = {
   units: Unit[];
   dyn: DynCall[];
   tests: TestCase[];
+  /** 이번 변경에서 바뀐 검사 (검사 파일을 기준 커밋과 견줌) */
+  testEdits?: TestEdit[];
   perReq: Record<string, ReqResult>;
 };
 

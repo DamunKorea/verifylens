@@ -23,8 +23,8 @@ import { testPointsLine } from './testpoints.ts';
 import { undecidedReasons } from './summary.ts';
 import { undecidedLabel } from './numeric.ts';
 import { L, wOverall } from './i18n.ts';
-import type { Overall, Report, ReqSummary, TestCase } from './types.ts';
-import { allLenses, chainSteps, chainText, prSummary, summaryLine } from '../vscode/src/model.ts';
+import type { Overall, Report, ReqSummary, TestCase, TestEdit } from './types.ts';
+import { allLenses, chainSteps, chainText, changedTestLine, changedTests, prSummary, summaryLine } from '../vscode/src/model.ts';
 import type { Lens } from '../vscode/src/model.ts';
 
 const FAIL_WORDS: Record<string, Overall> = { different: '다름', failed: '실패', unverified: '미확인' };
@@ -140,6 +140,21 @@ function agentMessage(blocking: ReqSummary[], why: (s: ReqSummary) => string, le
     ),
   );
   return lines.join('\n');
+}
+
+/** 요구사항의 검사를 이번 변경에서 바꾸거나 지웠을 때 에이전트에게 돌려줄 말 */
+function editedMessage(items: { s: ReqSummary; e: TestEdit }[]): string {
+  return [
+    L(
+      'VerifyLens: 이번 변경에서 요구사항에 이어진 검사를 바꾸거나 지웠습니다. 검사가 통과하는 것이 이 변경 덕일 수 있습니다.',
+      'VerifyLens: tests linked to requirements were changed or removed in this change. They may pass only because of that change.',
+    ),
+    ...items.map(({ s, e }) => `- ${s.req.id} · ${s.req.text}: ${changedTestLine(e)}`),
+    L(
+      '검사가 코드가 하는 일이 아니라 요구사항이 말하는 것을 확인하도록 되돌려 주세요. 요구사항이 바뀐 것이라면 검사를 고치기 전에 사용자에게 물어보세요.',
+      'Make each test check what the requirement says, not what the code does. If the requirement itself changed, ask the user before changing the test.',
+    ),
+  ].join('\n');
 }
 
 /** 전에 실패한 검사를 적어 두는 파일 (git 폴더 안이라 커밋되지 않는다) */
@@ -284,6 +299,15 @@ function check(opts: Record<string, string>, hook: Hook | undefined, input: Reco
     if (hook) continue;
     const reasons = undecidedReasons(report, s).map((k) => undecidedLabel(k));
     say(`${s.req.id} · ${wOverall(s.overall)}${reasons.length ? ` (${reasons.join(', ')})` : ''} — ${s.req.text}${why(s) ? `\n    ${why(s)}` : ''}`);
+    // 이번 변경에서 이 요구사항의 검사를 바꾸거나 지웠으면 (판정과 상관없이 알린다)
+    const changed = changedTests(report, s.req.id);
+    for (const { e } of changed) say(`    ⚠ ${changedTestLine(e)}`);
+    if (github) {
+      for (const { e } of changed) {
+        const at = e.kind === 'removed' ? '' : `file=${escProp(slash(relative(workspace, join(repo, e.file))))},line=${e.line},`;
+        io.out(`::warning ${at}title=${escProp(`VerifyLens ${s.req.id} · ${L('검사 바뀜', 'test changed')}`)}::${escData(`${s.req.text} — ${changedTestLine(e)}`)}`);
+      }
+    }
     if (!github || s.overall === '확인됨') continue;
     const level = s.overall === '미확인' ? 'warning' : 'error';
     const lens = lenses.find((l) => l.reqId === s.req.id);
@@ -305,9 +329,17 @@ function check(opts: Record<string, string>, hook: Hook | undefined, input: Reco
     );
     return blocking.length ? 1 : 0;
   }
-  // 어긋난 요구사항도, 다시 돌리지 않은 실패 검사도 없으면 통과
-  if (!blocking.length && !rerun.notRun.length) return pass();
-  const message = [blocking.length ? agentMessage(blocking, why, lenses, slash(relative(dir, reqFile)), report) : '', rerun.notRun.length ? rerunMessage(rerun.notRun) : ''].filter(Boolean).join('\n\n');
+  // 이번 변경에서 요구사항의 검사를 바꾸거나 지운 것 (막는 요구사항에 든 것은 그 사슬 줄에 이미 나온다)
+  const edited = report.summaries.filter((s) => !blocking.includes(s)).flatMap((s) => changedTests(report, s.req.id).map(({ e }) => ({ s, e })));
+  // 어긋난 요구사항도, 다시 돌리지 않은 실패 검사도, 바뀐 검사도 없으면 통과
+  if (!blocking.length && !rerun.notRun.length && !edited.length) return pass();
+  const message = [
+    blocking.length ? agentMessage(blocking, why, lenses, slash(relative(dir, reqFile)), report) : '',
+    rerun.notRun.length ? rerunMessage(rerun.notRun) : '',
+    edited.length ? editedMessage(edited) : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   // 이미 한 번 돌려보낸 뒤라면 더 막지 않고 사람에게만 알린다
   const retried = hook === 'claude' ? input.stop_hook_active === true : Number(input.loop_count ?? 0) >= 1;
   if (retried) {

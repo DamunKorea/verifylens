@@ -17,6 +17,24 @@ export function changedFiles(repo: string, base: string, head: string): string[]
   return git(repo, ['diff', '--name-only', '--diff-filter=AMR', `${base}...${head}`]).split('\n').map((s) => s.trim()).filter(Boolean);
 }
 
+/**
+ * 바뀐 파일과 그 전 경로 (지운 파일 · 이름 바꾼 파일 포함).
+ * head 를 주면 base...head(갈라진 지점부터), 주지 않으면 base 커밋과 지금 작업 폴더를 견준다.
+ */
+export function changedPaths(repo: string, base: string, head?: string): { path: string; old: string; deleted: boolean }[] {
+  const out = git(repo, ['diff', '--name-status', '-M', '--no-color', head ? `${base}...${head}` : base]);
+  const rows: { path: string; old: string; deleted: boolean }[] = [];
+  for (const line of out.split('\n')) {
+    const p = line.split('\t');
+    if (p.length < 2) continue;
+    const st = p[0].trim();
+    if (st.startsWith('R') && p.length >= 3) rows.push({ path: p[2].trim(), old: p[1].trim(), deleted: false });
+    else if (st === 'D') rows.push({ path: p[1].trim(), old: p[1].trim(), deleted: true });
+    else if (st === 'M') rows.push({ path: p[1].trim(), old: p[1].trim(), deleted: false });
+  }
+  return rows;
+}
+
 export function changedLines(repo: string, base: string, head: string): Map<string, Set<number>> {
   return parseDiffLines(git(repo, ['diff', '-U0', '--no-color', '--diff-filter=AMR', `${base}...${head}`]));
 }

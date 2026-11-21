@@ -6,7 +6,8 @@ import { light } from './verdictStyle.ts';
 const symbols = { plain: '', ok: '✓ ', diff: '⚠ ', fail: '✕ ', miss: '? ' };
 
 export function stepTone(step: ChainStep, overall?: Overall) {
-  if (step.tone === 'diff' && (step.kind === 'test' ||
+  // 검사 칸의 diff 는 「실패한 검사」라서 실패 색. 단, 통과했지만 이번 변경에서 바뀐 검사(changed)는 다름 색으로 둔다
+  if (step.tone === 'diff' && ((step.kind === 'test' && !step.changed) ||
       (step.kind === 'act' && overall === '실패' && (step.title === '판정' || step.title === 'verdict')))) return 'fail';
   return step.tone;
 }

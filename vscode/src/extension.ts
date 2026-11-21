@@ -106,7 +106,9 @@ class ReqTree implements vscode.TreeDataProvider<Node> {
       const judged = j && j.judge && j.judge !== '미검토';
       const open = r.overall === '다름' || r.overall === '실패';
       const it = new vscode.TreeItem(`${r.id}  ${r.text}`, open ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
-      const state = r.reason ? `${M.wOverall(r.overall)} · ${r.reason}` : M.wOverall(r.overall);
+      const base = r.reason ? `${M.wOverall(r.overall)} · ${r.reason}` : M.wOverall(r.overall);
+      // 이번 변경에서 이 요구사항의 검사를 바꾸거나 지웠으면 판정 옆에 적는다
+      const state = run && M.changedTests(run.report, r.id).length ? `${base} · ⚠ ${L('검사 바뀜', 'test changed')}` : base;
       it.description = judged ? `${state} → ${M.wJudge(j.judge)}` : state;
       const md = new vscode.MarkdownString(run ? (M.hoverMarkdown(run.report, r.id, false) ?? '') : '');
       if (judged) md.appendMarkdown(`\n\n**${L('사람의 판단', 'Your decision')}: ${M.wJudge(j.judge)}**${j.note ? ` — ${j.note}` : ''}`);

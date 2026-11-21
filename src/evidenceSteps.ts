@@ -2,6 +2,7 @@ import type { Overall, Report } from './types.ts';
 import { getLang } from './i18n.ts';
 import { boundaryShort, boundaryLine, undecidedLabel } from './numeric.ts';
 import { undecidedReasons } from './summary.ts';
+import { editText, suspicious } from './testedits.ts';
 
 // ---------------------------------------------------------------- 근거 사슬 (보는 곳마다 같은 그림)
 /**
@@ -9,7 +10,7 @@ import { undecidedReasons } from './summary.ts';
  * 「미확인」은 비어 있는 칸(miss)이 어디인지가 곧 까닭이다. 대표 11/21: 「얼마나 잘 시각화해서 이해를 빨리 돕느냐」.
  */
 export type ChainTone = 'ok' | 'diff' | 'miss' | 'plain';
-export type ChainStep = { kind: 'req' | 'code' | 'test' | 'act'; title: string; text: string; tone: ChainTone };
+export type ChainStep = { kind: 'req' | 'code' | 'test' | 'act'; title: string; text: string; tone: ChainTone; /** 검사 칸: 통과했지만 이번 변경에서 바뀐 검사 (실패 색이 아니라 다름 색) */ changed?: boolean };
 
 export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = getLang(), setIndex = 0): ChainStep[] {
   const s = report.summaries.find((x) => x.req.id === reqId);
@@ -26,13 +27,22 @@ export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = ge
   const codeTone: ChainTone = !u ? 'miss' : ev.status === '발견' ? 'ok' : 'miss';
   const linked = rr.tests;
   const firstFail = linked.find((t) => t.status === 'fail');
-  const testText =
+  let testText =
     rr.testStatus === '통과'
       ? `${ko ? '통과' : 'passes'}${linked[0] ? ` · ${linked[0].name}` : ''}`
       : rr.testStatus === '실패'
         ? `${ko ? '실패' : 'fails'}${firstFail ? ` · ${firstFail.name}` : ''}`
         : ko ? '연결된 검사 없음' : 'no linked test';
-  const testTone: ChainTone = rr.testStatus === '통과' ? 'ok' : rr.testStatus === '실패' ? 'diff' : 'miss';
+  let testTone: ChainTone = rr.testStatus === '통과' ? 'ok' : rr.testStatus === '실패' ? 'diff' : 'miss';
+  // 이 요구사항의 검사를 이번 변경에서 바꾸거나 지웠으면 「검사」 칸에 적고 어긋남(다름 색)으로 칠한다 — 통과가 그 변경 덕일 수 있다.
+  // (실패한 검사는 그대로 실패 색. changed 는 「통과했지만 바뀐 검사」만 표시한다)
+  const edited = (rr.edits ?? []).filter(suspicious);
+  let changed = false;
+  if (edited.length) {
+    testText += ` · ${editText(edited[0], lang)}${edited.length > 1 ? ` (+${edited.length - 1})` : ''}`;
+    changed = rr.testStatus !== '실패';
+    testTone = 'diff';
+  }
   let act: ChainStep;
   if (b && b.attempts !== null) {
     const late = b.attempts - b.required;
@@ -49,7 +59,7 @@ export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = ge
   return [
     { kind: 'req', title: ko ? '요구사항' : 'requirement', text: s.req.text, tone: 'plain' },
     { kind: 'code', title: ko ? '코드' : 'code', text: code, tone: codeTone },
-    { kind: 'test', title: ko ? '검사' : 'tests', text: testText, tone: testTone },
+    { kind: 'test', title: ko ? '검사' : 'tests', text: testText, tone: testTone, ...(changed ? { changed: true } : {}) },
     act,
   ];
 }

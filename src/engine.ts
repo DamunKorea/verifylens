@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import type { Boundary, Constraint, Evidence, NumPart, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, SchemaField, TestCase, TestStatus, Unit, UnitKind } from './types.ts';
 import { analyzeFile, resolveRefs } from './analyze.ts';
 import { boundaryNote, calendarBoundary, judge, matchScale, missingBoundary, partValue, pick } from './numeric.ts';
-import { changedFiles, changedLines, mergeBase, shortSha, showFile, trackedFiles, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
+import { changedFiles, changedLines, changedPaths, mergeBase, shortSha, showFile, trackedFiles, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
 import { parseTestReport } from './tests.ts';
+import { diffTestFiles } from './testedits.ts';
+import type { TestEdit } from './types.ts';
 import { tokenize, stem } from './tokens.ts';
 import { conceptsFor, normalizePhrases } from './glossary.ts';
 import { L, setLabel } from './i18n.ts';
@@ -56,6 +58,23 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
     allFiles,
   );
   const tests: TestCase[] = opts.junit ? parseTestReport(readFileSync(opts.junit, 'utf8')) : [];
+  // 이번 변경에서 바뀐 · 지운 검사: 검사 파일을 갈라진 지점의 글과 견준다
+  const testEdits: TestEdit[] = [];
+  try {
+    const fork = opts.worktree ? from : mergeBase(repo, base, ref);
+    const changed = (opts.worktree ? changedPaths(repo, fork) : changedPaths(repo, base, ref))
+      .filter((p) => CODE_EXT.test(p.path) && TEST_FILE.test(p.path))
+      .map((p) => ({ file: p.path, before: showFile(repo, fork, p.old), after: p.deleted ? null : read(p.path) }));
+    // 도우미 파일만 바뀌었으면, 그것을 가져오는 (바뀌지 않은) 검사 파일도 읽는다
+    const others = () =>
+      allFiles
+        .filter((f) => CODE_EXT.test(f) && TEST_FILE.test(f) && !changed.some((c) => c.file === f))
+        .map((f) => ({ file: f, text: read(f) }))
+        .filter((x): x is { file: string; text: string } => x.text !== null);
+    testEdits.push(...diffTestFiles(changed, others));
+  } catch {
+    /* 견줄 수 없으면 검사 변경은 보이지 않는다 */
+  }
   // 커밋 전 변경이 있으면 그 내용의 지문을 남긴다 (같은 커밋이어도 내용이 다르면 다른 결과다).
   let wip: string | undefined;
   if (opts.worktree) {
@@ -77,17 +96,26 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
     units: analyses.flatMap((a) => a.units),
     dyn: analyses.flatMap((a) => a.dyn),
     tests,
+    testEdits,
     perReq: {},
   };
 }
 
 /** 파일 내용만으로 결과 하나를 만든다 (git 없이). 시험과 사례 묶음에서 쓴다. */
-export function analyzeFiles(o: { key: 'A' | 'B'; ref: string; sha: string; files: Record<string, string>; tests?: TestCase[] }): ResultSet {
+export function analyzeFiles(o: { key: 'A' | 'B'; ref: string; sha: string; files: Record<string, string>; tests?: TestCase[]; /** 기준 커밋의 파일 (검사 파일을 견줄 때) */ baseFiles?: Record<string, string> }): ResultSet {
   const analyses = Object.entries(o.files)
     .filter(([f]) => CODE_EXT.test(f) && !TEST_FILE.test(f))
     .map(([f, text]) => analyzeFile(f, text, null));
   resolveRefs(analyses, (f) => o.files[f] ?? null, Object.keys(o.files));
-  return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], perReq: {} };
+  const testEdits: TestEdit[] = [];
+  if (o.baseFiles) {
+    const base = o.baseFiles;
+    const tests = [...new Set([...Object.keys(base), ...Object.keys(o.files)])].filter((f) => CODE_EXT.test(f) && TEST_FILE.test(f));
+    const changed = tests.filter((f) => base[f] !== o.files[f]).map((f) => ({ file: f, before: base[f] ?? null, after: o.files[f] ?? null }));
+    const others = () => tests.filter((f) => base[f] === o.files[f] && o.files[f] !== undefined).map((f) => ({ file: f, text: o.files[f] }));
+    testEdits.push(...diffTestFiles(changed, others));
+  }
+  return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], testEdits, perReq: {} };
 }
 
 /** 숫자가 요구사항의 값과 같은가 (단위 환산 포함) */
@@ -677,6 +705,22 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
   });
 }
 
+const sameTestName = (a: string, b: string) => {
+  const n = (s: string) => s.toLowerCase().replace(/\s*>\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  const x = n(a);
+  const y = n(b);
+  if (x === y) return true;
+  // 「describe 이름 + 검사 이름」 꼴: 짧은 쪽이 세 낱말 이상일 때만 (「rejects」 하나로 아무 검사나 잇지 않게)
+  const [short, long] = x.length < y.length ? [x, y] : [y, x];
+  return short.split(' ').length >= 3 && long.endsWith(' ' + short);
+};
+/** 바뀐 검사가 이 요구사항의 검사인가: 이어진 실행 결과와 이름이 같거나, 그 이름(지금 · 전 이름 · describe 포함)이 이 요구사항에 이어지면 */
+function editLinked(req: Requirement, e: TestEdit, mapped: TestCase[], ev: Evidence): boolean {
+  if (mapped.some((t) => sameTestName(t.name, e.full) || sameTestName(t.name, e.title))) return true;
+  const names = [e.full, e.title, ...(e.was ? [e.was] : [])];
+  return names.some((name) => mapTests(req, [{ name, status: 'pass', message: '' }], ev).length > 0);
+}
+
 function testStatus(ts: TestCase[]): TestStatus {
   if (ts.some((t) => t.status === 'fail')) return '실패';
   if (ts.some((t) => t.status === 'pass')) return '통과';
@@ -689,6 +733,9 @@ export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, b
       const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []));
       const mapped = mapTests(r, s.tests, evidence);
       const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped) };
+      // 이번 변경에서 바뀐 검사 가운데 이 요구사항의 것: 실행 결과와 같은 이름 규칙으로 잇는다 (지운 검사는 실행 결과에 없다)
+      const edits = (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
+      if (edits.length) rr.edits = edits;
       s.perReq[r.id] = rr;
     }
   }

@@ -16,6 +16,17 @@ import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../sr
 import { L, getLang, setLabel, testPhrase, wOverall, wTest } from '../../src/i18n.ts';
 import { boundaryLine, boundaryShort, checkWord, pick, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { testPointsLine } from '../../src/testpoints.ts';
+import { editText, suspicious } from '../../src/testedits.ts';
+import type { TestEdit } from '../../src/types.ts';
+
+/** 이 요구사항의 검사 가운데 이번 변경에서 바꾸거나(값 · 확인 줄) 지우거나 건너뛰게 한 것 (결과마다) */
+export function changedTests(report: Report, reqId: string): { set: ResultSet; e: TestEdit }[] {
+  return report.sets.flatMap((set) => (set.perReq[reqId]?.edits ?? []).filter(suspicious).map((e) => ({ set, e })));
+}
+/** 「R2 · "locks …" (test/auth.test.ts:5) — 이번 변경에서 검사가 바뀜: 5 → 6」 */
+export function changedTestLine(e: TestEdit, lang: 'ko' | 'en' = getLang()): string {
+  return `"${e.full}" (${e.file}:${e.line}) — ${editText(e, lang)}`;
+}
 
 export { L, getLang, resolveLang, setLang, wJudge, wOverall } from '../../src/i18n.ts';
 export type { Lang } from '../../src/i18n.ts';
@@ -432,6 +443,8 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
   if (reasons.length) out.push('', `**${L('미확인 이유', 'Why unverified')}**`, ...reasons.map((k) => `- ${undecidedLabel(k)} — ${undecidedAction(k)}`));
   const off = passButOffSets(report, reqId);
   if (off.length) out.push('', `⚠ ${two ? `${off.map((x) => x.label).join(' · ')}: ` : ''}${passButOffNote(off[0].perReq[reqId])}`);
+  // 이번 변경에서 이 요구사항의 검사가 바뀌었으면 (통과가 그 변경 덕일 수 있다)
+  for (const { set, e } of changedTests(report, reqId)) out.push('', `⚠ ${two ? `${set.label}: ` : ''}${mdCode(e.full)} (${mdCode(`${e.file}:${e.line}`)}) — ${editText(e, getLang())}. ${L('검사가 코드가 아니라 요구사항을 확인하는지 볼 것', 'Check that the test still checks the requirement, not the code')}`);
   const strip = attemptLines(report, reqId);
   if (strip.length) out.push('', '```', ...strip, '```');
   const cols = L('| 근거 | 동작 시점 | 검사 |', '| Evidence | Acts on | Tests |');
@@ -747,6 +760,9 @@ const TXT = {
     whole: '함수 전체',
     failed: '실패한 검사',
     passOff: '검사는 통과했지만 계산과 다른 것',
+    edited: (n: number) => `이번 변경에서 바뀐 검사 ${n}개 — 통과가 이 변경 덕일 수 있음`,
+    editedHint: '검사가 코드가 아니라 요구사항을 확인하는지 볼 것. 요구사항이 바뀐 것이면 요구사항 파일도 같이 고칠 것.',
+    editedCell: '검사 바뀜',
     passOffLine: '검사가 통과했지만, 조건 값에서 계산한 동작 시점이 요구사항과 다름 — 검사가 요구사항과 같은 횟수를 확인하는지 볼 것',
     fix: (n: number) => `고쳐야 할 것 ${n}개 (다름 · 실패)`,
     none: '다름 · 실패인 요구사항이 없습니다.',
@@ -781,6 +797,9 @@ const TXT = {
     whole: 'whole function',
     failed: 'Failed tests',
     passOff: 'Tests pass, but the computed behavior differs',
+    edited: (n: number) => `Tests changed in this change: ${n} — they may pass because of the change`,
+    editedHint: 'Check that each test still checks the requirement, not the code. If the requirement itself changed, update the requirements file too.',
+    editedCell: 'test changed',
     passOffLine: 'the linked test passes, but the attempt computed from the condition differs from the requirement — check that the test exercises the same count as the requirement',
     fix: (n: number) => `Needs a fix: ${n} (Different or Failed)`,
     none: 'No requirement is Different or Failed.',
@@ -834,6 +853,8 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   const lookIds: string[] = [];
   const testsOnly: string[] = [];
   const points: string[] = [];
+  // 이번 변경에서 바뀐 · 지운 검사 (판정과 상관없이 펼쳐 둔다: 「확인됨」도 이 변경 덕일 수 있다)
+  const edited: string[] = [];
   // 근거 사슬 그림 (GitHub 이 Mermaid 로 그린다): 고칠 것과 사람이 볼 것에만 붙인다
   const fixChains: string[] = [];
   const lookChains: string[] = [];
@@ -868,9 +889,11 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
         failed.push(`- ${id}${two ? ` · ${set.key}` : ''} · \`${tc.name.replace(/`/g, "'")}\`${why ? ` — ${why}` : ''}`);
       }
     }
+    const changed = changedTests(report, id);
+    for (const { set, e } of changed) edited.push(`- **${id}**${two ? ` · ${set.key}` : ''} \`${e.full.replace(/`/g, "'")}\` (\`${e.file}:${e.line}\`) — ${editText(e, lang)}`);
     const j = judgments[id];
     const decision = isJudged(j) ? `**${t.judge[j.judge] ?? j.judge}**${j.note ? ` — ${cell(j.note)}` : ''}` : s.overall === '확인됨' ? '—' : t.judge.미검토;
-    const row = `| **${id}** ${cell(s.req.text)} | ${t.status[s.overall]} | ${ev.join('<br>')} | ${tests.join('<br>')} | ${decision} |`;
+    const row = `| **${id}** ${cell(s.req.text)} | ${t.status[s.overall]}${changed.length ? `<br>⚠️ ${t.editedCell}` : ''} | ${ev.join('<br>')} | ${tests.join('<br>')} | ${decision} |`;
     (kind === 'fix' ? fixRows : otherRows).push(row);
     const strip = attemptLines(report, id, lang);
     if (strip.length && (s.overall !== '확인됨' || two)) (kind === 'fix' ? fixStrips : otherStrips).push(`${id}`, ...strip, '');
@@ -906,6 +929,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   } else {
     out.push(`**${t.none}**`);
   }
+  if (edited.length) out.push('', `### ⚠️ ${t.edited(edited.length)}`, '', ...edited, '', t.editedHint);
   // <details> 안의 마크다운은 <summary> 뒤에 빈 줄이 있어야 표 · 목록으로 보인다
   if (look.length || lookChains.length) out.push('', '<details>', `<summary>${t.look(lookIds.join(', '), look.length)}</summary>`, '', ...look, ...(lookChains.length ? ['', `**${t.chain}**`, '', ...lookChains.slice(0, -1)] : []), '', '</details>');
   if (otherRows.length) {
