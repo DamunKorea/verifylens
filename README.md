@@ -87,7 +87,7 @@ Click the VerifyLens icon in the Activity Bar and choose **Try the sample**. The
 ```bash
 cd vscode
 npm install
-npm run package     # builds verifylens-0.8.0.vsix
+npm run package     # builds verifylens-<version>.vsix
 ```
 
 See [vscode/README.md](vscode/README.md) for details.

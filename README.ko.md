@@ -86,7 +86,7 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 ```bash
 cd vscode
 npm install
-npm run package     # verifylens-0.8.0.vsix 를 만듭니다
+npm run package     # verifylens-<버전>.vsix 를 만듭니다
 ```
 
 자세한 내용은 [vscode/README.md](vscode/README.md)에 있습니다.
