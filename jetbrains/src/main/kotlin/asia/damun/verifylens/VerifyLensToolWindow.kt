@@ -45,6 +45,9 @@ class VerifyLensToolWindowFactory : ToolWindowFactory, DumbAware {
 /** 근거 줄 하나 (요구사항 아래에 달린다) */
 internal class EvidenceNode(val reqId: String, val row: EvidenceRow, val detail: String)
 
+/** 이번 변경에서 바뀐 검사 하나 (요구사항 아래, 근거 줄 다음에 달린다) */
+internal class ChangedTestNode(val reqId: String, val test: ChangedTest)
+
 /**
  * 도구 창의 내용: 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄. 줄을 누르면 그 파일의 그 줄로 간다.
  */
@@ -141,6 +144,8 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
                     val lens = r.lenses.firstOrNull { it.reqId == row.id && it.setKey == ev.setKey && it.file == ev.file && it.line == ev.line }
                     node.add(DefaultMutableTreeNode(EvidenceNode(row.id, ev, lens?.note ?: ev.detail)))
                 }
+                // 이 요구사항에 이어진 검사를 이번 변경에서 바꿨으면, 판정은 그대로 두고 그 아래에 알린다.
+                for (t in r.changedTests[row.id].orEmpty()) node.add(DefaultMutableTreeNode(ChangedTestNode(row.id, t)))
                 root.add(node)
             }
         }
@@ -151,7 +156,12 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
     private fun busyText() = if (service.busy) I18n.t(" · 확인하는 중…", " · checking…") else ""
 
     private fun navigate(node: Any?): Boolean {
-        val ev = when (val o = (node as? DefaultMutableTreeNode)?.userObject) {
+        val user = (node as? DefaultMutableTreeNode)?.userObject
+        if (user is ChangedTestNode) {
+            service.open(user.test.setKey, user.test.file, maxOf(1, user.test.line))
+            return true
+        }
+        val ev = when (val o = user) {
             is EvidenceNode -> o.row
             is ReqRow -> o.children.firstOrNull { it.file != null && it.line != null }
             else -> null
@@ -193,6 +203,10 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
                     val state = if (o.reason.isNotEmpty()) "$word · ${o.reason}" else word
                     append(o.id, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                     append("  $state", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, Colors.text(o.overall)))
+                    // 검사를 바꿔서 통과시켰을 수 있다. 판정이 「확인됨」이어도 눈에 띄게 「다름」 색으로 알린다 (VS Code 와 같은 말).
+                    if (changedTestsOf(o.id).isNotEmpty()) {
+                        append(" · ⚠ " + I18n.t("검사 바뀜", "test changed"), SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, Colors.text("다름")))
+                    }
                     append("   ${o.text}")
                     toolTipText = reqTooltip(o)
                 }
@@ -204,6 +218,14 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
                     append("   ${o.detail}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     toolTipText = html(esc(o.row.tooltip) + if (name != null) I18n.t(" — 눌러서 코드로 이동", " — click to go to the code") else "")
                 }
+                is ChangedTestNode -> {
+                    // 예: ⚠ auth.test.ts:5   test changed in this change: 5 → 6
+                    icon = AllIcons.General.Warning
+                    val t = o.test
+                    append("${t.file.substringAfterLast('/')}:${t.line}", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, Colors.text("다름")))
+                    append("   ${t.text.substringAfter(" — ", t.text)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    toolTipText = html(esc(t.text) + I18n.t(" — 눌러서 검사로 이동", " — click to go to the test"))
+                }
             }
         }
     }
@@ -212,9 +234,12 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
         val strip = service.result?.strips?.get(row.id)
         val sb = StringBuilder("<b>VerifyLens · ${esc(row.id)} · ${esc(I18n.overall(row.overall))}</b> — ${esc(row.text)}<br>${esc(row.summary)}")
         if (!strip.isNullOrEmpty()) sb.append("<pre>").append(strip.joinToString("\n") { esc(it) }).append("</pre>") else sb.append("<br>")
+        for (t in changedTestsOf(row.id)) sb.append("⚠ ").append(esc(t.text)).append("<br>")
         sb.append("<i>").append(I18n.t("출처: 조건식은 코드 분석 · 동작 시점은 계산 · 검사는 실행 기록(JUnit) — AI 추정 없음", "Source: the condition comes from code analysis · the attempt is computed · tests come from the executed report (JUnit) — no AI inference")).append("</i>")
         return html(sb.toString())
     }
+
+    private fun changedTestsOf(reqId: String): List<ChangedTest> = service.result?.changedTests?.get(reqId).orEmpty()
 
     private fun esc(s: String) = StringUtil.escapeXmlEntities(s)
 

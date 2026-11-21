@@ -38,6 +38,12 @@ function present(run: M.Run, extra: Record<string, unknown> = {}) {
     const lines = M.attemptLines(report, s.req.id);
     if (lines.length) strips[s.req.id] = lines;
   }
+  // 이번 변경에서 바뀐 검사 (판정 옆 알림). 판정 · 이유 글에는 들어가지 않으므로 따로 낸다. 글은 VS Code 와 같다.
+  const changedTests: Record<string, { setKey: string; file: string; line: number; removed: boolean; text: string }[]> = {};
+  for (const s of report.summaries) {
+    const list = M.changedTests(report, s.req.id).map(({ set, e }) => ({ setKey: set.key, file: e.file, line: e.line, removed: e.kind === 'removed', text: M.changedTestLine(e) }));
+    if (list.length) changedTests[s.req.id] = list;
+  }
   return {
     ok: true,
     protocol: PROTOCOL,
@@ -62,6 +68,7 @@ function present(run: M.Run, extra: Record<string, unknown> = {}) {
     rows: M.treeModel(report),
     lenses,
     strips,
+    changedTests,
     ...extra,
   };
 }

@@ -50,6 +50,19 @@ class SetInfo {
     var files: Map<String, String> = emptyMap()
 }
 
+/** 이번 변경에서 바꾸거나 지우거나 건너뛰게 한 검사 하나 (요구사항에 이어진 것) */
+class ChangedTest {
+    var setKey = "A"
+    var file = ""
+    var line = 0
+
+    /** 지운 검사면 줄 번호는 기준 커밋의 것이다 */
+    var removed = false
+
+    /** 「"검사 이름" (파일:줄) — 이번 변경에서 검사가 바뀜: 5 → 6」 */
+    var text = ""
+}
+
 class EngineResult {
     var ok = false
     var protocol = 0
@@ -74,6 +87,9 @@ class EngineResult {
 
     /** 요구사항별 「몇 번째 시도에 동작하는가」 그림 (글자로 그린 줄들) */
     var strips: Map<String, List<String>> = emptyMap()
+
+    /** 요구사항별로, 이번 변경에서 바뀐 검사. 판정은 그대로 두고 그 옆에 알린다 (검사를 고쳐서 통과시킨 경우를 보이려는 것). */
+    var changedTests: Map<String, List<ChangedTest>> = emptyMap()
     var requirements: String? = null
 
     /** 바뀌면 다시 확인할 파일들 (요구사항 파일 · 테스트 결과 후보) */

@@ -46,7 +46,12 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
     override fun getProjectDirOrFile(isDirectoryBasedProject: Boolean): Path {
         val dir = Files.createTempDirectory("verifylens-ide-test-").toRealPath().resolve("repo")
         val practice = System.getProperty("verifylens.practiceRepo")?.takeIf { it.isNotBlank() }
-        if (practice != null) copyTree(Path.of(practice), dir) else buildSampleRepo(dir)
+        when {
+            // 이 시험은 검사를 고쳐서 통과시킨 저장소가 따로 필요하다
+            name == "testChangedTestIsShownNextToTheVerdict" -> buildEditedTestRepo(dir)
+            practice != null -> copyTree(Path.of(practice), dir)
+            else -> buildSampleRepo(dir)
+        }
         repo = dir
         return dir
     }
@@ -310,6 +315,72 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals(I18n.AUTO, I18n.setting)
     }
 
+    /**
+     * 검사를 고쳐서 통과시킨 경우 (요구사항은 5회인데 검사의 반복을 6으로 바꿈).
+     * 판정은 「확인됨」 그대로 두고, 그 옆과 아래에 「검사 바뀜」을 알린다. 검사를 되돌리면 알림이 사라진다.
+     */
+    fun testChangedTestIsShownNextToTheVerdict() {
+        System.setProperty("verifylens.lang", "en")
+        val service = VerifyLensService.getInstance(project)
+        val r = press("VerifyLens.CheckChanges")
+        println("[VerifyLens 시험] 바뀐 검사 | ${r.headline} · ${r.context} · ${r.status}")
+        assertEquals(listOf("R1" to "확인됨"), r.rows.map { it.id to it.overall })
+        assertEquals("feature/tidy + uncommitted changes ← main", r.context)
+        val changed = r.changedTests["R1"]!!.single()
+        assertEquals("test/auth.test.ts", changed.file)
+        assertEquals(5, changed.line)
+        assertEquals("\"locks the account after 5 consecutive failures\" (test/auth.test.ts:5) — test changed in this change: 5 → 6", changed.text)
+
+        // 도구 창: 요구사항 줄에 「⚠ test changed」, 근거 줄 아래에 바뀐 검사 한 줄
+        val panel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, panel)
+        val rows = panel.rowTexts()
+        rows.forEach { println("[VerifyLens 시험] 바뀐 검사 도구 창 | $it") }
+        assertEquals(3, rows.size)
+        assertEquals("R1  Verified · ⚠ test changed   Lock the account after 5 consecutive failures", rows[0])
+        assertTrue(rows[1], rows[1].startsWith("auth.ts:3   "))
+        assertEquals("auth.test.ts:5   test changed in this change: 5 → 6", rows[2])
+        assertTrue(panel.allTexts().any { it.contains("⚠ \"locks the account after 5 consecutive failures\" (test/auth.test.ts:5) — test changed in this change: 5 → 6") })
+        assertNoKorean(panel.allTexts(), "tool window")
+        shot(panel, 620, 200, "tool-window-changed-test")
+
+        // 바뀐 검사 줄을 누르면 검사 파일의 그 줄로 간다
+        service.open(changed.setKey, changed.file, changed.line)
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor!!
+        assertEquals(file("test/auth.test.ts"), FileDocumentManager.getInstance().getFile(editor.document))
+        assertEquals(4, editor.caretModel.logicalPosition.line)
+        assertTrue(editor.document.text.lines()[6].contains("i < 6"))
+
+        // 한국어 화면
+        System.setProperty("verifylens.lang", "ko")
+        val ko = press("VerifyLens.CheckChanges")
+        assertEquals("\"locks the account after 5 consecutive failures\" (test/auth.test.ts:5) — 이번 변경에서 검사가 바뀜: 5 → 6", ko.changedTests["R1"]!!.single().text)
+        val koPanel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, koPanel)
+        val koRows = koPanel.rowTexts()
+        koRows.forEach { println("[VerifyLens 시험] 바뀐 검사 도구 창(한국어) | $it") }
+        assertEquals("R1  확인됨 · ⚠ 검사 바뀜   Lock the account after 5 consecutive failures", koRows[0])
+        assertEquals("auth.test.ts:5   이번 변경에서 검사가 바뀜: 5 → 6", koRows[2])
+
+        // 검사를 되돌리면(반복 5) 알림이 사라진다. 판정은 그대로 「확인됨」.
+        Files.writeString(repo.resolve("test/auth.test.ts"), lockoutTest(5))
+        Files.writeString(repo.resolve(".verifylens/junit.xml"), LOCKOUT_JUNIT)
+        LocalFileSystem.getInstance().refreshAndFindFileByNioFile(repo.resolve("test/auth.test.ts"))!!.refresh(false, false)
+        val back = press("VerifyLens.CheckChanges")
+        assertEquals(listOf("R1" to "확인됨"), back.rows.map { it.id to it.overall })
+        assertTrue(back.changedTests.isEmpty())
+        val backPanel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, backPanel)
+        assertEquals("R1  확인됨   Lock the account after 5 consecutive failures", backPanel.rowTexts()[0])
+        assertEquals(2, backPanel.rowTexts().size)
+    }
+
+    /** 샘플(로그인 잠금)에는 바뀐 검사가 없다: 새로 생긴 검사는 「바뀐 검사」가 아니다. */
+    fun testSampleHasNoChangedTests() {
+        assertTrue(press("VerifyLens.CheckChanges").changedTests.isEmpty())
+        assertTrue(press("VerifyLens.RunDemo").changedTests.isEmpty())
+    }
+
     // ---------------------------------------------------------------- 도우미
 
     /** 동작을 누르고 결과를 기다린다. */
@@ -383,6 +454,47 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         }
     }
 
+    /**
+     * 검사를 고쳐서 통과시킨 저장소: main 에 코드(5번째에 잠금)와 검사(5번 반복)를 커밋하고,
+     * 브랜치에서 커밋하지 않은 채 코드를 조금 다듬고 검사의 반복을 6으로 바꾼다. 바꾼 검사를 돌린 결과(통과)도 넣는다.
+     */
+    private fun buildEditedTestRepo(dir: Path) {
+        Files.createDirectories(dir.resolve("src"))
+        Files.createDirectories(dir.resolve("test"))
+        git(dir, "init", "-q", "-b", "main")
+        Files.writeString(dir.resolve("src/auth.ts"), lockoutCode("user.failures += 1;"))
+        Files.writeString(dir.resolve("test/auth.test.ts"), lockoutTest(5))
+        git(dir, "add", "-A")
+        git(dir, "commit", "-q", "-m", "base: lock after 5 failures")
+        git(dir, "checkout", "-q", "-b", "feature/tidy")
+        Files.createDirectories(dir.resolve(".verifylens"))
+        Files.writeString(dir.resolve(".verifylens/requirements.md"), "- R1: Lock the account after 5 consecutive failures | keywords: failure, lock\n")
+        Files.writeString(dir.resolve("src/auth.ts"), lockoutCode("user.failures = user.failures + 1;"))
+        Files.writeString(dir.resolve("test/auth.test.ts"), lockoutTest(6))
+        Files.writeString(dir.resolve(".verifylens/junit.xml"), LOCKOUT_JUNIT)
+    }
+
+    private fun lockoutCode(increment: String) = listOf(
+        "export function onFailedLogin(user: { failures: number; locked: boolean }) {",
+        "  $increment",
+        "  if (user.failures >= 5) user.locked = true;",
+        "}",
+        "",
+    ).joinToString("\n")
+
+    private fun lockoutTest(times: Int) = listOf(
+        "import { test } from 'node:test';",
+        "import assert from 'node:assert';",
+        "import { onFailedLogin } from '../src/auth.ts';",
+        "",
+        "test('locks the account after 5 consecutive failures', () => {",
+        "  const user = { failures: 0, locked: false };",
+        "  for (let i = 0; i < $times; i++) onFailedLogin(user);",
+        "  assert.equal(user.locked, true);",
+        "});",
+        "",
+    ).joinToString("\n")
+
     /** samples/login-lockout 으로 main ← feature/lockout-b 저장소를 만들고, 미리 만든 테스트 결과를 넣는다. */
     private fun buildSampleRepo(dir: Path) {
         val sample = engineDir.resolve("samples/login-lockout")
@@ -408,3 +520,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         check(p.waitFor() == 0) { "git ${args.joinToString(" ")} 실패: $out" }
     }
 }
+
+/** 바꾼 검사를 돌린 결과 (통과). 이름이 요구사항과 이어진다. */
+private const val LOCKOUT_JUNIT =
+    "<?xml version=\"1.0\"?>\n<testsuites><testsuite name=\"t\"><testcase name=\"locks the account after 5 consecutive failures\" classname=\"t\"/></testsuite></testsuites>\n"
