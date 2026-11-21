@@ -68,8 +68,8 @@ textarea:focus, input:focus, select:focus, button:focus-visible { outline: 2px s
 .result { padding: 14px 16px 16px; }
 .headline { font-weight: 700; font-size: 17px; margin: 0 0 12px; }
 .status { font-size: 13px; color: var(--muted); }
-.cards { display: grid; gap: 10px; }
-.card { border: 1px solid var(--border); border-left: 4px solid var(--unk); border-radius: 10px; padding: 12px 12px 12px 14px; background: var(--surface); cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
+.cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.card { border: 1px solid var(--border); border-left: 4px solid var(--unk); border-radius: 10px; padding: 12px 12px 12px 14px; background: var(--surface); cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; min-width: 0; }
 .card.ok { border-left-color: var(--ok); }
 .card.bad { border-left-color: var(--bad); }
 .card .top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -84,6 +84,34 @@ textarea:focus, input:focus, select:focus, button:focus-visible { outline: 2px s
 .todo li + li { margin-top: 4px; }
 .todo b { color: var(--unk); }
 .strip { margin: 8px 0 0; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; font-size: 12.5px; white-space: pre; overflow-x: auto; }
+/* 근거 사슬: 요구사항 → 코드 줄 → 검사 → 동작. 초록 = 맞음 · 빨강 = 어긋남 · 회색 점선 = 비어 있는 칸 */
+.chain { display: flex; align-items: stretch; gap: 4px; margin: 10px 0 0; flex-wrap: wrap; }
+.chain .step { flex: 1 1 92px; min-width: 0; border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--surface-2); display: flex; flex-direction: column; gap: 2px; }
+.chain .step .st { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--muted); }
+.chain .step .sx { font-size: 12.5px; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; }
+.chain .step.ok { border-color: var(--ok); background: var(--ok-soft); }
+.chain .step.ok .st { color: var(--ok); }
+.chain .step.diff { border-color: var(--bad); background: var(--bad-soft); }
+.chain .step.diff .st, .chain .step.diff .sx { color: var(--bad); font-weight: 600; }
+.chain .step.miss { border-style: dashed; border-color: var(--muted); background: transparent; }
+.chain .step.miss .sx { color: var(--muted); }
+.chain .step.plain { border-color: var(--accent); background: var(--accent-soft); }
+.chain .step.plain .st { color: var(--accent); }
+.chain .arrow { align-self: center; color: var(--muted); font-size: 14px; }
+@media (max-width: 640px) { .chain { flex-direction: column; } .chain .step { flex: 0 0 auto; } .chain .arrow { transform: rotate(90deg); align-self: flex-start; margin-left: 14px; } }
+/* 시도 횟수 점 그림: 몇 번째에 잠기는가 */
+.dots { margin: 10px 0 0; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+.dots .drow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+@media (max-width: 640px) { .dots .dl { width: 100%; } .dots .dot { width: 23px; height: 23px; font-size: 11px; } .dots .dnote { margin-left: 2px; } }
+.dots .dl { width: 64px; flex: none; font-size: 12px; font-weight: 700; color: var(--muted); }
+.dots .dot { width: 26px; height: 26px; flex: none; border-radius: 50%; border: 1.5px solid var(--border); display: grid; place-items: center; font-size: 12px; color: var(--muted); background: var(--surface); }
+.dots .dot.after { opacity: .45; }
+.dots .dot.act { font-size: 13px; color: #fff; border: none; }
+.dots .dot.act.req { background: var(--accent); }
+.dots .dot.act.ok { background: var(--ok); }
+.dots .dot.act.off { background: var(--bad); }
+.dots .dnote { font-size: 12.5px; font-weight: 700; margin-left: 6px; white-space: nowrap; }
+.dots .dnote.off { color: var(--bad); } .dots .dnote.ok { color: var(--ok); }
 .codewrap { margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .codewrap .cap { padding: 7px 12px; font-size: 12.5px; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--border); font-family: ui-monospace, Consolas, monospace; }
 .codeview { margin: 0; padding: 8px 0; background: var(--code-bg); font-size: 12.5px; line-height: 1.6; overflow-x: auto; }

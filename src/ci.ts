@@ -24,7 +24,7 @@ import { undecidedReasons } from './summary.ts';
 import { undecidedLabel } from './numeric.ts';
 import { L, wOverall } from './i18n.ts';
 import type { Overall, Report, ReqSummary, TestCase } from './types.ts';
-import { allLenses, prSummary, summaryLine } from '../vscode/src/model.ts';
+import { allLenses, chainSteps, chainText, prSummary, summaryLine } from '../vscode/src/model.ts';
 import type { Lens } from '../vscode/src/model.ts';
 
 const FAIL_WORDS: Record<string, Overall> = { different: '다름', failed: '실패', unverified: '미확인' };
@@ -124,6 +124,8 @@ function agentMessage(blocking: ReqSummary[], why: (s: ReqSummary) => string, le
     lines.push(`- ${s.req.id} · ${wOverall(s.overall)}: ${s.req.text}`);
     const detail = [why(s), lens ? `${lens.file}:${lens.line}` : ''].filter(Boolean).join(' — ');
     if (detail) lines.push(`  ${detail}`);
+    // 근거 사슬 한 줄: 어느 칸이 어긋나거나 비었는지 (✗ 어긋남 · ? 비어 있음)
+    lines.push(`  ${chainText(chainSteps(report, s.req.id))}`);
     // 실패한 검사는 이름으로 짚는다. 고친 뒤 바로 그 검사를 다시 돌려야 고쳤다고 할 수 있다
     const failed = (report.sets[0]?.perReq[s.req.id]?.tests ?? []).filter((t) => t.status === 'fail').map((t) => t.name);
     if (failed.length) lines.push(`  ${L('실패한 검사(고친 뒤 다시 돌릴 것)', 'Failed tests (run them again after the fix)')}: ${quoteList(failed)}`);

@@ -119,6 +119,8 @@ test('ci --hook claude: asks once to fix a Different requirement, then only tell
   assert.match(json.reason, /ask the user instead of changing the requirements file/);
   // 테스트도 같은 착각으로 쓰지 않게 경계값을 함께 준다
   assert.match(json.reason, /Values to test at the boundary: 4th time → does not act yet · 5th time → acts/);
+  // 근거 사슬 한 줄: 어느 칸이 어긋났는지
+  assert.match(json.reason, /code: src\/auth\.ts:21 user\.failures > 5 ✓ → tests: [^→]+→ acts: attempt 6 \(required 5\) ✗ 1 late/);
   assert.equal(first.err, ''); // 훅에서는 요구사항별 줄을 쓰지 않는다
   const again = run({ hook: 'claude', requirements: wt.reqFile }, { stop_hook_active: true, cwd: wt.repo });
   assert.equal(again.code, 1);

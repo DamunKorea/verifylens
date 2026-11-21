@@ -5,7 +5,7 @@ import { parseRequirements } from '../src/requirements.ts';
 import { undecidedReasons } from '../src/summary.ts';
 import { undecidedAction, undecidedLabel } from '../src/numeric.ts';
 import type { Overall } from '../src/types.ts';
-import { allLenses, attemptLines, setLang, treeModel, verifiedLine, wOverall, type Lang } from '../vscode/src/model.ts';
+import { allLenses, attemptDots, attemptLines, chainSteps, setLang, treeModel, verifiedLine, wOverall, type ChainStep, type Lang } from '../vscode/src/model.ts';
 
 export type TryTest = { name: string; status: 'pass' | 'fail' };
 export type TryInput = { requirements: string; fileName: string; code: string; tests: TryTest[]; lang: Lang };
@@ -23,6 +23,10 @@ export type TryRow = {
   tests: string[];
   /** 「미확인」일 때 까닭과 할 일 */
   todo: { label: string; action: string }[];
+  /** 근거 사슬: 요구사항 → 코드 줄 → 검사 → 동작 (확장 · PR 요약과 같은 모델) */
+  chain: ChainStep[];
+  /** 시도 횟수 점 그림 (요구사항과 코드가 몇 번째에 동작하는가) */
+  dots: { max: number; required: number; at: number } | null;
 };
 export type TryNote = { line: number; endLine: number; reqId: string; overall: Overall; severity: 'ok' | 'warn' | 'info'; head: string; note: string };
 export type TryResult = { headline: string; rows: TryRow[]; notes: TryNote[]; requirementLines: string[] };
@@ -80,6 +84,11 @@ export function runCheck(input: TryInput): TryResult {
       strip: attemptLines(report, r.id, input.lang),
       tests: rr.tests.map((t) => `${t.status === 'pass' ? '✓' : '✗'} ${t.name}`),
       todo: undecidedReasons(report, s).map((k) => ({ label: undecidedLabel(k, input.lang), action: undecidedAction(k, input.lang) })),
+      chain: chainSteps(report, r.id, input.lang),
+      dots: (() => {
+        const d = attemptDots(report, r.id);
+        return d ? { max: d.max, required: d.required, at: d.rows[0].at } : null;
+      })(),
     };
   });
   const notes = allLenses(report).map((l) => ({ line: l.line, endLine: l.endLine, reqId: l.reqId, overall: l.overall, severity: l.severity, head: l.head, note: l.note }));

@@ -166,6 +166,93 @@ export const reqTemplate = (): string => L(REQ_TEMPLATE, REQ_TEMPLATE_EN);
 export type EvidenceRow = { setKey: 'A' | 'B'; label: string; file?: string; line?: number; detail: string; tooltip: string };
 export type ReqRow = { id: string; text: string; overall: Overall; attention: Attention; reason: string; summary: string; children: EvidenceRow[] };
 
+// ---------------------------------------------------------------- 근거 사슬 (보는 곳마다 같은 그림)
+/**
+ * 요구사항 → 코드 줄 → 검사 → 동작(판정) 네 칸. 체험 페이지 · PR 요약(Mermaid) · 훅 메시지가 같은 모델을 그린다.
+ * 「미확인」은 비어 있는 칸(miss)이 어디인지가 곧 까닭이다. 대표 11/21: 「얼마나 잘 시각화해서 이해를 빨리 돕느냐」.
+ */
+export type ChainTone = 'ok' | 'diff' | 'miss' | 'plain';
+export type ChainStep = { kind: 'req' | 'code' | 'test' | 'act'; title: string; text: string; tone: ChainTone };
+
+export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = getLang(), setIndex = 0): ChainStep[] {
+  const s = report.summaries.find((x) => x.req.id === reqId);
+  const set = report.sets[setIndex];
+  if (!s || !set) return [];
+  const ko = lang === 'ko';
+  const rr = set.perReq[reqId];
+  const ev = rr.evidence;
+  const u = ev.unit;
+  const b = ev.boundary;
+  const code = u
+    ? `${u.file}:${u.startLine}${u.cond?.expr ? ` ${u.cond.expr}` : u.kind === 'function' ? (ko ? ' (함수 전체)' : ' (whole function)') : ''}`
+    : ko ? '근거를 찾지 못함' : 'no evidence found';
+  const codeTone: ChainTone = !u ? 'miss' : ev.status === '발견' ? 'ok' : 'miss';
+  const linked = rr.tests;
+  const firstFail = linked.find((t) => t.status === 'fail');
+  const testText =
+    rr.testStatus === '통과'
+      ? `${ko ? '통과' : 'passes'}${linked[0] ? ` · ${linked[0].name}` : ''}`
+      : rr.testStatus === '실패'
+        ? `${ko ? '실패' : 'fails'}${firstFail ? ` · ${firstFail.name}` : ''}`
+        : ko ? '연결된 검사 없음' : 'no linked test';
+  const testTone: ChainTone = rr.testStatus === '통과' ? 'ok' : rr.testStatus === '실패' ? 'diff' : 'miss';
+  let act: ChainStep;
+  if (b && b.attempts !== null) {
+    const late = b.attempts - b.required;
+    const off = late === 0 ? '' : ko ? ` ✗ ${Math.abs(late)}번 ${late > 0 ? '늦음' : '빠름'}` : ` ✗ ${Math.abs(late)} ${late > 0 ? 'late' : 'early'}`;
+    act = { kind: 'act', title: ko ? '동작' : 'acts', text: ko ? `${b.attempts}번째 시도 (요구 ${b.required})${off}` : `attempt ${b.attempts} (required ${b.required})${off}`, tone: b.ok === true ? 'ok' : b.ok === false ? 'diff' : 'miss' };
+  } else if (b) {
+    act = { kind: 'act', title: ko ? '동작' : 'acts', text: boundaryShort(b, lang) || boundaryLine(b, lang), tone: b.ok === true ? 'ok' : b.ok === false ? 'diff' : 'miss' };
+  } else {
+    const reason = s.overall === '미확인' ? undecidedReasons(report, s).slice(0, 1).map((k) => undecidedLabel(k, lang))[0] ?? '' : '';
+    // (판정 낱말은 이 요약의 언어로. wOverall 은 화면 언어를 따른다)
+    const word = ko ? s.overall : ({ 확인됨: 'Verified', 다름: 'Different', 실패: 'Failed', 미확인: 'Not verified' } as Record<Overall, string>)[s.overall];
+    act = { kind: 'act', title: ko ? '판정' : 'verdict', text: `${word}${reason ? ` · ${reason}` : ''}`, tone: s.overall === '확인됨' ? 'ok' : s.overall === '미확인' ? 'miss' : 'diff' };
+  }
+  return [
+    { kind: 'req', title: ko ? '요구사항' : 'requirement', text: s.req.text, tone: 'plain' },
+    { kind: 'code', title: ko ? '코드' : 'code', text: code, tone: codeTone },
+    { kind: 'test', title: ko ? '검사' : 'tests', text: testText, tone: testTone },
+    act,
+  ];
+}
+
+/** 한 줄 글 그림 (훅 메시지 · 명령줄): 요구사항 → 코드 줄 → 검사 → 동작 */
+export function chainText(steps: ChainStep[]): string {
+  const mark: Record<ChainTone, string> = { ok: '✓', diff: '✗', miss: '?', plain: '' };
+  return steps
+    .slice(1)
+    .map((x) => `${x.title}: ${x.text}${mark[x.tone] && !x.text.includes('✗') ? ` ${mark[x.tone]}` : ''}`)
+    .join(' → ');
+}
+
+/** GitHub 이 그려 주는 Mermaid 그림 (PR 요약 · Action 작업 요약). 글자는 Mermaid 이름표 규칙에 맞게 바꾼다 */
+export function chainMermaid(reqId: string, steps: ChainStep[]): string[] {
+  const safe = (s: string) => s.replace(/&/g, '#amp;').replace(/"/g, '#quot;').replace(/</g, '#lt;').replace(/>/g, '#gt;').replace(/[`|]/g, "'");
+  const short = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+  const key = reqId.replace(/[^A-Za-z0-9]/g, '');
+  const ids = steps.map((_, i) => `${key}_${i}`);
+  const node = (x: ChainStep, i: number) => `  ${ids[i]}["${safe(x.title)}<br/>${safe(short(x.text, x.kind === 'req' ? 46 : 52))}"]`;
+  const lines = ['```mermaid', 'flowchart LR', ...steps.map(node), `  ${ids.join(' --> ')}`];
+  lines.push('  classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D', '  classDef diff fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D', '  classDef miss fill:#F3F4F6,stroke:#9CA3AF,color:#374151,stroke-dasharray:5 4', '  classDef plain fill:#E0EAFF,stroke:#4285E8,color:#1E3A8A');
+  for (const tone of ['ok', 'diff', 'miss', 'plain'] as ChainTone[]) {
+    const of = steps.map((x, i) => (x.tone === tone ? ids[i] : '')).filter(Boolean);
+    if (of.length) lines.push(`  class ${of.join(',')} ${tone}`);
+  }
+  lines.push('```');
+  return lines;
+}
+
+/** 시도 횟수 점 그림의 자료: 요구사항이 몇 번째에, 코드가 몇 번째에 동작하는가 (계산할 수 없으면 null) */
+export function attemptDots(report: Report, reqId: string): { max: number; required: number; rows: { key: 'A' | 'B'; at: number }[] } | null {
+  const rows = report.sets.map((set) => ({ key: set.key, b: set.perReq[reqId]?.evidence.boundary })).filter((x) => x.b && x.b.attempts !== null);
+  if (!rows.length) return null;
+  const required = rows[0].b!.required;
+  const max = Math.max(required, ...rows.map((x) => x.b!.attempts as number)) + 1;
+  if (max > 13) return null;
+  return { max, required, rows: rows.map((x) => ({ key: x.key, at: x.b!.attempts as number })) };
+}
+
 /** 상태 옆에 붙일 짧은 이유. 「미확인」이 왜 미확인인지 한눈에 보이게 한다. */
 function shortReason(report: Report, s: ReqSummary): string {
   // 「미확인」은 까닭을 종류로 보여 준다 (판단을 막은 것 두 가지까지)
@@ -708,6 +795,7 @@ const TXT = {
     cols: ['요구사항', '상태', '근거와 동작 (코드 분석 · 계산)', '검사 (실행 기록)', '판단 (작성자)'],
     notOpinion: 'AI가 쓴 의견이 아닙니다. 이 요약의 항목은 모두 코드 줄과 실행된 검사 기록에서 나왔고, 확인하지 못한 것은 통과로 치지 않았습니다.',
     when: '동작 시점 (조건 값에서 계산, [n] = 동작하는 시도)',
+    chain: '근거 사슬 (요구사항 → 코드 줄 → 검사 → 동작 · 회색 점선 = 비어 있는 칸)',
     attempt: (n: number, req: number, ok: boolean | null) => (ok === false ? `${n}번째 시도에 동작 (요구사항 ${req}회)` : `${n}번째 시도에 동작`),
     noEvidence: '근거를 찾지 못함',
     whole: '함수 전체',
@@ -741,6 +829,7 @@ const TXT = {
     cols: ['Requirement', 'Status', 'Evidence and behavior (code analysis · computed)', 'Tests (executed)', 'Decision (author)'],
     notOpinion: 'This is not an AI opinion. Every item in this summary comes from a code line or an executed test, and anything that could not be checked is not counted as passing.',
     when: 'When it acts (computed from the condition, [n] = the attempt that triggers it)',
+    chain: 'Evidence chain (requirement → code line → tests → when it acts · grey dashed = missing)',
     attempt: (n: number, req: number, ok: boolean | null) => (ok === false ? `acts on attempt ${n} (requirement: ${req})` : `acts on attempt ${n}`),
     noEvidence: 'no evidence found',
     whole: 'whole function',
@@ -799,9 +888,14 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
   const lookIds: string[] = [];
   const testsOnly: string[] = [];
   const points: string[] = [];
+  // 근거 사슬 그림 (GitHub 이 Mermaid 로 그린다): 고칠 것과 사람이 볼 것에만 붙인다
+  const fixChains: string[] = [];
+  const lookChains: string[] = [];
+  const otherChains: string[] = [];
   for (const s of report.summaries) {
     const id = s.req.id;
     const kind = attention(report, s);
+    if (!two && s.overall !== '확인됨') (kind === 'fix' ? fixChains : kind === 'look' ? lookChains : otherChains).push(`**${id}**`, ...chainMermaid(id, chainSteps(report, id, lang)), '');
     const ev: string[] = [];
     const tests: string[] = [];
     const notRun: string[] = [];
@@ -858,6 +952,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
 
   if (fixRows.length) {
     out.push(`### ${t.fix(fixRows.length)}`, '', ...head, ...fixRows);
+    if (fixChains.length) out.push('', `**${t.chain}**`, '', ...fixChains.slice(0, -1));
     if (fixStrips.length) out.push('', `**${t.when}**`, ...code(fixStrips));
     if (failed.length) out.push('', `**${t.failed}**`, ...failed);
     if (passOff.length) out.push('', `**${t.passOff}**`, ...passOff);
@@ -866,11 +961,12 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
     out.push(`**${t.none}**`);
   }
   // <details> 안의 마크다운은 <summary> 뒤에 빈 줄이 있어야 표 · 목록으로 보인다
-  if (look.length) out.push('', '<details>', `<summary>${t.look(lookIds.join(', '), look.length)}</summary>`, '', ...look, '', '</details>');
+  if (look.length || lookChains.length) out.push('', '<details>', `<summary>${t.look(lookIds.join(', '), look.length)}</summary>`, '', ...look, ...(lookChains.length ? ['', `**${t.chain}**`, '', ...lookChains.slice(0, -1)] : []), '', '</details>');
   if (otherRows.length) {
     out.push('', '<details>', `<summary>${fixRows.length ? t.others(otherRows.length) : t.all(otherRows.length)}</summary>`, '', ...head, ...otherRows);
     if (otherStrips.length) out.push('', `**${t.when}**`, ...code(otherStrips));
     if (testsOnly.length) out.push('', `**${t.testsOnly}**`, ...testsOnly);
+    if (otherChains.length) out.push('', `**${t.chain}**`, '', ...otherChains.slice(0, -1));
     out.push('', '</details>');
   }
   const autoIds = report.summaries.filter((x) => x.req.auto).map((x) => x.req.id);

@@ -266,7 +266,13 @@ test('PR summary: problems open on top, the rest folded, nothing a reviewer must
   assert.ok(okEn.indexOf('| **R2**') > okEn.indexOf('<summary>All requirements (3)</summary>'), 'the table is folded');
   assert.match(en, /code       1  2  3  4  5 \[6\]  ✗ 1 late/);
   assert.match(en, /- R3: no linked test was run\n/);
-  assert.ok(!/[가-힣]/.test(en.replace(/\| \*\*R\d\*\* [^|]+\|/g, '')), 'English summary has no Korean outside the requirement text');
+  // (근거 사슬 그림의 첫 칸도 요구사항 글이다)
+  assert.ok(!/[가-힣]/.test(en.replace(/\| \*\*R\d\*\* [^|]+\|/g, '').replace(/_0\["requirement<br\/>[^"]*"\]/g, '')), 'English summary has no Korean outside the requirement text');
+  // 고칠 것 · 미확인은 근거 사슬 그림(Mermaid)으로도 보인다: 어긋난 칸은 diff, 비어 있는 칸은 miss
+  assert.match(en, /```mermaid\nflowchart LR\n {2}R2_0\["requirement<br\/>/);
+  assert.match(en, /R2_3\["acts<br\/>attempt 6 \(required 5\) ✗ 1 late"\]/);
+  assert.match(en, /class R2_3 diff/);
+  assert.match(en, /R3_2\["tests<br\/>no linked test"\][\s\S]*class R3_2,R3_3 miss/);
 });
 
 // ---------------------------------------------------------------- 0.4.0: 키워드 없이 연결 · 요구사항 가져오기
