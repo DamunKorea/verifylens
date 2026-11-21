@@ -114,7 +114,7 @@ node src/cli.ts report --repo ../your-repo --base main --a feature/x [--b featur
      --requirements requirements.md [--junit-a a.xml --junit-b b.xml] --out out --open --lang en
 ```
 
-- Requirements written in English or Korean are linked to code automatically (English by their own words, Korean through a fixed glossary of common terms, no LLM). If a requirement lands on the wrong code, append `| keywords: words, in, the, code` to pin it. Automatic links are deliberately strict about tests: a test only counts when its name covers most of the requirement, so a missing test stays "not verified".
+- Requirements written in English or Korean are linked to code automatically (English by their own words, Korean through a fixed glossary of common terms, no LLM). If a requirement lands on the wrong code, append `| keywords: words, in, the, code` to pin it (Korean keywords are read through the same glossary). Automatic links are deliberately strict about tests: a test only counts when its name covers most of the requirement, so a missing test stays "not verified".
 - Test results are read from JUnit XML, e.g. `node --test --test-reporter=junit --test-reporter-destination=a.xml`. Without test results, tests show as "not run".
 
 ## Use it in CI (GitHub Actions)

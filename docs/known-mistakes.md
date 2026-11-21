@@ -74,13 +74,16 @@ These stay Not verified, or show a weaker evidence line. Add `| keywords: ...` t
 - class-validator decorators other than the format checks, `@Length`, `@MinLength` / `@MaxLength` and `@Min` / `@Max`.
 - Formulas are judged only for a fixed-amount branch (`if`, a ternary, `switch` or an object of functions named `fixed` / `flat` / `amount`). Other formulas are not judged.
 - Without keywords, some duplicate checks (`answers.some(...)`, a sent-id list) stay Not verified because the test name does not cover enough of the sentence. There are fewer since 0.17.0 (an idempotency key, "the same coupon again").
+- "5점 이하" (at most 5 points) reads 점 as a count, so a rating check (`rating > 10`) is not used as evidence. Wrong code is Not verified rather than Different.
+- Keywords that do not cover the variable in the condition (`예약, 취소` or `booking, cancel` against `hoursLeft < 24`) leave the number unfound. Leaving the keywords out works.
+- Korean keywords are read through the glossary since 0.20.0 (before, they matched nothing). Two correct cases with Korean keywords still stay Not verified: free shipping from ₩50,000 with `배송비, 무료`, and a single-use coupon with `쿠폰, 사용`.
 
 ## Tests changed in this change (since 0.19.0)
 
 This is a note next to the verdict, not a verdict. What it gets wrong:
 
 - **False alarm:** moving an assertion into a helper function (`expectLockedAfter(5)`) reads as "1 fewer check".
-- **Missed:** a changed test is shown only when the test is linked to the requirement. A Korean test name that does not share the requirement's keywords (「잠금」 against 「잠근다」) is not linked, so its change is not shown.
+- **Missed:** a changed test is shown only when the test is linked to the requirement. In 0.19.0, a Korean test name with Korean keywords (「잠금」 against 「잠근다」) was not linked, so its change was not shown. Since 0.20.0, Korean keywords are read through the glossary and that case is shown. A test name that shares nothing with the requirement is still missed.
 - **Not compared:** parameterised tests (`it.each`), snapshot files, and tests whose name is built at run time.
 - **Found on the way and fixed before release:** renaming input values inside `expect(...)` (`'fig'` → `'jam'`) was shown as a changed expected value. Only values in the expected part, and numbers anywhere, count now.
 
@@ -168,13 +171,16 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 - class-validator 데코레이터 가운데 형식 검사 · `@Length` · `@MinLength` / `@MaxLength` · `@Min` / `@Max` 가 아닌 것
 - 계산식은 정액 갈래(`if` · 삼항식 · `switch` · `fixed` / `flat` / `amount` 라는 이름의 함수 객체)만 판단함. 다른 계산식은 판단하지 않음
 - 키워드 없이 쓰면 일부 중복 막기(`answers.some(...)`, 보낸 id 목록)는 검사 이름이 문장을 충분히 담지 못해 「미확인」으로 남음. 0.17.0 에서 줄었음(결제 요청 키 · 「같은 쿠폰을 다시」)
+- 「5점 이하」의 점을 개수로 읽어서 평점 조건(`rating > 10`)을 근거로 쓰지 못함. 틀린 코드가 「다름」이 아니라 「미확인」
+- 키워드가 조건의 변수 이름을 덮지 않으면(`예약, 취소` 나 `booking, cancel` ↔ `hoursLeft < 24`) 숫자를 못 찾음. 키워드를 빼면 찾음
+- 한국어 키워드는 0.20.0 부터 용어집으로 읽음(전에는 아무 데도 안 이어짐). 맞는 코드인데 「미확인」으로 남는 것 둘: `배송비, 무료` 의 5만원 이상 무료 배송, `쿠폰, 사용` 의 한 번만 쓰는 쿠폰
 
 ### 이번 변경에서 바뀐 검사 (0.19.0 부터)
 
 판정이 아니라 판정 옆에 붙는 알림입니다. 틀리는 것:
 
 - **헛경보:** 확인 줄을 도우미 함수로 옮긴 정리(`expectLockedAfter(5)`)를 「확인 줄 1개 줄어듦」으로 봄
-- **놓침:** 요구사항에 이어진 검사만 보여 줌. 한국어 검사 이름이 요구사항 키워드와 안 겹치면(「잠금」과 「잠근다」) 이어지지 않아 바뀐 것이 안 보임
+- **놓침:** 요구사항에 이어진 검사만 보여 줌. 0.19.0 에서는 한국어 키워드와 한국어 검사 이름(「잠금」과 「잠근다」)이 이어지지 않아 바뀐 것이 안 보였음. 0.20.0 부터 한국어 키워드를 용어집으로 읽어 그 사례는 보임. 요구사항과 겹치는 것이 하나도 없는 검사 이름은 여전히 놓침
 - **견주지 않음:** 매개변수 검사(`it.each`), 스냅샷 파일, 실행할 때 이름을 만드는 검사
 - **만들던 중 찾아 공개 전에 고침:** `expect(...)` 안의 입력 값 이름만 바꾼 것(`'fig'` → `'jam'`)을 기대값이 바뀐 것으로 보임. 이제 기대값 자리의 값과, 어디서든 바뀐 숫자만 셈
 

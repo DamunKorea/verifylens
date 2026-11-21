@@ -5,6 +5,7 @@
 // 「테스트를 돌려 검증을 강화하는 쪽」, 「검증 절차가 있으면 잡히지 않나」).
 import type { Constraint, Requirement, UnitKind } from './types.ts';
 import { getLang, type Lang } from './i18n.ts';
+import { englishUnit } from './numeric.ts';
 
 export type TestPoint = { value: string; expect: string };
 
@@ -26,10 +27,15 @@ const ordinal = (n: number) => {
 const hangul = (s: string) => /[가-힣]/.test(s);
 
 /** 값과 단위를 문장에 쓰인 모양대로 붙인다: 7자 · 29,999원 · $29,999 · 7 characters */
-function withUnit(n: number, c: Constraint): string {
+function withUnit(n: number, c: Constraint, lang: Lang): string {
   const u = c.unitText.trim();
   if (!u) return num(n);
   if (u === '$' || u === '₩' || u === '€' || u === '£') return `${u}${num(n)}`;
+  // 영어 화면에는 한국어 단위를 영어로 (「29,999원」 → 「29,999 won」)
+  if (lang === 'en' && hangul(u)) {
+    const w = englishUnit(u, n);
+    if (w) return w === '%' ? `${num(n)}%` : `${num(n)} ${w}`;
+  }
   return hangul(u) || u === '%' ? `${num(n)}${u}` : `${num(n)} ${u}`;
 }
 
@@ -45,13 +51,13 @@ function pointsFor(c: Constraint, lang: Lang): TestPoint[] {
   const v = c.value;
   // 세는 조건 (「5번 틀리면」 「after 5 failures」 「하루 3번까지」): 몇 번째로 쓴다
   const counted = discrete && COUNTED.includes(c.unit) && (c.rel === 'count' || c.rel === 'after' || ((c.rel === 'lte' || c.rel === 'lt') && c.validSide === 'lower'));
-  const show = (n: number) => (counted ? nth(n, lang) : withUnit(n, c));
+  const show = (n: number) => (counted ? nth(n, lang) : withUnit(n, c, lang));
   // 끝값 쪽 · 바깥 쪽에서 무엇이 되어야 하는지
   const yes = c.validSide ? w.allow : w.inside;
   const no = c.validSide ? w.reject : w.outside;
   const at = (n: number, expect: string): TestPoint => ({ value: show(n), expect });
-  const near = (word: string, expect: string): TestPoint => ({ value: lang === 'ko' ? `${withUnit(v, c)} ${word}` : `${word} ${withUnit(v, c)}`, expect });
-  const exact = (expect: string): TestPoint => ({ value: withUnit(v, c), expect });
+  const near = (word: string, expect: string): TestPoint => ({ value: lang === 'ko' ? `${withUnit(v, c, lang)} ${word}` : `${word} ${withUnit(v, c, lang)}`, expect });
+  const exact = (expect: string): TestPoint => ({ value: withUnit(v, c, lang), expect });
 
   if (c.rel === 'count' || c.rel === 'after') {
     if (discrete) return v >= 1 ? [at(v - 1, w.notYet), at(v, w.acts)].filter((p) => !/^0/.test(p.value)) : [];

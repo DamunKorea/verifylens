@@ -26,7 +26,10 @@ export function parseRequirements(md: string): Requirement[] {
     // 키워드를 적어도 문장의 개념은 뽑아 둔다 (검사 이름과 이을 때 쓴다)
     // 「5 times」의 times 는 단위다. 무엇을 하는지 말하는 낱말이 아니므로 개념으로 세지 않는다
     const concepts = conceptsFor(text.replace(/(\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten))\s*times?\b/gi, '$1'));
-    const tokens = auto ? concepts.flat() : tokenize(keywords.join(' '));
+    // 키워드는 「코드에 나오는 영어 낱말」이지만 한국어로 적는 사람도 있다(「| keywords: 실패, 잠금」).
+    // 한국어 키워드는 용어집으로 영어 낱말을 함께 쓴다. 그대로면 코드의 failures · locked 와 이어지지 않아 모두 「미확인」이 됐다.
+    const kwTokens = keywords.flatMap((k) => (/[가-힣]/.test(k) ? [...conceptsFor(k).flat(), ...tokenize(k)] : tokenize(k)));
+    const tokens = auto ? concepts.flat() : kwTokens;
     reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) });
   }
   return reqs;

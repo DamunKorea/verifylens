@@ -308,16 +308,38 @@ const withUnit = (n: number | string, c: Constraint) => {
   const u = c.unitText;
   return /^[A-Za-z]/.test(u) ? `${n} ${u}` : `${n}${u}`;
 };
+/** 한국어 단위 낱말의 영어 (영어 화면에 「3번」 · 「10명」이 섞이지 않게 — JetBrains 세션이 찾음) */
+const EN_UNIT: Record<string, [string, string]> = {
+  원: ['won', 'won'], 달러: ['dollar', 'dollars'], 세: ['year old', 'years old'], 살: ['year old', 'years old'],
+  글자: ['character', 'characters'], 자: ['character', 'characters'], 자리: ['digit', 'digits'],
+  개월: ['month', 'months'], 달: ['month', 'months'], 주일: ['week', 'weeks'], 주: ['week', 'weeks'], 일: ['day', 'days'],
+  시간: ['hour', 'hours'], 분: ['minute', 'minutes'], 초: ['second', 'seconds'],
+  퍼센트: ['%', '%'], 프로: ['%', '%'], 킬로바이트: ['KB', 'KB'], 메가바이트: ['MB', 'MB'], 메가: ['MB', 'MB'], 기가바이트: ['GB', 'GB'], 기가: ['GB', 'GB'],
+  회: ['time', 'times'], 번: ['time', 'times'], 개: ['item', 'items'], 건: ['item', 'items'], 명: ['person', 'people'],
+  장: ['sheet', 'sheets'], 점: ['point', 'points'], 권: ['book', 'books'], 줄: ['line', 'lines'],
+};
+/** 한국어 단위 낱말의 영어 낱말 (없으면 null). 1 이면 홑수 */
+export function englishUnit(unitText: string, n: number | string): string | null {
+  const en = EN_UNIT[unitText.trim()];
+  if (!en) return null;
+  return Number(String(n).replace(/,/g, '')) === 1 ? en[0] : en[1];
+}
+const withUnitEn = (n: number | string, c: Constraint) => {
+  const word = englishUnit(c.unitText, n);
+  if (!word) return withUnit(n, c);
+  return word === '%' ? `${n}%` : `${n} ${word}`;
+};
 
 export function constraintText(c: Constraint): Text {
   const v = withUnit(round(c.value), c);
+  const e = withUnitEn(round(c.value), c);
   switch (c.rel) {
-    case 'gte': return T(`${v} 이상`, `at least ${v}`);
-    case 'gt': return T(`${v} 초과`, `more than ${v}`);
-    case 'lte': return T(`${v} 이하`, `at most ${v}`);
-    case 'lt': return T(`${v} 미만`, `under ${v}`);
-    case 'after': return T(`${v} 뒤`, `after ${v}`);
-    default: return T(v, v);
+    case 'gte': return T(`${v} 이상`, `at least ${e}`);
+    case 'gt': return T(`${v} 초과`, `more than ${e}`);
+    case 'lte': return T(`${v} 이하`, `at most ${e}`);
+    case 'lt': return T(`${v} 미만`, `under ${e}`);
+    case 'after': return T(`${v} 뒤`, `after ${e}`);
+    default: return T(v, e);
   }
 }
 
@@ -364,7 +386,7 @@ export function judge(c: Constraint, p: NumPart): Boundary {
     kind: 'limit',
     ok: total === limitWanted,
     got: total,
-    say: T(`최대 ${withUnit(total, c)} 동작`, `runs at most ${withUnit(total, c)}`),
+    say: T(`최대 ${withUnit(total, c)} 동작`, `runs at most ${withUnitEn(total, c)}`),
   });
 
   // 반복문: 몇 번 도는지 바로 계산한다
@@ -402,20 +424,20 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   // 설정값(windowMs: 60000, expiresIn: '1h', setTimeout(fn, 5000)): 값이 같은지만 본다
   if (p.source === 'config') {
     const what = withUnit(n, c);
-    const set = T(`${what}${ro(what)} 설정됨`, `set to ${what}`);
+    const set = T(`${what}${ro(what)} 설정됨`, `set to ${withUnitEn(n, c)}`);
     return { ...b, ok: k !== null, say: set };
   }
   const upperStyle = c.rel === 'gte' || c.rel === 'gt' || c.rel === 'after';
   const closedAtLit = p.op === '>=' || p.op === '<';
   let say = upperStyle
-    ? closedAtLit ? T(`${withUnit(n, c)}부터 해당`, `applies from ${withUnit(n, c)}`) : T(`${withUnit(n, c)} 초과부터 해당`, `applies above ${withUnit(n, c)}`)
-    : closedAtLit ? T(`${withUnit(n, c)} 미만까지 해당`, `applies below ${withUnit(n, c)}`) : T(`${withUnit(n, c)}까지 해당`, `applies up to ${withUnit(n, c)}`);
-  if (p.op === '===' || p.op === '!==') say = T(`${withUnit(n, c)}일 때 해당`, `applies at ${withUnit(n, c)}`);
+    ? closedAtLit ? T(`${withUnit(n, c)}부터 해당`, `applies from ${withUnitEn(n, c)}`) : T(`${withUnit(n, c)} 초과부터 해당`, `applies above ${withUnitEn(n, c)}`)
+    : closedAtLit ? T(`${withUnit(n, c)} 미만까지 해당`, `applies below ${withUnitEn(n, c)}`) : T(`${withUnit(n, c)}까지 해당`, `applies up to ${withUnitEn(n, c)}`);
+  if (p.op === '===' || p.op === '!==') say = T(`${withUnit(n, c)}일 때 해당`, `applies at ${withUnitEn(n, c)}`);
 
   // 「1분에 5번」의 1분: 경계가 아니라 세는 시간 창이다. 같은 길이의 창이 코드에 있으면 된다.
   if (c.window) {
-    const win = T(`${withUnit(n, c)} 창`, `${withUnit(n, c)} window`);
-    return k !== null ? { ...b, ok: true, say: win } : { ...b, why: 'missing', say: T(`요구사항의 시간 창(${withUnit(round(v), c)})을 코드에서 찾지 못함`, `could not find the ${withUnit(round(v), c)} window in the code`) };
+    const win = T(`${withUnit(n, c)} 창`, `${withUnitEn(n, c)} window`);
+    return k !== null ? { ...b, ok: true, say: win } : { ...b, why: 'missing', say: T(`요구사항의 시간 창(${withUnit(round(v), c)})을 코드에서 찾지 못함`, `could not find the ${withUnitEn(round(v), c)} window in the code`) };
   }
   // 「재고가 0이면 막는다」: 그 값일 때 조건이 걸려야 한다. stock < 0 은 0 을 막지 못한다.
   if (c.trigger) {
@@ -423,16 +445,16 @@ export function judge(c: Constraint, p: NumPart): Boundary {
     const at = v * val;
     const hits = p.op === '<=' ? at <= lit : p.op === '<' ? at < lit : p.op === '>=' ? at >= lit : p.op === '>' ? at > lit : p.op === '===' ? at === lit : at !== lit;
     return hits
-      ? { ...b, ok: true, say: T(`${withUnit(round(v), c)}일 때 해당`, `applies at ${withUnit(round(v), c)}`) }
-      : { ...b, ok: false, say: T(`${withUnit(round(v), c)}일 때는 해당하지 않음`, `does not apply at ${withUnit(round(v), c)}`) };
+      ? { ...b, ok: true, say: T(`${withUnit(round(v), c)}일 때 해당`, `applies at ${withUnitEn(round(v), c)}`) }
+      : { ...b, ok: false, say: T(`${withUnit(round(v), c)}일 때는 해당하지 않음`, `does not apply at ${withUnitEn(round(v), c)}`) };
   }
   // 여기까지 온 값은 요구사항과 같은 것을 재는 이름이다(엔진이 먼저 거른다). 값이 다르면 다른 것이다.
   if (c.rel === 'value') {
-    const shownValue = T(`코드의 값 ${withUnit(n, c)}`, `${withUnit(n, c)} in the code`);
+    const shownValue = T(`코드의 값 ${withUnit(n, c)}`, `${withUnitEn(n, c)} in the code`);
     if (k === null) return { ...b, ok: false, say: shownValue };
     if (p.source !== 'compare') return { ...b, ok: true, say: shownValue };
     // 값은 같아도 요구사항에 방향(이상 · 이하)이 없으면 >= 와 > 중 무엇이 맞는지 말할 수 없다
-    return { ...b, why: 'wording', say: T(`${say.ko}. 요구사항에 「이상 · 이하」 같은 방향이 없어 경계를 확정할 수 없음`, `${say.en}. The requirement does not say which side of ${withUnit(round(v), c)} is meant`) };
+    return { ...b, why: 'wording', say: T(`${say.ko}. 요구사항에 「이상 · 이하」 같은 방향이 없어 경계를 확정할 수 없음`, `${say.en}. The requirement does not say which side of ${withUnitEn(round(v), c)} is meant`) };
   }
   if (c.rel === 'eq') {
     if (p.op === '===' || p.op === '!==') return lit === v ? { ...b, ok: true, say } : { ...b, ok: false, say };
@@ -444,10 +466,10 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   if (p.op === '===' && p.preAdd && isCapacity(c)) {
     const total = lit;
     const allowed = c.rel === 'lt' ? v - 1 : v;
-    return { ...b, ok: total === allowed, say: T(`최대 ${withUnit(total, c)}까지 들어감`, `allows up to ${withUnit(total, c)}`) };
+    return { ...b, ok: total === allowed, say: T(`최대 ${withUnit(total, c)}까지 들어감`, `allows up to ${withUnitEn(total, c)}`) };
   }
   // 「0 초과면 받는다」인데 === 1 만 받으면 범위를 좁힌 것이다
-  if (p.op === '===' && (c.rel === 'gt' || c.rel === 'gte') && p.thenKind !== 'reject') return { ...b, ok: false, say: T(`${withUnit(n, c)}일 때만 해당`, `applies only at ${withUnit(n, c)}`) };
+  if (p.op === '===' && (c.rel === 'gt' || c.rel === 'gte') && p.thenKind !== 'reject') return { ...b, ok: false, say: T(`${withUnit(n, c)}일 때만 해당`, `applies only at ${withUnitEn(n, c)}`) };
   if (p.op === '===' || p.op === '!==') return { ...b, why: 'missing', say };
 
   // 단위를 바꾼 값(분 → ms 등)은 연속된 값이라 경계 하나 차이는 따지지 않는다
@@ -466,15 +488,15 @@ export function judge(c: Constraint, p: NumPart): Boundary {
   if (c.rel === 'after') {
     if (cut === v || cut === v + 1) {
       const exact = withUnit(round(v), c);
-      return { ...b, why: 'edge', say: T(`${say.ko}. 요구사항 문장만으로는 정확히 ${exact}째가 포함되는지 정해지지 않음`, `${say.en}. The requirement does not say whether exactly ${exact} counts`) };
+      return { ...b, why: 'edge', say: T(`${say.ko}. 요구사항 문장만으로는 정확히 ${exact}째가 포함되는지 정해지지 않음`, `${say.en}. The requirement does not say whether exactly ${withUnitEn(round(v), c)} counts`) };
     }
     return { ...b, ok: false, say };
   }
   let wanted = c.rel === 'gte' || c.rel === 'lt' ? v : v + 1;
   if (p.preAdd && isCapacity(c)) {
     wanted -= 1;
-    say = T(`최대 ${withUnit(cut, c)}까지 들어감`, `allows up to ${withUnit(cut, c)}`);
-    if (c.rel === 'lt') say = T(`${withUnit(cut, c)}까지 들어감`, `allows up to ${withUnit(cut, c)}`);
+    say = T(`최대 ${withUnit(cut, c)}까지 들어감`, `allows up to ${withUnitEn(cut, c)}`);
+    if (c.rel === 'lt') say = T(`${withUnit(cut, c)}까지 들어감`, `allows up to ${withUnitEn(cut, c)}`);
   }
   // 「3번까지」인데 입력 변수만 보이면(entryCount >= 3) 그 값에 이번 것이 포함됐는지 알 수 없어 경계 하나 차이는 정할 수 없다.
   // 목록의 길이(.length)는 지금 개수가 분명하므로 그대로 판정한다.

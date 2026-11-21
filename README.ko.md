@@ -122,7 +122,7 @@ node src/cli.ts report --repo ../내저장소 --base main --a feature/x [--b fea
      --requirements requirements.md [--junit-a a.xml --junit-b b.xml] --out out --open
 ```
 
-- 요구사항은 한국어나 영어 문장만 적으면 코드와 자동으로 이어집니다(영어는 문장의 낱말로, 한국어는 자주 쓰는 말의 고정 용어집으로, LLM 없음). 엉뚱한 코드에 이어지면 뒤에 `| keywords: 코드에, 나오는, 단어`를 붙여 직접 정하세요. 자동 연결은 검사를 일부러 좁게 잇습니다. 검사 이름이 요구사항의 대부분을 담아야만 인정해서, 검사가 없으면 「미확인」으로 남습니다.
+- 요구사항은 한국어나 영어 문장만 적으면 코드와 자동으로 이어집니다(영어는 문장의 낱말로, 한국어는 자주 쓰는 말의 고정 용어집으로, LLM 없음). 엉뚱한 코드에 이어지면 뒤에 `| keywords: 코드에, 나오는, 단어`를 붙여 직접 정하세요(한국어 키워드도 같은 용어집으로 읽습니다). 자동 연결은 검사를 일부러 좁게 잇습니다. 검사 이름이 요구사항의 대부분을 담아야만 인정해서, 검사가 없으면 「미확인」으로 남습니다.
 - 검사 결과는 JUnit XML을 읽습니다. 예: `node --test --test-reporter=junit --test-reporter-destination=a.xml`. 검사 결과가 없으면 「미실행」으로 표시합니다.
 
 ## CI 에서 쓰기 (GitHub Actions)

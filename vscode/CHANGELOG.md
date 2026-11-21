@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.20.0
+
+Korean keywords, and two display fixes. All three were found by us. Our JetBrains build found the two display fixes while testing; we found the keyword gap while writing changed-test cases. None are user reports.
+
+- **Korean keywords are read.** `| keywords: 실패, 잠금` is now linked to `failures` and `locked` in the code through the glossary that already links Korean sentences. Before, keywords were taken only as words that appear in the code. Korean keywords therefore matched nothing, and almost every such requirement was Not verified. English keywords work as before.
+- **The one-line summary agrees with the evidence line.** Sometimes a linked test passes but something else keeps the requirement Not verified. The summary now names that reason, for example "the test passes, but no deciding check" or "the test passes, but no time window". Before, it said "no linked test", while the evidence line below it said the test passed.
+- **Korean units on an English screen.** A Korean requirement on an English screen used to show "allows up to 3번" and a boundary value of "50,000원". It now shows "allows up to 3 times" and "50,000 won". The same goes for people, items, characters, days, hours and minutes. The Korean screen is unchanged.
+- **How far to trust it.**
+  - On 10 cases written before the keyword fix (20 verdicts, 8 of them for wrong code), 0.19.0 gave the expected verdict for 3, none of them for wrong code. 0.20.0 gives 18, including all 8 for wrong code.
+  - On 5 cases written after the fix (10 verdicts), 0.19.0 gave 1. The first run of 0.20.0 gave 7: 3 of the 5 wrong versions were Different, with no wrong Verified and no false alarm. The three it missed are listed under "Still not read" below.
+  - The changed-test case with a Korean test name, which 0.19.0 missed, is now shown.
+  - All other verdicts are the same as 0.19.0 on all 845 earlier cases.
+- **Still not read.**
+  - "5점 이하" (at most 5 points) reads 점 as a count, so a rating check is not used as evidence: `rating > 10` is Not verified rather than Different.
+  - Keywords that do not cover the variable in the condition (`예약, 취소` against `hoursLeft < 24`) leave the number unfound, with English or Korean keywords. Leaving the keywords out works.
+  - Two correct cases with Korean keywords stay Not verified: free shipping from ₩50,000 with `배송비, 무료`, and a single-use coupon with `쿠폰, 사용`.
+
 ## 0.19.0
 
 The same picture wherever you look, and tests that were changed to pass. The picture work follows our own review ("make the gap visible in seconds"); the changed-test check came from several people on X describing agents that make a suite green by editing the test. They are not VerifyLens users, and none of this comes from user reports.
