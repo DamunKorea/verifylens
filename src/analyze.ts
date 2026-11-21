@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import type { CmpOp, CondInfo, DynCall, FileAnalysis, FlowEdge, FlowGraph, FlowNode, NumPart, Unit } from './types.ts';
+import type { CmpOp, CondInfo, DynCall, FileAnalysis, FlowEdge, FlowGraph, FlowNode, NumPart, SchemaField, Unit } from './types.ts';
 import { clip, tokenize } from './tokens.ts';
 import { L } from './i18n.ts';
 
@@ -508,7 +508,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     return null;
   };
   /** 설정값: { maxLength: 20, minLength: 8, maxAttempts: 3 } */
-  const CONFIG_NAME = /retr|attempt|timeout|ttl|expire|age|window|delay|interval|duration|limit|size|count|capacity|lifetime|max|length|quota|threshold|period|day|hour|minute|second(?!ary)|week|month|year|rate|ratio|percent|pct|fee|tax|vat|commission|discount|interest/i;
+  const CONFIG_NAME = /retr|attempt|timeout|ttl|expire|age|window|delay|interval|duration|limit|size|count|capacity|lifetime|max|length|quota|threshold|period|day|hour|minute|second(?!ary)|week|month|year|rate|ratio|percent|pct|fee|tax|vat|commission|discount|interest|coupon|voucher/i;
   /** '1h' · '7d' · '30m' 같은 기간 글을 초로 */
   const durationSeconds = (e0: ts.Expression): number | undefined => {
     const e = unwrap(e0);
@@ -613,7 +613,28 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   walkNode(sf, []);
   for (const k of conflicted) delete constants[k];
   for (const u of units) if (u.cond) syncPrimary(u.cond);
-  return { file, units, dyn, flows, constants, imports, reexports };
+  // ---------------------------------------------------------------- 스키마의 문자열 칸 (z.string() · yup.string() · Joi.string())
+  // 「잘못된 이메일은 거부한다」에서, 바뀐 스키마가 그 칸을 검사 없이 받는지(email: z.string()) 본다 (X 에서 받은 버그)
+  const fields: SchemaField[] = [];
+  const STRING_CHECK = new Set(['email', 'url', 'uuid', 'cuid', 'cuid2', 'ulid', 'regex', 'matches', 'pattern', 'min', 'max', 'length', 'nonempty', 'startsWith', 'endsWith', 'includes', 'refine', 'superRefine', 'ip', 'datetime', 'emoji']);
+  const visitFields = (n: ts.Node) => {
+    if (ts.isPropertyAssignment(n) && ts.isCallExpression(n.initializer)) {
+      const calls: string[] = [];
+      let e: ts.Expression = n.initializer;
+      while (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
+        calls.push(e.expression.name.text);
+        e = e.expression.expression;
+      }
+      const l = line(n.getStart(sf));
+      if (calls.at(-1) === 'string' && ts.isIdentifier(e) && /^(z|yup|joi|Joi)$/.test(e.text) && isChanged(l, l)) {
+        fields.push({ file, line: l, name: n.name.getText(sf).replace(/['"`]/g, ''), checked: calls.slice(0, -1).some((c) => STRING_CHECK.has(c)) });
+      }
+    }
+    ts.forEachChild(n, visitFields);
+  };
+  visitFields(sf);
+
+  return { file, units, dyn, flows, constants, imports, reexports, fields };
 }
 
 /** 조건식이 비교 하나뿐이면 그 값을 cond 에 바로 둔다 (두 결과 비교 · 화면 표시에 쓴다). */

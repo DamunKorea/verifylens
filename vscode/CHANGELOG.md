@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0
+
+Three real bugs someone shared on X, after testing a verification agent at a hackathon: an invalid email got through, paying twice made two orders, and a flat coupon was applied wrongly. In each case the tests never went there: they used valid emails only, paid once, and used percent coupons. We turned them into requirements and cases.
+
+- **A check in a function for another feature is no longer evidence.** With no email check in sign-up, the newsletter's email check made "sign-up rejects an invalid email" Verified. When a function named for the requirement's subject exists, the check must be there.
+- **A schema that takes the field without a check keeps a rejection rule unverified.** `email: z.string()` without `.email()` is reported as "accepted unchecked elsewhere", with the line.
+- **"Only once" needs a test that does it twice.** A test that refunds or pays once is not linked to "only once" or "twice still makes one". Test names are read through the same glossary as requirements ("only one" means no duplicates).
+- **"두 번 눌러도"** (even if pressed twice) is a scene, not a limit of two. A duplicate check inside the function (`if (existing) return existing`) is the evidence.
+- **Coupon amounts** (`FLAT_COUPON = 5000`) are read as settings and as money. "Checked out" and "checkout" are the same word.
+- **How far to trust it.** On 20 new cases written after these changes (not seen while fixing), 0.14.0 gave the expected verdict for 11 with keywords and 12 without, calling wrong code Verified 5 times. 0.15.0 gave 18 and 18 with no wrong verdict. On the 20 cases written from the X bugs before the changes (seen while fixing), 0.14.0 gave 15 and 15 with 2 wrong Verified, and 0.15.0 gives 19 and 20. All 625 cases run with the tests and none gets a wrong verdict. The other 18 case sets give the same output as 0.14.0, and the fixed open-source set is unchanged.
+- Still not judged: whether a formula is right (a flat coupon computed as a percentage). It stays Not verified unless a linked test fails. See [docs/known-mistakes.md](https://github.com/DamunKorea/verifylens/blob/main/docs/known-mistakes.md).
+
 ## 0.14.0
 
 Less to read, more to act on. A reader on OKKY wrote that even with a review service, checking its results was what slowed them down.

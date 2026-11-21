@@ -92,7 +92,11 @@ export type FileAnalysis = {
   imports: Record<string, { from: string; name: string }>;
   /** 다른 파일에서 그대로 내보내는 것: export * from · export { A as B } from */
   reexports: { all: string[]; named: Record<string, { from: string; name: string }> };
+  /** 스키마의 문자열 칸 (email: z.string().email()). checked 는 형식 · 길이 검사가 붙었는지 */
+  fields?: SchemaField[];
 };
+
+export type SchemaField = { file: string; line: number; name: string; checked: boolean };
 
 export type TestCase = { name: string; status: 'pass' | 'fail' | 'skip'; message: string };
 
@@ -141,6 +145,8 @@ export type Evidence = {
   boundaries?: Boundary[];
   /** 「확인됨」이라고 하기 어려운 까닭 (예: 다른 조건이 함께 걸려 있음) */
   caveat?: Text;
+  /** 요구사항이 말하는 입력을 검사 없이 받는 곳 (다른 곳의 검사로 확인됐다고 하지 않는다) */
+  unchecked?: Text;
 };
 
 export type TestStatus = '통과' | '실패' | '미실행';

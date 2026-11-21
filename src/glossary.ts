@@ -190,6 +190,7 @@ export function normalizePhrases(text: string): string {
     .replace(/\bsign(?:s|ed|ing)?[\s-]+in\b/gi, 'signin')
     .replace(/\bsign(?:s|ed|ing)?[\s-]+out\b/gi, 'signout')
     .replace(/\bsign(?:s|ed|ing)?[\s-]+up\b/gi, 'signup')
+    .replace(/\bcheck(?:s|ed|ing)?[\s-]+out\b/gi, 'checkout')
     .replace(/\btime(?:s|d)?[\s-]+out\b/gi, 'timeout');
 }
 

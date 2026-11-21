@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -243,4 +243,46 @@ test('a fraction is not within one of a whole percent, and the Korean particle f
   assert.equal(rate('0.02').overall, '다름');
   const lock = many('잠금 시간은 10분이다', { 'src/lock.ts': 'export const LOCK_MINUTES = 15;\n' }, 'lock lasts 10 minutes');
   assert.match(lock.notes.join(' '), /15분으로 설정됨/);
+});
+
+// ---------------------------------------------------------------- 0.15.0: X 에서 받은 실제 버그 세 가지 (잘못된 입력 · 두 번 제출 · 정액 쿠폰)
+test('"even if pressed twice" is a scene, not a limit of two', () => {
+  assert.deepEqual(parseConstraints('결제 버튼을 두 번 눌러도 주문은 하나만 생긴다'), []);
+  assert.deepEqual(numbersIn('결제 버튼을 두 번 눌러도 주문은 하나만 생긴다'), []);
+  assert.deepEqual(numbersIn('비밀번호를 5번 틀리면 잠근다'), [5]);
+});
+
+test('a check in a function for another feature is not evidence for this one', () => {
+  const news = { 'src/newsletter.ts': "const EMAIL_RE = /^[^\s@]+@[^\s@]+$/;\nexport function subscribe(email: string) {\n  if (!EMAIL_RE.test(email)) throw new Error('INVALID_EMAIL');\n}\n" };
+  const noCheck = 'export function signup(email: string) {\n  return { email };\n}\n';
+  const s = many('이메일 형식이 올바르지 않으면 가입을 거부한다 | keywords: email, signup', { 'src/signup.ts': noCheck, ...news }, 'signup rejects an invalid email');
+  assert.equal(s.overall, '미확인');
+});
+
+test('a schema that takes the field without a check keeps a rejection rule unverified', () => {
+  const news = { 'src/newsletter.ts': "export function subscribe(email: string) {\n  if (!email.includes('@')) throw new Error('INVALID_EMAIL');\n}\n" };
+  const schema = (chain: string) => ({ 'src/schema.ts': `import { z } from 'zod';\nexport const signupSchema = z.object({ email: ${chain}, name: z.string() });\n`, ...news });
+  const bare = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: schema('z.string()'), tests: [{ name: 'an invalid email address is rejected', status: 'pass', message: '' }] });
+  const r = evaluate([bare], parseRequirements('- R1: Invalid email addresses are rejected'), '.', 'main');
+  assert.equal(r.summaries[0].overall, '미확인');
+  assert.deepEqual(undecidedReasons(r, r.summaries[0]), ['unchecked-input']);
+  assert.equal(undecidedLabel('unchecked-input', 'en'), 'accepted unchecked elsewhere');
+  assert.equal(many('Invalid email addresses are rejected', schema('z.string().email()'), 'an invalid email address is rejected').overall, '확인됨');
+});
+
+test('a test that only does it once is not evidence for "twice still makes one"', () => {
+  const order = 'export async function placeOrder(db: any, paymentId: string) {\n  const existing = await db.order.findUnique({ where: { paymentId } });\n  if (existing) return existing;\n  return db.order.create({ data: { paymentId } });\n}\n';
+  assert.equal(many('결제 버튼을 두 번 눌러도 주문은 하나만 생긴다', { 'src/order.ts': order }, 'paying twice creates only one order').overall, '확인됨');
+  assert.equal(many('Submitting the same payment twice creates only one order', { 'src/order.ts': order }, 'creates an order after payment').overall, '미확인');
+  // 「사용한 링크는 거부」도 다시 쓰는 것을 시험한다
+  const link = "export function useResetLink(link: { used: boolean }) {\n  if (link.used) throw new Error('LINK_USED');\n  link.used = true;\n}\n";
+  assert.equal(many('A password reset link can be used only once | keywords: reset, used', { 'src/reset.ts': link }, 'a used reset link is rejected').overall, '확인됨');
+});
+
+test('a coupon amount is a setting, and "checked out" is checkout', () => {
+  const coupon = (v: number) => ({ 'src/coupon.ts': `export const FLAT_COUPON = ${v};\nexport const applyFlat = (total: number) => Math.max(0, total - FLAT_COUPON);\n` });
+  assert.equal(many('5,000원 정액 쿠폰은 결제 금액에서 5,000원을 뺀다', coupon(5000), 'a 5000 won flat coupon takes 5000 off the total').overall, '확인됨');
+  assert.equal(many('5,000원 정액 쿠폰은 결제 금액에서 5,000원을 뺀다', coupon(3000), 'a 5000 won flat coupon takes 5000 off the total').overall, '다름');
+  const checkout = "export function checkout(cart: { checkedOutAt?: number }) {\n  if (cart.checkedOutAt) throw new Error('ALREADY_CHECKED_OUT');\n  cart.checkedOutAt = Date.now();\n}\n";
+  assert.equal(many('Each cart can be checked out only once', { 'src/checkout.ts': checkout }, 'a second checkout of the same cart is rejected').overall, '확인됨');
 });

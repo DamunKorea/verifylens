@@ -196,7 +196,12 @@ function wordBoundaries(text: string): Constraint[] {
 }
 
 /** 요구사항 문장에서 숫자 조건을 뽑는다. */
-export function parseConstraints(text: string): Constraint[] {
+/** 「두 번 눌러도」 「세 번 요청하더라도」: 몇 번이든 같아야 한다는 장면이지 횟수 조건이 아니다 (X 에서 받은 버그: 결제 두 번 → 주문 둘) */
+const EVEN_IF_TIMES = /(?:\d+|하나|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번\s*[가-힣]{1,6}?(?:어도|아도|여도|해도|러도|라도|더라도)(?![가-힣])/g;
+
+export function parseConstraints(text0: string): Constraint[] {
+  // 위치를 그대로 두려고 같은 길이의 빈칸으로 바꾼다
+  const text = text0.replace(EVEN_IF_TIMES, (m) => ' '.repeat(m.length));
   const out: Constraint[] = [];
   const add = (c: Constraint | null) => {
     if (c && !out.some((x) => x.value === c.value && x.unit === c.unit && x.rel === c.rel)) out.push(c);
@@ -234,7 +239,8 @@ function onceEvery(text: string, out: Constraint[]): Constraint[] {
 }
 
 /** 문장에 나온 숫자들 (쉼표 · 「만」을 풀어서). 단위가 없어도 낸다. */
-export function numbersIn(text: string): number[] {
+export function numbersIn(text0: string): number[] {
+  const text = text0.replace(EVEN_IF_TIMES, (m) => ' '.repeat(m.length));
   const out = [...text.matchAll(NUM)].filter((m) => !/[A-Za-z]$/.test(text.slice(0, m.index))).map((m) => readNumber(m as RegExpExecArray));
   for (const m of text.matchAll(NATIVE_RE)) if (!onlyOnce(text, m)) out.push(NATIVE[m[1]]);
   for (const m of text.matchAll(WORD_RE)) out.push(WORDS[m[1].toLowerCase()]);
@@ -487,7 +493,7 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
  * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
  * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
  */
-export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'no-evidence' | 'extra-condition' | 'no-test' | 'stale';
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-test' | 'stale';
 const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   wording: {
     label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
@@ -527,6 +533,10 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   'extra-condition': {
     label: { ko: '조건이 더 있음', en: 'extra condition' },
     action: { ko: '함께 걸린 조건이 거짓일 때도 요구사항이 지켜지는지 확인한다.', en: 'Check that the requirement still holds when the attached condition is false.' },
+  },
+  'unchecked-input': {
+    label: { ko: '검사 없이 받는 곳 있음', en: 'accepted unchecked elsewhere' },
+    action: { ko: '그 입력을 받는 곳마다 검사를 넣거나, 요구사항이 어느 곳을 말하는지 「| keywords: 코드에 나오는 영어 단어」로 정한다.', en: 'Add the check wherever that input is accepted, or say which place the requirement means with “| keywords: words in the code”.' },
   },
   'no-test': {
     label: { ko: '검사 없음', en: 'no test' },

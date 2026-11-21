@@ -10,6 +10,9 @@ Most of these were found by writing new cases ourselves or by trying VerifyLens 
 
 | Fixed in | What happened before |
 |---|---|
+| 0.15.0 | A check in a function for another feature counted. With no email check in sign-up, the newsletter's email check made "sign-up rejects an invalid email" Verified. The same happened with a refund (a cancel check), a verification code (a profile phone check) and a duplicate sign-up (a newsletter duplicate check). Found from real bugs someone shared on X. |
+| 0.15.0 | A schema that takes `email: z.string()` without `.email()` was Verified for "invalid email addresses are rejected" because another file checks emails. |
+| 0.15.0 | A test that does it only once ("refunds a paid order") was linked to "an order can be refunded only once". |
 | 0.13.0 | `LOCK_MINUTES = 15` in another file made "login tokens expire after 15 minutes" Verified. |
 | 0.13.0 | A sign-up form's `age.min(14)` made "the free trial lasts 14 days" Verified while `TRIAL_DAYS = 7`. |
 | 0.13.0 | `POINT_RATE = 0.02`, and even `0.5`, was Verified against "1%": a whole-number tolerance was applied to fractions. |
@@ -27,6 +30,7 @@ Most of these were found by writing new cases ourselves or by trying VerifyLens 
 
 | Fixed in | What happened before |
 |---|---|
+| 0.15.0 | Without keywords, a 5,000 won flat coupon was compared with a 50,000 won free-shipping line in another file. |
 | 0.13.0 | "Password reset mail can be sent at most 3 times a day" was matched to `pw.length < 8` in the same file. |
 | 0.13.0 | Counting first and then rejecting (`count++; if (count > 3) throw`) was read as allowing 4. |
 | 0.12.0 | "Orders under 10,000 won are not accepted" was not read as a refusal, so `total < 10000` that throws was Different. |
@@ -44,6 +48,8 @@ These stay Not verified, or show a weaker evidence line. Add `| keywords: ...` t
 - "Only admins" shows the reason "whole function" instead of "extra condition".
 - Without keywords, a rate limit can be linked to a retry file, and English sentences sometimes pick a weaker evidence line.
 - "N times an hour" when the code has no time window.
+- A rule checked only by a schema's `.url()` ("an invalid website URL is rejected") and "send twice delivers once" with `if (sent.has(id)) return` stay Not verified.
+- Whether a formula is right (a flat coupon computed as a percentage) is not judged. It stays Not verified unless a linked test fails.
 
 ## Always true
 
@@ -65,6 +71,9 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 
 | 고친 판 | 전에 있던 일 |
 |---|---|
+| 0.15.0 | 다른 기능의 함수에 있는 검사를 근거로 씀. 가입에는 이메일 검사가 없는데 뉴스레터의 검사 때문에 「잘못된 이메일이면 가입 거부」가 「확인됨」. 환불(취소의 검사) · 인증 문자(프로필의 번호 검사) · 중복 가입(뉴스레터의 중복 검사)도 같았음. X 에서 받은 실제 버그로 찾음 |
+| 0.15.0 | `.email()` 없이 `email: z.string()` 으로 받는 스키마가, 다른 파일의 검사 때문에 「잘못된 이메일은 거부」에 「확인됨」 |
+| 0.15.0 | 한 번만 하는 검사(「결제한 주문을 환불한다」)를 「한 번만 환불할 수 있다」에 이음 |
 | 0.13.0 | 다른 파일의 `LOCK_MINUTES = 15` 때문에 「로그인 토큰은 15분 뒤 만료」가 「확인됨」 |
 | 0.13.0 | 가입 양식의 `age.min(14)` 때문에, `TRIAL_DAYS = 7` 인데 「무료 체험 14일」이 「확인됨」 |
 | 0.13.0 | `POINT_RATE = 0.02`(0.5 도)가 「1%」로 「확인됨」 — 정수 ±1 허용이 소수 비율에도 걸림 |
@@ -82,6 +91,7 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 
 | 고친 판 | 전에 있던 일 |
 |---|---|
+| 0.15.0 | 키워드 없이 쓰면 5,000원 정액 쿠폰을 다른 파일의 5만 원 무료 배송 줄과 견줌 |
 | 0.13.0 | 「비밀번호 재설정 메일은 하루 3번까지」를 같은 파일의 `pw.length < 8` 에 붙임 |
 | 0.13.0 | 먼저 세고 막는 코드(`count++; if (count > 3) throw`)를 4번까지 허용으로 읽음 |
 | 0.12.0 | 「1만 원 미만 주문은 받지 않는다」를 거부 문장으로 못 읽어, 막는 `total < 10000` 을 「다름」 |
@@ -99,6 +109,8 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 - 「관리자만」의 이유가 「조건이 더 있음」 대신 「함수 전체」로 나옴
 - 키워드 없이 쓰면 요청 횟수 제한이 재시도 파일에 이어질 수 있고, 영어 문장에서 근거 줄을 덜 맞게 고를 때가 있음
 - 「한 시간에 N번」인데 코드에 시간 창이 없는 경우
+- 스키마의 `.url()` 로만 확인하는 규칙(「잘못된 웹사이트 주소는 거부」)과 `if (sent.has(id)) return` 으로 막는 「두 번 눌러도 한 번 보냄」은 「미확인」으로 남음
+- 계산식이 맞는지(정액 쿠폰을 비율로 계산)는 판단하지 않음. 연결된 검사가 실패해야 보임
 
 ### 늘 그런 것
 

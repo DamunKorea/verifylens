@@ -1,13 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import type { Boundary, Constraint, Evidence, NumPart, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, TestCase, TestStatus, Unit, UnitKind } from './types.ts';
+import type { Boundary, Constraint, Evidence, NumPart, Overall, Relation, ReqResult, ReqSummary, Report, Requirement, ResultSet, SchemaField, TestCase, TestStatus, Unit, UnitKind } from './types.ts';
 import { analyzeFile, resolveRefs } from './analyze.ts';
 import { boundaryNote, judge, matchScale, missingBoundary, partValue, pick } from './numeric.ts';
 import { changedFiles, changedLines, mergeBase, shortSha, showFile, trackedFiles, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
 import { parseTestReport } from './tests.ts';
 import { tokenize, stem } from './tokens.ts';
-import { normalizePhrases } from './glossary.ts';
+import { conceptsFor, normalizePhrases } from './glossary.ts';
 import { L, setLabel } from './i18n.ts';
 
 const CODE_EXT = /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
@@ -142,7 +142,7 @@ function moreSpecific(u: Unit, num: boolean, best: { u: Unit; num: boolean }): b
 
 /** 값이 달라도 「같은 것을 세는 조건」이라고 볼 수 있는 이름인가. 아니면 다른 조건을 잘못 짚어 「다름」이라고 하게 된다. */
 const SAME_THING: Partial<Record<UnitKind, RegExp>> = {
-  money: /total|price|amount|fee|cost|sum|subtotal|balance|pay/i,
+  money: /total|price|amount|fee|cost|sum|subtotal|balance|pay|coupon|voucher|discount|credit/i,
   age: /age/i,
   char: /length|len\b|size|chars?/i,
   day: /day|date|expir|age|ttl|elapsed|since/i,
@@ -169,6 +169,9 @@ const MEASURE = new Set(['fee', 'price', 'cost', 'amount', 'total', 'sum', 'char
 const FILLER = new Set(['once', 'per', 'each', 'every', 'only', 'time', 'twice'].map(stem));
 /** 「한 번만 · 하나만 · 중복」이 들어간 요구사항의 개념 (unique exists duplicate taken) */
 const UNIQUE = stem('unique');
+/** 중복 막기 요구사항(한 번만 · 하나만)의 검사는 이름에도 두 번 · 중복을 말해야 한다. 한 번만 누르는 검사는 근거가 아니다 (X 에서 받은 버그) */
+const TWICE_TEST = /twice|second|again|duplicat|already|only (?:one|once)|more than once|\bused\b|reus|re-us|redeemed|consumed|두\s*번|중복|이미|한\s*번만|하나만|사용한|사용된|재사용/i;
+const isUniqueReq = (req: Requirement) => !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE));
 /**
  * 설정값은 이름이 전부다. 이름(또는 그 값을 정한 문장)에 요구사항의 대상 낱말이 있어야 한다.
  * 요구사항이 「배송」비를 말하면 RETURN_FEE(반품비)는 같은 대상이 아니고, 「포인트」 적립률이면 TAX_RATE 는 아니다.
@@ -320,7 +323,7 @@ const conflictSay = (b: Boundary, file: string, p: NumPart) => {
 
 const severity = (b: Boundary) => (b.ok === false ? 0 : b.ok === null ? 1 : 2);
 
-function findEvidence(req: Requirement, units: Unit[]): Evidence {
+function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = []): Evidence {
   let best: { u: Unit; score: number; why: string[]; num: boolean } | null = null;
   for (const u of units) {
     const { score, why, num } = scoreUnit(req, u);
@@ -332,7 +335,31 @@ function findEvidence(req: Requirement, units: Unit[]): Evidence {
     if (!worst?.u) return { unit: null, score: best?.score ?? 0, status: '미발견', why: [], boundaries: judged.length ? judged.map((j) => j.b) : undefined, boundary: worst?.b };
   }
   // 근거 줄은 판정한 숫자 조건이 있는 줄로 맞춘다
-  const unit = worst?.u ?? best!.u;
+  let unit = worst?.u ?? best!.u;
+  // 막는 조건이 요구사항이 말하는 기능이 아닌 다른 함수에 있으면 근거가 아니다 (X 에서 받은 버그:
+  // 「잘못된 이메일이면 가입 거부」 ↔ 가입은 검사하지 않고 newsletter 의 subscribe 만 이메일을 검사).
+  // 요구사항의 낱말을 이름(함수 · 파일)에 가진 다른 함수가 있으면 그쪽을 근거로 두고 「일부 발견」으로 둔다.
+  let foreign = false;
+  if (!judged.length && unit.kind === 'condition' && unit.guard) {
+    const subject = new Set(req.tokens.filter((t) => !GENERIC.has(t) && !FILLER.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t)));
+    const named = (u: Unit) => [...tokenize(u.fn ?? ''), ...tokenize(u.file.split('/').pop()!.replace(/\.[^.]+$/, ''))].some((t) => subject.has(t));
+    if (!named(unit)) {
+      const own = units
+        .filter((u) => u.fn !== unit.fn && named(u))
+        .map((u) => ({ u, score: scoreUnit(req, u).score }))
+        .sort((a, b) => b.score - a.score)[0];
+      if (own && own.score >= 1) {
+        unit = own.u;
+        foreign = true;
+      }
+    }
+  }
+  // 중복 막기(한 번만 · 하나만)인데 근거가 함수 전체이면, 그 함수 안의 「이미 있으면」 조건(if (existing) return existing)이 근거다
+  if (!judged.length && unit.kind === 'function' && isUniqueReq(req)) {
+    const dupWords = new Set(req.concepts.find((g) => g.includes(UNIQUE)) ?? []);
+    const inner = units.find((u) => u.kind === 'condition' && u.guard && u.file === unit.file && u.startLine >= unit.startLine && u.endLine <= unit.endLine && u.tokens.some((t) => dupWords.has(t)));
+    if (inner) unit = inner;
+  }
   const s = unit === best?.u ? best : { ...scoreUnit(req, unit), u: unit };
   // 확인하는 조건이 있어야 하는 요구사항인데 근거가 함수 전체뿐이면(이름만 겹침) 구현을 찾았다고 하지 않는다
   const onlyName = req.needsCheck && !judged.length && unit.kind === 'function';
@@ -348,8 +375,20 @@ function findEvidence(req: Requirement, units: Unit[]): Evidence {
   // (「상품 리뷰는 한 사람당 하나만」 ↔ 다른 파일의 if (items.length > 100) return 400)
   const notDuplicateCheck =
     !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE)) && unit.kind === 'condition' && (unit.cond?.parts ?? []).some((p) => p.lit !== undefined && Math.abs(p.lit) > 1);
-  const status = !onlyName && !thin && !notDuplicateCheck && (judged.some((j) => j.u) || s.score >= 2) ? '발견' : '일부 발견';
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && (judged.some((j) => j.u) || s.score >= 2);
+  // 「잘못된 이메일은 거부」인데 바뀐 스키마가 그 칸을 검사 없이 받으면(email: z.string()) 다른 곳의 검사로 확인됐다고 하지 않는다 (X 에서 받은 버그)
+  const words = new Set(req.tokens);
+  const unchecked =
+    found && !judged.length && (req.guardCue || req.needsCheck)
+      ? fields.find((f) => !f.checked && tokenize(f.name).some((t) => words.has(t)) && !(f.file === unit.file && f.line >= unit.startLine && f.line <= unit.endLine))
+      : undefined;
+  const status = found && !unchecked ? '발견' : '일부 발견';
   const ev: Evidence = { unit, score: s.score, status, why: s.why };
+  if (unchecked) {
+    const at = `${unchecked.file.split('/').pop()}:${unchecked.line}`;
+    ev.unchecked = { ko: `${unchecked.name} 을(를) 검사 없이 받는 곳이 있음 (${at})`, en: `${unchecked.name} is accepted without a check at ${at}` };
+    ev.why = [...s.why, ev.unchecked.ko];
+  }
   if (judged.length) {
     ev.boundaries = judged.map((j) => j.b);
     ev.boundary = worst.b;
@@ -394,9 +433,13 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
   // 검사 이름이 요구사항 개념의 절반 이상(둘 이상)을 담고, 그 가운데 하나가 조건 줄에도 나와야 한다. 막는 요구사항이면 검사 이름도 거부를 말해야 한다.
   // (절반 기준이 없으면 「잠긴 계정은 로그인되지 않는다」에 「5번 실패하면 잠근다」 검사가 이어졌다)
   const deciding = ev.status === '발견' && ev.unit?.kind === 'condition' && !req.constraints.length;
+  // 검사 이름도 요구사항처럼 용어집으로 읽는다 (「only one」 → 중복 막기)
+  const testWords = (name: string) => new Set([...tokenize(normalizePhrases(plainNumbers(name))), ...conceptsFor(name).flat()]);
+  // 중복 막기 요구사항에는 두 번 · 중복을 말하는 검사만 잇는다 (한 번만 누르는 검사가 「두 번 눌러도 하나」의 근거가 되지 않게)
+  const twiceOk = (t: TestCase) => !isUniqueReq(req) || TWICE_TEST.test(t.name);
   const agrees = (t: TestCase) => {
-    if (!deciding) return false;
-    const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
+    if (!deciding || !twiceOk(t)) return false;
+    const names = testWords(t.name);
     const code = new Set(ev.unit!.tokens);
     const words = new Set([...req.tokens, ...req.concepts.flat()]);
     const shared = [...names].some((x) => code.has(x) && words.has(x) && !BROAD.has(x));
@@ -407,15 +450,15 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
     const set = new Set([...req.tokens, ...req.numbers.map(String)]);
     // 키워드가 하나뿐이면 그 낱말 하나로 잇는다 (둘을 요구하면 영영 이어지지 않는다)
     const need = Math.min(2, set.size);
-    return tests.filter((t) => sameRule(t) || agrees(t) || new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= need);
+    return tests.filter((t) => sameRule(t) || agrees(t) || (twiceOk(t) && new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size >= need));
   }
   // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
   // 조건: 요구사항의 개념(숫자 포함) 가운데 3분의 2 이상을 검사 이름이 담고, 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
   const groups = [...req.concepts, ...req.numbers.map((n) => [String(n)])];
   return tests.filter((t) => {
     if (sameRule(t) || agrees(t)) return true;
-    const names = new Set(tokenize(normalizePhrases(plainNumbers(t.name))));
-    if (groups.length < 2) return false;
+    const names = testWords(t.name);
+    if (groups.length < 2 || !twiceOk(t)) return false;
     if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
     const covered = groups.filter((g) => g.some((x) => names.has(x))).length;
     return covered >= 2 && covered / groups.length >= 2 / 3;
@@ -431,7 +474,7 @@ function testStatus(ts: TestCase[]): TestStatus {
 export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, base: string): Report {
   for (const s of sets) {
     for (const r of reqs) {
-      const evidence = findEvidence(r, s.units);
+      const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []));
       const mapped = mapTests(r, s.tests, evidence);
       const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped) };
       s.perReq[r.id] = rr;
