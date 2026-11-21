@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import * as M from '../../vscode/src/model.ts';
 import { counts } from '../../src/summary.ts';
+import { stepTone } from '../../src/evidenceView.ts';
 
 /** 출력 모양이 바뀌면 올린다. 플러그인은 이 숫자가 다르면 결과를 쓰지 않는다. */
 const PROTOCOL = 1;
@@ -44,6 +45,19 @@ function present(run: M.Run, extra: Record<string, unknown> = {}) {
     const list = M.changedTests(report, s.req.id).map(({ set, e }) => ({ setKey: set.key, file: e.file, line: e.line, removed: e.kind === 'removed', text: M.changedTestLine(e) }));
     if (list.length) changedTests[s.req.id] = list;
   }
+  // 근거 사슬 그림의 자료: 요구사항 → 코드 줄 → 검사 → 동작(판정). 리포트 · 체험 페이지 · PR 요약과 같은 모델(chainSteps)이고,
+  // 칸의 색(tone)도 리포트와 같은 규칙(stepTone)으로 정해서 낸다. 점 그림(몇 번째 시도에 동작하는가)은 계산할 수 있을 때만 있다.
+  const chains: Record<string, { setKey: string; label: string; steps: { kind: string; title: string; text: string; tone: string; changed: boolean }[] }[]> = {};
+  const dots: Record<string, { max: number; required: number; rows: { key: string; at: number }[] }> = {};
+  for (const s of report.summaries) {
+    chains[s.req.id] = report.sets.map((set, i) => ({
+      setKey: set.key,
+      label: set.label,
+      steps: M.chainSteps(report, s.req.id, undefined, i).map((x) => ({ kind: x.kind, title: x.title, text: x.text, tone: stepTone(x, s.overall), changed: x.changed === true })),
+    }));
+    const d = M.attemptDots(report, s.req.id);
+    if (d) dots[s.req.id] = d;
+  }
   return {
     ok: true,
     protocol: PROTOCOL,
@@ -69,6 +83,8 @@ function present(run: M.Run, extra: Record<string, unknown> = {}) {
     lenses,
     strips,
     changedTests,
+    chains,
+    dots,
     ...extra,
   };
 }

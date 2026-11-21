@@ -63,6 +63,39 @@ class ChangedTest {
     var text = ""
 }
 
+/** 근거 사슬의 한 칸: 요구사항 · 코드 · 검사 · 동작(판정) */
+class ChainStep {
+    /** req | code | test | act */
+    var kind = ""
+    var title = ""
+    var text = ""
+
+    /** ok | diff | fail | miss | plain (칸의 색. 리포트와 같은 규칙으로 엔진이 정한다) */
+    var tone = "plain"
+
+    /** 검사 칸: 통과했지만 이번 변경에서 바뀐 검사 */
+    var changed = false
+}
+
+/** 한 코드(샘플은 A · B 둘, 내 변경 확인은 하나)의 근거 사슬 */
+class ChainLane {
+    var setKey = "A"
+    var label = ""
+    var steps: List<ChainStep> = emptyList()
+}
+
+class DotRow {
+    var key = "A"
+    var at = 0
+}
+
+/** 점 그림의 자료: 요구사항은 required 번째, 코드는 at 번째에 동작한다 */
+class AttemptDots {
+    var max = 0
+    var required = 0
+    var rows: List<DotRow> = emptyList()
+}
+
 class EngineResult {
     var ok = false
     var protocol = 0
@@ -90,6 +123,12 @@ class EngineResult {
 
     /** 요구사항별로, 이번 변경에서 바뀐 검사. 판정은 그대로 두고 그 옆에 알린다 (검사를 고쳐서 통과시킨 경우를 보이려는 것). */
     var changedTests: Map<String, List<ChangedTest>> = emptyMap()
+
+    /** 요구사항별 근거 사슬 (요구사항 → 코드 줄 → 검사 → 동작) */
+    var chains: Map<String, List<ChainLane>> = emptyMap()
+
+    /** 요구사항별 점 그림 (계산할 수 있을 때만) */
+    var dots: Map<String, AttemptDots> = emptyMap()
     var requirements: String? = null
 
     /** 바뀌면 다시 확인할 파일들 (요구사항 파일 · 테스트 결과 후보) */

@@ -14,6 +14,7 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.ClickListener
 import com.intellij.ui.ColoredTreeCellRenderer
+import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
@@ -32,6 +33,7 @@ import javax.swing.JTree
 import javax.swing.ToolTipManager
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
+import javax.swing.tree.TreePath
 
 class VerifyLensToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -50,6 +52,7 @@ internal class ChangedTestNode(val reqId: String, val test: ChangedTest)
 
 /**
  * 도구 창의 내용: 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄. 줄을 누르면 그 파일의 그 줄로 간다.
+ * 아래쪽에는 고른 요구사항의 근거 사슬 그림(요구사항 → 코드 줄 → 검사 → 동작)이 나온다.
  */
 class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true, true), Disposable {
     private val service = VerifyLensService.getInstance(project)
@@ -68,6 +71,13 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
     private val model = DefaultTreeModel(root)
     val tree = Tree(model)
 
+    /** 아래쪽 그림: 고른 요구사항의 근거 사슬. 고르지 않았으면 먼저 볼 것(확인됨이 아닌 첫 요구사항)을 보여 준다. */
+    private val chain = ChainView { setKey, kind -> openFromChain(setKey, kind) }
+    private val chainScroll = ScrollPaneFactory.createScrollPane(chain, true)
+    private val splitter = OnePixelSplitter(true, 0.45f)
+    private var pickedReq: String? = null
+    private var shownRow: ReqRow? = null
+
     init {
         tree.isRootVisible = false
         tree.showsRootHandles = true
@@ -80,6 +90,14 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
                 return navigate(path.lastPathComponent)
             }
         }.installOn(tree)
+        tree.addTreeSelectionListener {
+            // 요구사항 줄이나 그 아래 줄을 고르면 그 요구사항의 그림으로 바꾼다
+            val id = reqIdOf(tree.selectionPath?.lastPathComponent)
+            if (id != null && id != shownRow?.id) {
+                pickedReq = id
+                showChain()
+            }
+        }
         tree.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
                 if (e.keyCode == KeyEvent.VK_ENTER && tree.selectionPath?.let { navigate(it.lastPathComponent) } == true) e.consume()
@@ -94,7 +112,8 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
         }
         setContent(JPanel(BorderLayout()).apply {
             add(header, BorderLayout.NORTH)
-            add(ScrollPaneFactory.createScrollPane(tree, true), BorderLayout.CENTER)
+            splitter.firstComponent = ScrollPaneFactory.createScrollPane(tree, true)
+            add(splitter, BorderLayout.CENTER)
         })
         (ActionManager.getInstance().getAction("VerifyLens.Toolbar") as? ActionGroup)?.let { group ->
             val bar = ActionManager.getInstance().createActionToolbar("VerifyLensToolbar", group, true)
@@ -151,6 +170,45 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
         }
         model.reload()
         TreeUtil.expandAll(tree)
+        showChain()
+    }
+
+    private fun reqIdOf(node: Any?): String? = when (val o = (node as? DefaultMutableTreeNode)?.userObject) {
+        is ReqRow -> o.id
+        is EvidenceNode -> o.reqId
+        is ChangedTestNode -> o.reqId
+        else -> null
+    }
+
+    private fun showChain() {
+        val r = service.result
+        val rows = r?.rows.orEmpty()
+        val row = rows.firstOrNull { it.id == pickedReq } ?: rows.firstOrNull { it.overall != "확인됨" } ?: rows.firstOrNull()
+        // 결과가 둘(샘플의 A · B)이면 어긋난 쪽을 먼저 보여 준다
+        val lanes = row?.let { r?.chains?.get(it.id) }.orEmpty().sortedBy { l -> if (l.steps.any { it.tone == "diff" || it.tone == "fail" }) 0 else 1 }
+        shownRow = if (lanes.isEmpty()) null else row
+        if (r == null || row == null || lanes.isEmpty()) {
+            chain.show(null, emptyList(), null, emptySet())
+            if (splitter.secondComponent != null) splitter.secondComponent = null
+            return
+        }
+        // 눌러서 갈 곳이 있는 칸: 근거 줄이 있는 코드 칸, 이번 변경에서 바뀐 검사가 있는 검사 칸
+        val clickable = HashSet<String>()
+        for (ev in row.children) if (ev.file != null && ev.line != null) clickable.add("${ev.setKey}/code")
+        for (t in r.changedTests[row.id].orEmpty()) clickable.add("${t.setKey}/test")
+        chain.show(row, lanes, r.dots[row.id], clickable)
+        if (splitter.secondComponent == null) splitter.secondComponent = chainScroll
+    }
+
+    private fun openFromChain(setKey: String, kind: String) {
+        val row = shownRow ?: return
+        if (kind == "test") {
+            val t = changedTestsOf(row.id).firstOrNull { it.setKey == setKey } ?: return
+            service.open(t.setKey, t.file, maxOf(1, t.line))
+        } else if (kind == "code") {
+            val ev = row.children.firstOrNull { it.setKey == setKey && it.file != null && it.line != null } ?: return
+            service.open(ev.setKey, ev.file ?: return, ev.line ?: 1)
+        }
     }
 
     private fun busyText() = if (service.busy) I18n.t(" · 확인하는 중…", " · checking…") else ""
@@ -178,6 +236,18 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
         (c as ColoredTreeCellRenderer).getCharSequence(false).toString()
     }
 
+    /** 아래쪽 근거 사슬 그림에 적힌 글 (시험용) */
+    fun chainTexts(): List<String> = chain.lines()
+
+    /** 요구사항 줄을 고른다 (시험용). 그림이 그 요구사항으로 바뀐다. */
+    fun selectRequirement(id: String) {
+        val node = (0 until root.childCount).map { root.getChildAt(it) as DefaultMutableTreeNode }.first { (it.userObject as ReqRow).id == id }
+        tree.selectionPath = TreePath(node.path)
+    }
+
+    /** 그림의 칸을 누른다 (시험용). kind 는 code 또는 test. */
+    fun clickChain(setKey: String, kind: String) = openFromChain(setKey, kind)
+
     fun headlineText(): String = StringUtil.removeHtmlTags(headline.text ?: "")
 
     /** 위쪽 글 전부와 각 줄의 말풍선 글 (시험용) */
@@ -186,7 +256,7 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
             val node = tree.getPathForRow(i).lastPathComponent
             (tree.cellRenderer.getTreeCellRendererComponent(tree, node, false, tree.isExpanded(i), model.isLeaf(node), i, false) as ColoredTreeCellRenderer).toolTipText
         }
-        return listOf(headline.text, context.text, notes.text).map { StringUtil.removeHtmlTags(it ?: "") } + rowTexts() + tips.map { StringUtil.removeHtmlTags(it) }
+        return listOf(headline.text, context.text, notes.text).map { StringUtil.removeHtmlTags(it ?: "") } + rowTexts() + tips.map { StringUtil.removeHtmlTags(it) } + chainTexts()
     }
 
     override fun dispose() {

@@ -29,12 +29,13 @@ import java.nio.file.Path
 import javax.swing.Icon
 
 internal object Colors {
-    private val OK = JBColor(Color(0x1E8A5A), Color(0x34D399))
-    private val DIFF = JBColor(Color(0xA16207), Color(0xFBBF24))
-    private val FAIL = JBColor(Color(0xC62828), Color(0xF87171))
-    private val UNKNOWN = JBColor(Color(0x6B7280), Color(0x94A3B8))
-    val DIFF_BG = JBColor(Color(0xFFF3D1), Color(0x453A19))
-    val FAIL_BG = JBColor(Color(0xFDE3E3), Color(0x4A2626))
+    // 판정 색은 리포트 · 체험 페이지 · VS Code 와 같은 값을 쓴다 (Tones = src/verdictStyle.ts)
+    private val OK = Tones.ink("ok")
+    private val DIFF = Tones.ink("diff")
+    private val FAIL = Tones.ink("fail")
+    private val UNKNOWN = Tones.ink("miss")
+    val DIFF_BG = Tones.fill("diff")
+    val FAIL_BG = Tones.fill("fail")
 
     /** 글자색: 확인됨 · 다름 · 실패 · 미확인 */
     fun text(overall: String): Color = when (overall) {

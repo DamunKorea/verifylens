@@ -101,7 +101,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("R2  다름   연속 5회 실패하면 계정을 잠근다", rows[2])
         assertEquals("auth.ts:21   6번째 시도에 동작 (요구사항 5회) · 검사는 통과", rows[3])
         assertEquals("R3  미확인 · 검사 없음   잠긴 계정은 비밀번호가 맞아도 로그인되지 않는다", rows[4])
-        shot(panel, 560, 300, "tool-window")
+        shot(panel, 560, 560, "tool-window")
 
         // 3) 근거 줄: 줄 번호 옆 아이콘과 줄 끝 설명
         val auth = file("src/auth.ts")
@@ -164,7 +164,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         val panel = VerifyLensPanel(project)
         Disposer.register(testRootDisposable, panel)
         panel.rowTexts().forEach { println("[VerifyLens 시험] 샘플 도구 창 | $it") }
-        shot(panel, 560, 340, "tool-window-demo")
+        shot(panel, 560, 860, "tool-window-demo")
 
         // 결과 B 의 근거 줄을 누르면 읽기 전용 문서로 열리고, 같은 표시가 붙는다.
         val b = r2.children.first { it.setKey == "B" }
@@ -275,8 +275,8 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("auth.ts:21   acts on attempt 6 (requirement: 5) · but the test passes", rows[3])
         assertEquals("R3  Not verified · no test   A locked account cannot log in even with the right password", rows[4])
         assertNoKorean(panel.allTexts(), "tool window")
-        shot(panel, 620, 300, "tool-window-en")
-        shot(panel, 340, 300, "tool-window-en-narrow")
+        shot(panel, 620, 560, "tool-window-en")
+        shot(panel, 340, 640, "tool-window-en-narrow")
 
         val auth = file("src/auth.ts")
         val note = VerifyLensLinePainter().getLineExtensions(project, auth, 20)!!.single().text.trim()
@@ -342,7 +342,16 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("auth.test.ts:5   test changed in this change: 5 → 6", rows[2])
         assertTrue(panel.allTexts().any { it.contains("⚠ \"locks the account after 5 consecutive failures\" (test/auth.test.ts:5) — test changed in this change: 5 → 6") })
         assertNoKorean(panel.allTexts(), "tool window")
-        shot(panel, 620, 200, "tool-window-changed-test")
+        // 아래 그림의 검사 칸에도 같은 말이 「다름」 색으로 나오고, 누르면 그 검사로 간다
+        val chain = panel.chainTexts()
+        chain.forEach { println("[VerifyLens 시험] 바뀐 검사 근거 사슬 | $it") }
+        assertEquals("R1 · Verified · Evidence chain", chain[0])
+        assertTrue(chain[3], chain[3].startsWith("⚠ tests: passes") && chain[3].contains("5 → 6"))
+        assertEquals("diff", r.chains["R1"]!!.single().steps[2].tone)
+        assertTrue(r.chains["R1"]!!.single().steps[2].changed)
+        shot(panel, 620, 480, "tool-window-changed-test")
+        panel.clickChain("A", "test")
+        assertEquals(file("test/auth.test.ts"), FileDocumentManager.getInstance().getFile(FileEditorManager.getInstance(project).selectedTextEditor!!.document))
 
         // 바뀐 검사 줄을 누르면 검사 파일의 그 줄로 간다
         service.open(changed.setKey, changed.file, changed.line)
@@ -373,6 +382,87 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         Disposer.register(testRootDisposable, backPanel)
         assertEquals("R1  확인됨   Lock the account after 5 consecutive failures", backPanel.rowTexts()[0])
         assertEquals(2, backPanel.rowTexts().size)
+    }
+
+    /**
+     * 도구 창 아래쪽의 근거 사슬 그림: 요구사항 → 코드 줄 → 검사 → 동작 네 칸과 점 그림.
+     * 고르지 않았으면 먼저 볼 요구사항(확인됨이 아닌 첫 줄)을 보여 주고, 줄을 고르면 그 요구사항으로 바뀐다.
+     * 글과 칸의 색(tone)은 엔진이 낸 것 그대로다 (리포트 · 체험 페이지와 같은 모델).
+     */
+    fun testEvidenceChainIsDrawnUnderTheList() {
+        // 한국어 화면
+        val ko = press("VerifyLens.CheckChanges")
+        val koPanel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, koPanel)
+        val koChain = koPanel.chainTexts()
+        koChain.forEach { println("[VerifyLens 시험] 근거 사슬(한국어) | $it") }
+        assertEquals("R2 · 다름 · 근거 사슬", koChain[0])
+        assertEquals("요구사항: 연속 5회 실패하면 계정을 잠근다", koChain[1])
+        assertEquals("✓ 코드: src/auth.ts:21 user.failures > 5", koChain[2])
+        assertTrue(koChain[3], koChain[3].startsWith("✓ 검사: 통과"))
+        assertEquals("⚠ 동작: 6번째 시도 (요구 5) ✗ 1번 늦음", koChain[4])
+        assertEquals(listOf("요구사항: 5", "코드: 6 · 1번 늦음"), koChain.drop(5))
+        assertEquals(listOf("plain", "ok", "ok", "diff"), ko.chains["R2"]!!.single().steps.map { it.tone })
+        shot(koPanel, 420, 620, "tool-window-chain")
+
+        // 영어 화면
+        System.setProperty("verifylens.lang", "en")
+        Files.copy(engineDir.resolve("samples/login-lockout/requirements.en.md"), repo.resolve(".verifylens/requirements.md"), StandardCopyOption.REPLACE_EXISTING)
+        val r = press("VerifyLens.CheckChanges")
+        val panel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, panel)
+        val chain = panel.chainTexts()
+        chain.forEach { println("[VerifyLens 시험] 근거 사슬 | $it") }
+        assertEquals("R2 · Different · Evidence chain", chain[0])
+        assertEquals("requirement: Lock the account after 5 consecutive failures", chain[1])
+        assertEquals("✓ code: src/auth.ts:21 user.failures > 5", chain[2])
+        assertTrue(chain[3], chain[3].startsWith("✓ tests: passes"))
+        assertEquals("⚠ acts: attempt 6 (required 5) ✗ 1 late", chain[4])
+        assertEquals(listOf("Required: 5", "Code: 6 · 1 late"), chain.drop(5))
+        assertEquals(mapOf("R2" to 5), r.dots.mapValues { it.value.required })
+        shot(panel, 420, 620, "tool-window-chain-en")
+        shot(panel, 300, 680, "tool-window-chain-en-narrow")
+
+        // 그림의 코드 칸을 누르면 근거 줄로 간다
+        panel.clickChain("A", "code")
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor!!
+        assertEquals(file("src/auth.ts"), FileDocumentManager.getInstance().getFile(editor.document))
+        assertEquals(20, editor.caretModel.logicalPosition.line)
+
+        // 「미확인」은 비어 있는 칸이 어디인지가 곧 까닭이다 (R3: 검사 칸이 비어 있다)
+        panel.selectRequirement("R3")
+        val c3 = panel.chainTexts()
+        c3.forEach { println("[VerifyLens 시험] 근거 사슬 R3 | $it") }
+        assertEquals("R3 · Not verified · Evidence chain", c3[0])
+        assertEquals("grey dashed = missing", c3[1])
+        assertTrue(c3.toString(), c3.any { it.startsWith("? tests: no linked test") })
+        assertFalse(c3.any { it.startsWith("Required:") })
+        shot(panel, 420, 620, "tool-window-chain-en-r3")
+
+        // 「확인됨」도 같은 그림으로 본다
+        panel.selectRequirement("R1")
+        val c1 = panel.chainTexts()
+        assertEquals("R1 · Verified · Evidence chain", c1[0])
+        assertEquals(5, c1.size)
+        assertEquals("✓ verdict: Verified", c1[4])
+        assertNoKorean(panel.allTexts(), "tool window with the chain")
+
+        // 샘플(결과 A · B): 어긋난 쪽(B)을 먼저 보여 주고, 점 그림은 둘을 나란히 둔다
+        press("VerifyLens.RunDemo")
+        val demoPanel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, demoPanel)
+        val demo = demoPanel.chainTexts()
+        demo.forEach { println("[VerifyLens 시험] 근거 사슬 샘플 | $it") }
+        assertEquals("R2 · Different · Evidence chain", demo[0])
+        val lanes = demo.filter { it.startsWith("Code · ") }
+        assertEquals(2, lanes.size)
+        assertTrue(lanes.toString(), lanes[0].endsWith("B") && lanes[1].endsWith("A"))
+        assertEquals(listOf("Required: 5", "A: 5 · same attempt", "B: 6 · 1 late"), demo.takeLast(3))
+        shot(demoPanel, 420, 820, "tool-window-chain-en-demo")
+        demoPanel.clickChain("B", "code")
+        val vf = FileDocumentManager.getInstance().getFile(FileEditorManager.getInstance(project).selectedTextEditor!!.document)!!
+        assertTrue(vf.name, vf.name.endsWith("auth.ts"))
+        assertFalse(vf.isWritable)
     }
 
     /** 샘플(로그인 잠금)에는 바뀐 검사가 없다: 새로 생긴 검사는 「바뀐 검사」가 아니다. */
