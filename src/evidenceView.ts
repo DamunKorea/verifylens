@@ -1,4 +1,4 @@
-import type { Overall } from './types.ts';
+import type { Overall, TestStatus } from './types.ts';
 import type { ChainStep } from './evidenceSteps.ts';
 import { esc } from './view.ts';
 
@@ -19,11 +19,12 @@ export function evidenceChain(steps: ChainStep[], overall: Overall): string {
   }).join('<span class="vl-arrow" aria-hidden="true">→</span>') + '</span>';
 }
 
-export function attemptComparison(required: number, at: number, label: string, test: ChainStep | undefined, lang: 'ko' | 'en'): string {
+export function attemptComparison(required: number, at: number, label: string, test: ChainStep | undefined, lang: 'ko' | 'en', runStatus?: TestStatus): string {
   const ko = lang === 'ko';
   const stat = (caption: string, n: number, tone: string) =>
     `<span class="vl-stat vl-${tone}"><small>${esc(caption)}</small>${ko ? `<b>${n}</b><span>번째</span>` : `<span>Attempt</span><b>${n}</b>`}</span>`;
-  const status = test && { ok: ko ? '검사 통과' : 'Test passed', diff: ko ? '검사 실패' : 'Test failed', miss: ko ? '검사 미실행' : 'No linked test', plain: '' }[test.tone];
+  const actual = runStatus && { 통과: 'ok', 실패: 'diff', 미실행: 'miss' }[runStatus] as 'ok' | 'diff' | 'miss' | undefined;
+  const status = test && { ok: ko ? '검사 통과' : 'Test passed', diff: ko ? '검사 실패' : 'Test failed', miss: ko ? '검사 미실행' : 'No linked test', plain: '' }[actual ?? test.tone];
   const tone = test ? stepTone(test) : 'miss';
   return `<span class="vl-compare">${stat(ko ? '요구사항' : 'Required', required, 'plain')}<span class="vl-link" aria-hidden="true">→</span>${stat(label, at, at === required ? 'ok' : 'diff')}${status ? `<strong class="vl-test vl-${tone}">${symbols[tone]}${status}</strong>` : ''}</span>`;
 }

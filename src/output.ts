@@ -87,7 +87,7 @@ function overview(report: Report): string {
   const two = report.sets.length === 2;
   const head = `<tr><th>${L('요구사항', 'Requirement')}</th>${report.sets.map((s) => `<th>${idDot(s.key)}${s.label}<small>${esc(s.ref)} · ${s.sha}</small></th>`).join('')}${two ? '<th>A·B</th>' : ''}<th>${L('상태', 'Status')}</th><th>${L('사람의 판단', 'Your decision')}</th></tr>`;
   const rows = report.summaries
-    .map((s) => `<tr class="row" data-req="${s.req.id}"><td class="rq"><b>${s.req.id}</b>${esc(s.req.text)}</td>${report.sets.map((set) => `<td>${matrixCell(set, s.req.id)}</td>`).join('')}${two ? `<td><span class="rel ${s.relation.kind === '일치' ? 'same' : 'diffs'}">${wRelation(s.relation.kind)}</span></td>` : ''}<td>${pill(s.overall)}</td><td class="jc" data-jcell="${s.req.id}">${wJudge('미검토')}</td></tr>`)
+    .map((s) => `<tr class="row" data-req="${s.req.id}"><td class="rq"><button class="req-select" type="button"><b>${s.req.id}</b>${esc(s.req.text)}</button></td>${report.sets.map((set) => `<td>${matrixCell(set, s.req.id)}</td>`).join('')}${two ? `<td><span class="rel ${s.relation.kind === '일치' ? 'same' : 'diffs'}">${wRelation(s.relation.kind)}</span></td>` : ''}<td>${pill(s.overall)}</td><td class="jc" data-jcell="${s.req.id}">${wJudge('미검토')}</td></tr>`)
     .join('');
   const unc: string[] = [];
   for (const s of report.summaries) {
@@ -95,7 +95,7 @@ function overview(report: Report): string {
     if (miss.length) unc.push(`<span><b>${s.req.id}</b> ${miss.map((x) => `${x.key} ${x.perReq[s.req.id].evidence.status === '미발견' ? L('근거 없음', 'no evidence') : L('검사 미실행', 'no test run')}`).join(' · ')}</span>`);
   }
   for (const set of report.sets) for (const d of set.dyn) unc.push(`<span><b>${set.key}</b> ${L('해석하지 못한 호출', 'unresolved call')} <code>${esc(d.file.split('/').pop()!)}:${d.line}</code> <code>${esc(d.text)}</code></span>`);
-  return `<section class="ov"><div class="ovh"><h2>${L('요구사항별 검증 상태', 'Verification status by requirement')}</h2><div class="cnt"><span class="ok">${wOverall('확인됨')} <b>${c.확인됨}</b></span><span class="diff">${wOverall('다름')} <b>${c.다름}</b></span><span class="fail">${wOverall('실패')} <b>${c.실패}</b></span><span class="unk">${wOverall('미확인')} <b>${c.미확인}</b></span></div><div class="hint">${L('행을 누르면 아래에 근거가 열립니다', 'Click a row to see its evidence below')}</div></div>
+  return `<section class="ov"><div class="ovh"><h2>${L('요구사항별 검증 상태', 'Verification status by requirement')}</h2><div class="cnt"><span class="ok">${wOverall('확인됨')} <b>${c.확인됨}</b></span><span class="diff">${wOverall('다름')} <b>${c.다름}</b></span><span class="fail">${wOverall('실패')} <b>${c.실패}</b></span><span class="unk">${wOverall('미확인')} <b>${c.미확인}</b></span></div><div class="hint">${L('요구사항을 선택해 근거 보기', 'Select a requirement to see its evidence')}</div></div>
 <table class="mx"><thead>${head}</thead><tbody>${rows}</tbody></table>
 <div class="unc"><b>${L('검사 미실행 · 근거 없음', 'No test run · no evidence')}</b>${unc.join('') || `<span>${L('없음', 'none')}</span>`}</div></section>`;
 }
@@ -210,6 +210,30 @@ function flowCard(report: Report, id: string): string {
 }
 
 // ---------------------------------------------------------------- 요구사항 상세
+function evidenceFocus(report: Report, s: ReqSummary): string {
+  const id = s.req.id;
+  const lanes = report.sets.map((set, index) => {
+    const rr = set.perReq[id];
+    const steps = chainSteps(report, id, getLang(), index);
+    const test = steps.find(step => step.kind === 'test');
+    const boundary = rr.evidence.boundary;
+    const label = report.sets.length > 1 ? L(`코드 · ${set.label}`, `Code · ${set.label}`) : L('코드 동작', 'Code acts');
+    const comparison = boundary?.attempts != null
+      ? attemptComparison(boundary.required, boundary.attempts, label, test, getLang(), rr.testStatus)
+      : report.sets.length > 1 ? `<b class="lane-label">${esc(label)}</b>` : '';
+    const priority = rr.testStatus === '실패' || boundary?.ok === false ? 0 : test?.changed ? 1 : 2;
+    return { label: set.label, priority, html: comparison + evidenceChain(steps, s.overall) };
+  }).sort((a, b) => a.priority - b.priority);
+  const [primary, ...others] = lanes;
+  return `<section class="det focus-card focus-${cls(s.overall)}" data-req="${id}" hidden>
+<header class="focus-heading">${pill(s.overall)}<span class="rid">${id}</span><h2>${esc(s.req.text)}</h2></header>
+${primary?.html ?? ''}
+${others.map(lane => `<details class="comparison"><summary>${esc(lane.label)} · ${L('근거 사슬', 'Evidence chain')}</summary>${lane.html}</details>`).join('')}
+<details class="comparison"><summary>${L('근거 상세와 사람의 판단', 'Detailed evidence and your decision')}</summary>${renderChain(report, s)}</details>
+<div class="focus-next">${headline(report, s)} <span class="next">${L('다음 행동', 'Next step')} · ${esc(nextAction(s, report))}</span></div>
+</section>`;
+}
+
 function detail(report: Report, s: ReqSummary): string {
   const id = s.req.id;
   const mark = s.relation.kind === '불일치' || report.sets.some((x) => x.perReq[id].evidence.boundary?.ok === false);
@@ -227,25 +251,10 @@ function detail(report: Report, s: ReqSummary): string {
       return `<div class="ev"><span class="eid">E${i + 1}</span><span>${idDot(set.key)}<b>${set.label}</b> ${e.unit ? `<code>${esc(e.unit.file)}:${e.unit.startLine}</code> · ${e.unit.kind === 'function' ? L('함수 전체 단위', 'whole function') : L('조건 단위', 'single condition')}` : L('근거 없음', 'no evidence')}<br><small>${esc(e.why.join(' · ') || L('일치하는 단어·숫자 없음', 'no matching words or numbers'))} · ${L('점수', 'score')} ${e.score}</small></span></div>`;
     })
     .join('');
-  // Keep the result identity and index when bringing conflicting evidence to the front.
-  const lanes = report.sets.map((set, i) => {
-    const rr = set.perReq[id];
-    return { set, i, attention: rr.testStatus === '실패' || rr.evidence.boundary?.ok === false };
-  }).sort((a, b) => Number(b.attention) - Number(a.attention)).map(({ set, i }) => {
-    const steps = chainSteps(report, id, getLang(), i);
-    const b = set.perReq[id].evidence.boundary;
-    const label = report.sets.length > 1 ? set.label : L('코드 동작', 'Code acts');
-    const comparison = b?.attempts != null ? attemptComparison(b.required, b.attempts, label, steps.find(st => st.kind === 'test'), getLang())
-      : report.sets.length > 1 ? `<b class="lane-label">${esc(label)}</b>` : '';
-    return comparison + evidenceChain(steps, s.overall);
-  }).join('');
   const opts = ['미검토', '사용', '수정', '추가 검증', '보류'].map((v) => `<option value="${v}">${wJudge(v)}</option>`).join('');
   const judge = `<div class="card judge" data-req="${id}"><h4>${L('사람의 판단', 'Your decision')} <span class="mini">${L('근거를 보고 직접 정합니다', 'you decide from the evidence')}</span></h4><div class="jrow"><select>${opts}</select></div><textarea rows="3" placeholder="${L('이유나 남은 확인 사항', 'Reason, or what is left to check')}"></textarea></div>`;
   return `<section class="det" data-req="${id}" hidden>
-<div class="dh"><span class="rid">${id}</span><h2>${esc(s.req.text)}</h2>${pill(s.overall)}</div>
-<p class="lead">${headline(report, s)} <span class="next">${L('다음 행동', 'Next step')} · ${esc(nextAction(s, report))}</span></p>
-<div class="card"><h4>${L('근거 사슬', 'Evidence chain')} <span class="mini">${L('요구사항 → 코드 근거 → 검사 → 동작 시점 → 사람의 판단', 'requirement → code evidence → tests → when it acts → your decision')}</span></h4>${lanes}
-<details class="comparison"><summary>${L('근거 상세와 사람의 판단', 'Detailed evidence and your decision')}</summary>${renderChain(report, s)}</details></div>
+<div class="dh"><span class="rid">${id}</span><h2>${L('코드와 검사', 'Code and tests')}</h2></div>
 <div class="g2"><div>
 <div class="card"><h4>${L('코드 비교', 'Code comparison')} <span class="mini">${mark ? L('다른 부분을 표시', 'differences are marked') : L('근거가 된 코드', 'the code used as evidence')}</span></h4><div class="panes">${panes}</div></div>
 <div class="card"><h4>${L('검사 결과', 'Test results')} <span class="mini">${L('실행된 검사 보고서(JUnit)에서 읽음', 'read from the executed test report (JUnit)')}</span></h4><table class="tt"><tbody>${tests}</tbody></table></div>
@@ -445,13 +454,25 @@ else{
 
 export function renderHtml(report: Report, summaryMd: string): string {
   const id = String(Math.abs([...(report.generatedAt + report.sets.map((s) => s.sha).join(''))].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 7)));
-  const first = report.summaries.find((s) => s.overall === '다름' || s.overall === '실패') ?? report.summaries[0];
+  const first = report.summaries.find((s) => s.overall === '다름' || s.overall === '실패') ?? report.summaries.find(s => s.overall === '미확인') ?? report.summaries[0];
   const meta = { generatedAt: report.generatedAt, base: report.base, results: report.sets.map((s) => ({ label: s.label, ref: s.ref, sha: s.sha })) };
   const t = { jl: JUDGE_LABELS(), text: L('글', 'text'), viz: L('시각화', 'visual'), stop: L('종료', 'Stop'), start: L('시작', 'Start'), rec: L('기록', 'recorded') };
-  const data = { id, first: first.req.id, meta, t, reqs: report.summaries.map((s) => ({ id: s.req.id, text: s.req.text, status: s.overall })) };
+  const data = { id, first: first?.req.id, meta, t, reqs: report.summaries.map((s) => ({ id: s.req.id, text: s.req.text, status: s.overall })) };
   const mark = '<svg width="24" height="24" viewBox="0 0 64 64"><circle cx="27" cy="27" r="19" fill="none" stroke="#fff" stroke-width="6"/><path d="M18 27.5 L24.5 34 L36.5 20" fill="none" stroke="#4285E8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M41.5 41.5 L56 56" stroke="#fff" stroke-width="7.5" stroke-linecap="round"/></svg>';
   return `<!doctype html><html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${L('VerifyLens 검증 리포트', 'VerifyLens verification report')}</title><style>${CSS}
 :root{${palette(dark)}}${evidenceCSS}
+.wrap{max-width:1480px}.focus-card{--edge:var(--vl-miss);border:1px solid #2a3950;border-inline-start:4px solid var(--edge);border-radius:14px;background:#101d30;padding:clamp(14px,2vw,27px);margin:0 0 18px;scroll-margin-top:64px}
+.focus-diff{--edge:var(--vl-diff)}.focus-ok{--edge:var(--vl-ok)}.focus-fail{--edge:var(--vl-fail)}
+.focus-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.focus-heading h2{font-size:clamp(18px,2vw,27px);line-height:1.28;letter-spacing:-.02em;color:#f3f6fa}
+.focus-card .vl-chain{margin-block:12px 16px}.focus-card .vl-step{font-size:14px;line-height:1.45}
+.focus-card .vl-compare{margin-top:14px}.focus-next{border-top:1px solid #314158;padding-top:10px;margin-top:12px;color:#d4dfed;line-height:1.65}
+.req-select{background:none;border:0;padding:0;text-align:left;color:inherit;font:inherit;cursor:pointer}
+button:focus-visible,summary:focus-visible{outline:2px solid #92bfff;outline-offset:3px}
+.wrap .ovh{flex-wrap:wrap}.ov .mx tr.on .rq{color:white}.card h4{font-size:14px;color:#dbe6f4}.card .mini,.lg,.flowbox .fnn,.pane .loc,.pane .ph .sub{color:#a3b4cc}
+.card:has(.flowbox) .ftabs,.card:has(.pane) .panes{margin-top:12px}
+.comparison svg.chain{min-width:900px}.focus-card .comparison{border-top:1px solid #28374d;padding-top:8px}
+@media(max-width:700px){.focus-card{scroll-margin-top:110px}.focus-card .vl-compare{margin-top:8px}.focus-heading h2{flex-basis:100%}.focus-card .vl-step{font-size:13px}.focus-next{font-size:12px}}
+
 body{font-variant-ligatures:none}.comparison{margin:8px 0;overflow:auto}.comparison summary{cursor:pointer;color:#b1c3df}
 @media(max-width:700px){
 .top,.ovh,.dh,.cnt{flex-wrap:wrap}.top{height:auto;padding:6px 12px;gap:5px 12px}.top .meta{margin-right:auto}
@@ -464,7 +485,7 @@ ${(['ok','diff','fail','miss'] as const).map(k => `.pill.${k === 'miss' ? 'unk' 
 </style></head>
 <body data-view="viz">
 <div class="top"><div class="logo">${mark}<div>Verify<span>Lens</span></div></div><div class="meta">${L('검증 리포트 · 기준', 'Verification report · base')} <code>${esc(report.base)}</code></div><span class="sp"></span><span class="badge g">${L('로컬에서 생성 · 네트워크 사용 없음 · AI 추정 없음', 'Generated locally · no network · no AI inference')}</span><div class="vt"><button class="vtab on" data-view="viz">${L('시각화', 'Visual')}</button><button class="vtab" data-view="text">${L('글 요약', 'Text summary')}</button></div></div>
-<div class="wrap">${overview(report)}${report.summaries.map((s) => detail(report, s)).join('')}</div>
+<div class="wrap">${report.summaries.map(s => evidenceFocus(report, s)).join('')}${overview(report)}${report.summaries.map((s) => detail(report, s)).join('')}</div>
 <div class="text"><div class="doc">${mdToHtml(summaryMd)}</div></div>
 <div class="bar"><b>${L('과제 시간', 'Task timer')}</b><select id="task"><option>T1</option><option>T2</option><option>T3</option><option>${L('자유', 'Free')}</option></select><button id="tstart">${L('시작', 'Start')}</button><span id="tlabel">0:00</span><span id="tlog" style="opacity:.85"></span><span class="sp"></span><span>${L('사람의 판단', 'Decisions')} <b id="judged">0</b></span><button id="export">${L('판단·시간 내보내기', 'Export decisions and times')}</button></div>
 <script type="application/json" id="vl-data">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>

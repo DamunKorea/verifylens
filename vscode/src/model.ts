@@ -663,7 +663,10 @@ svg.chain{width:100%;min-width:900px;height:auto}.card:has(>svg.chain){overflow-
 .vl-acts button:hover{background:var(--vscode-button-hoverBackground,#2B6AD0)}
 .vl-acts button.sec{background:var(--vscode-button-secondaryBackground,#16294A);color:var(--vscode-button-secondaryForeground,#E6EDF8)}
 .vl-acts button.sec:hover{background:var(--vscode-button-secondaryHoverBackground,#1D3660)}
-.top{height:44px}
+.top{height:auto;min-height:44px;flex-wrap:wrap;padding-block:6px}
+body.timer-open .bar{display:flex!important}body.timer-open{padding-bottom:52px!important}
+@media(max-width:700px){.top{gap:4px 8px}.top .sp{display:none}.top button{font-size:11px;padding:4px 7px}.vl-acts{flex-wrap:wrap}}
+
 @media (max-width:980px){.top .meta{display:none}}
 .vl-hero{border:1px solid #1C2B46;border-left:4px solid #FBBF24;border-radius:10px;background:#0E1A2E;padding:12px 16px;margin-bottom:14px}
 .vl-hero.all{border-left-color:#34D399}
@@ -699,8 +702,8 @@ ${D} .tk{border-color:var(--vscode-sideBar-background,#0C1628)}
   // 아래 글은 웹뷰의 스크립트 안 작은따옴표 문자열로 들어간다. 따옴표를 쓰지 않는다.
   const B = {
     copyTip: L('PR 설명이나 댓글에 붙여 넣을 검증 요약을 복사합니다', 'Copies a verification summary to paste into the PR description or a comment'),
+    timer: L('작업 시간', 'Task timer'),
     copy: L('PR 요약 복사', 'Copy PR summary'),
-    badge: L('AI 추정 0건 · 이 PC에서만 분석', 'No AI inference · analyzed on this machine only'),
     diffAB: L('A ↔ B 나란히 비교', 'Compare A ↔ B side by side'),
     diffBase: L('기준과 나란히 비교', 'Compare with base side by side'),
   };
@@ -716,9 +719,11 @@ var line=+m[2],ln=hit.classList.contains('cl')?hit.querySelector('.ln'):null;if(
 api.postMessage({type:'open',set:SETS[list.indexOf(pane)],file:m[1],line:line});});
 (function(){var top=document.querySelector('.top'),vt=top&&top.querySelector('.vt');if(!top)return;
 var w=document.createElement('span');w.className='vl-acts';w.style.marginLeft='0';w.innerHTML='<button class="sec" data-vl="copy" title="${B.copyTip}">${B.copy}</button>';
-top.insertBefore(w,vt||null);
-var bg=top.querySelector('.badge.g');if(bg)bg.textContent='${B.badge}';
-var wrap=document.querySelector('.wrap');if(wrap&&INIT.hero){var h=document.createElement('div');h.className='vl-hero'+(INIT.hero.all?' all':'');
+var timer=document.createElement('button');timer.className='sec';timer.textContent='${B.timer}';timer.type='button';
+timer.setAttribute('aria-expanded','false');timer.onclick=function(){timer.setAttribute('aria-expanded',String(document.body.classList.toggle('timer-open')));};
+w.appendChild(timer);top.insertBefore(w,vt||null);
+
+var wrap=document.querySelector('.ov');if(wrap&&INIT.hero){var h=document.createElement('div');h.className='vl-hero'+(INIT.hero.all?' all':'');
 var b=document.createElement('b');b.textContent=INIT.hero.line;if(INIT.hero.need){var em=document.createElement('em');em.textContent='  ·  '+INIT.hero.need;b.appendChild(em);}
 var sp=document.createElement('span');sp.textContent=INIT.hero.sub;h.appendChild(b);h.appendChild(sp);wrap.insertBefore(h,wrap.firstChild);}
 })();
