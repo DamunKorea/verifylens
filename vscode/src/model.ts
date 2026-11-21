@@ -1015,7 +1015,12 @@ export function requirementsFrom(texts: SourceText[]): { requirements: string[];
     let label = t.label;
     if (!found.length) {
       // 본문이 줄글뿐이면 제목 한 줄이라도 요구사항 후보로 쓴다 ("fix:" 같은 머리말과 "(#123)" 꼬리는 뗀다).
-      const title = t.title.replace(/^\s*(feat|fix|chore|refactor|docs|test|perf)(\([^)]*\))?!?:\s*/i, '').replace(/\s*\((?:fix(?:es)?|close[sd]?|resolve[sd]?)?\s*#\d+\)\s*$/i, '').trim();
+      // 「BACK-801 - 」 · 「[SCRUM-5]」 같은 작업 번호 머리말도 뗀다 (공개 PR 에서 찾음, 11/22)
+      const title = t.title
+        .replace(/^\s*\[?[A-Z][A-Z0-9]*-\d+\]?\s*[-:–]?\s*/, '')
+        .replace(/^\s*(feat|fix|chore|refactor|docs|test|perf)(\([^)]*\))?!?:\s*/i, '')
+        .replace(/\s*\((?:fix(?:es)?|close[sd]?|resolve[sd]?)?\s*#\d+\)\s*$/i, '')
+        .trim();
       if (title.length < 6 || seen.has(title.toLowerCase())) continue;
       found = [title];
       label = L(`${t.label} 제목`, `${t.label} title`);

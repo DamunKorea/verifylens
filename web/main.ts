@@ -3,6 +3,8 @@ import { evidenceChain, attemptComparison, attemptChart, evidenceCSS } from '../
 // 설치 없이 해 보는 페이지의 화면. 입력이 바뀌면 같은 엔진으로 다시 판정한다.
 import { codeFileName, runCheck, type TryResult, type TryRow, type TryTest } from './check.ts';
 import { EXAMPLES, type Example } from './examples.ts';
+import { loadPr, MAX_CODE_FILES, PrError, type LoadedPr, type SkipWhy } from './pr.ts';
+import { setLang } from '../src/i18n.ts';
 
 type Lang = 'en' | 'ko';
 
@@ -19,9 +21,35 @@ const T: Record<string, { en: string; ko: string }> = {
   lead: { en: 'Follow the code line and test result behind each verdict.', ko: '각 판정의 근거가 된 코드 줄과 테스트 결과를 따라가 보세요.' },
   edit: { en: 'Try your own code', ko: '내 코드로 해 보기' },
   privacy: {
-    en: '🔒 Runs entirely in this page. Nothing you paste is sent anywhere, and no LLM is used.',
-    ko: '🔒 이 페이지 안에서만 돌아갑니다. 넣은 내용은 어디로도 보내지 않고, AI 판정도 쓰지 않습니다.',
+    en: '🔒 Runs in this page, and no LLM is used. Nothing you paste is sent anywhere; a PR address is read from GitHub by your browser.',
+    ko: '🔒 이 페이지 안에서 돌아가고 AI 판정을 쓰지 않습니다. 넣은 내용은 어디로도 보내지 않고, PR 주소는 브라우저가 GitHub 에서 직접 읽습니다.',
   },
+  prLabel: { en: 'Or check a public GitHub pull request', ko: '또는 공개 GitHub PR 로 확인하기' },
+  prGo: { en: 'Check PR', ko: 'PR 확인' },
+  prHint: {
+    en: 'Your browser reads the PR description, the issues it closes and the changed TypeScript/JavaScript files straight from GitHub. Nothing goes to us. Public repositories only.',
+    ko: '브라우저가 GitHub 에서 PR 설명 · PR 이 닫는 이슈 · 바뀐 TypeScript/JavaScript 파일을 직접 읽습니다. 우리 쪽으로는 아무것도 가지 않습니다. 공개 저장소만 됩니다.',
+  },
+  prLoading: { en: 'Reading the pull request from GitHub…', ko: 'GitHub 에서 PR 을 읽는 중…' },
+  prBadUrl: { en: 'Paste a pull request address such as https://github.com/owner/repo/pull/123.', ko: 'https://github.com/owner/repo/pull/123 같은 PR 주소를 붙여 넣어 주세요.' },
+  prNotFound: { en: 'That pull request was not found. Only public repositories can be read here.', ko: '그 PR 을 찾지 못했습니다. 여기서는 공개 저장소만 읽을 수 있습니다.' },
+  prRate: {
+    en: 'GitHub allows 60 requests an hour without signing in, and they are used up. Try again after {time}.',
+    ko: 'GitHub 는 로그인하지 않으면 한 시간에 60번까지만 읽게 해 주는데, 그 횟수를 다 썼습니다. {time} 뒤에 다시 해 보세요.',
+  },
+  prNetwork: { en: 'Could not reach GitHub: ', ko: 'GitHub 에 닿지 못했습니다: ' },
+  prNoCode: { en: 'This pull request changes no TypeScript or JavaScript file, so there is nothing to check.', ko: '이 PR 은 TypeScript · JavaScript 파일을 바꾸지 않아 확인할 것이 없습니다.' },
+  prHttp: { en: 'GitHub answered with an error: ', ko: 'GitHub 가 오류로 답했습니다: ' },
+  prNoReqs: {
+    en: 'No requirement list was found in the PR or the issues it closes. Write the requirements in 1. Requirements.',
+    ko: 'PR 이나 PR 이 닫는 이슈에서 요구사항 목록을 찾지 못했습니다. 「1. 요구사항」에 직접 적어 주세요.',
+  },
+  prTests: {
+    en: 'Tests are not run on this page. Add the tests you ran under 3, or use the extension or the GitHub Action to read real test results.',
+    ko: '이 페이지에서는 테스트를 돌리지 않습니다. 돌린 테스트를 3번 칸에 적거나, 확장 · GitHub Action 으로 실제 테스트 결과를 읽으세요.',
+  },
+  prShare: { en: 'Link to this check', ko: '이 확인의 링크' },
+  prFiles: { en: 'Files with evidence: ', ko: '근거가 있는 파일: ' },
   examples: { en: 'Examples:', ko: '예제:' },
   input: { en: 'Input', ko: '입력' },
   reqLabel: { en: '1. Requirements', ko: '1. 요구사항' },
@@ -60,8 +88,8 @@ const T: Record<string, { en: string; ko: string }> = {
   },
   limits: { en: 'What this page does not do', ko: '이 페이지가 하지 않는 것' },
   limit1: {
-    en: 'It reads one file and the test names you type. The extension reads your repository and real test results.',
-    ko: '파일 하나와 직접 적은 테스트 이름만 봅니다. 확장은 저장소 전체와 실제 테스트 결과를 읽습니다.',
+    en: `It reads one file, or the TypeScript and JavaScript files a public PR changes (up to ${MAX_CODE_FILES}), and the test names you type. Checks in files the PR did not change are not seen. The extension reads your repository and real test results.`,
+    ko: `파일 하나, 또는 공개 PR 이 바꾼 TypeScript · JavaScript 파일(${MAX_CODE_FILES}개까지)과 직접 적은 테스트 이름만 봅니다. PR 이 바꾸지 않은 파일의 검사는 보지 못합니다. 확장은 저장소 전체와 실제 테스트 결과를 읽습니다.`,
   },
   limit2: {
     en: 'The analysis is rule-based, so it can miss or misread code shapes it has not seen. Unverified means it could not decide, not that the code is fine.',
@@ -88,12 +116,25 @@ const testsNoteEl = $('tests-note');
 const jumpbarEl = $('jumpbar');
 const jumpwhatEl = $('jumpwhat');
 const outEl = $('out');
+const prFormEl = $<HTMLFormElement>('prform');
+const prUrlEl = $<HTMLInputElement>('prurl');
+const prGoEl = $<HTMLButtonElement>('prgo');
+const prStatusEl = $('prstatus');
+const prInfoEl = $('prinfo');
+const filePickEl = $<HTMLSelectElement>('filepick');
 
 let lang: Lang = initialLang();
 let current: Example | null = null;
 let tests: TryTest[] = [];
 /** 지금 테스트 칸이 어느 예제에서 온 그대로인가. 사용자가 테스트를 고치면 null */
 let testsFrom: Example | null = null;
+/** 공개 GitHub PR 을 읽어 와서 보고 있으면 그 PR. 예제를 고르면 null */
+let pr: LoadedPr | null = null;
+/** PR 의 파일 (코드 칸에서 고치면 여기가 바뀐다) */
+let prFiles: Record<string, string> = {};
+/** 코드 칸에 열린 PR 파일 */
+let active = '';
+let lastRes: TryResult | null = null;
 
 function initialLang(): Lang {
   const q = new URLSearchParams(location.search).get('lang');
@@ -126,6 +167,7 @@ function applyTexts() {
   document.title = lang === 'ko' ? 'VerifyLens 해 보기' : 'Try VerifyLens';
   renderExamples();
   renderTests();
+  renderPrInfo();
 }
 
 function renderExamples() {
@@ -142,6 +184,9 @@ function renderExamples() {
 
 function load(ex: Example) {
   clearTimeout(timer);
+  leavePr();
+  // PR 을 읽는 중이 아니면 지난 PR 오류 글을 지운다
+  if (!prGoEl.disabled) prStatusEl.hidden = true;
   current = ex;
   reqsEl.value = ex.requirements[lang];
   fileEl.value = ex.fileName;
@@ -205,6 +250,8 @@ function sharesLine(text: string, example: string): boolean {
 }
 
 function edited() {
+  // PR 을 보고 있으면 코드 칸은 열린 파일이다
+  if (pr && active) prFiles[active] = codeEl.value;
   // 요구사항이나 코드를 예제와 전혀 다르게 바꿨으면, 예제의 테스트가 남아 엉뚱한 요구사항에 이어지지 않게 뺀다
   if (testsFrom && tests.length && (!sharesLine(reqsEl.value, testsFrom.requirements[lang]) || !sharesLine(codeEl.value, testsFrom.code))) {
     tests = [];
@@ -254,7 +301,8 @@ function linkEvidence(card: HTMLElement, r: TryRow) {
   const code = card.querySelector('.vl-code');
   const line = r.line;
   if (!code || !line) return;
-  const location = `${renderedFile}:${line}`;
+  const file = r.file ?? renderedFile;
+  const location = `${file}:${line}`;
   const text = code.textContent ?? '';
   if (text !== location && !text.startsWith(location + ' ')) return;
   const expression = text.slice(location.length).trimStart();
@@ -262,7 +310,13 @@ function linkEvidence(card: HTMLElement, r: TryRow) {
   button.type = 'button';
   button.setAttribute('aria-label', lang === 'ko' ? `${location} 편집` : `Edit ${location}`);
   button.addEventListener('click', () => {
-    if (codeEl.value !== renderedCode || codeFileName(fileEl.value) !== renderedFile) {
+    // PR 을 보고 있으면 그 파일을 코드 칸에 연다
+    if (pr && file !== active && file in prFiles) {
+      openFile(file);
+      editEvidence(line, expression);
+      return;
+    }
+    if (codeEl.value !== renderedCode || (!pr && codeFileName(fileEl.value) !== renderedFile)) {
       clearTimeout(timer);
       run(true);
       cardsEl.querySelector<HTMLButtonElement>(`[data-req="${CSS.escape(r.id)}"] .evidence-location`)?.click();
@@ -333,8 +387,16 @@ function highlightChanges(card: HTMLElement, row: TryRow, prior: TryRow) {
 function run(compare = false) {
   let res: TryResult;
   try {
-    res = runCheck({ requirements: reqsEl.value, fileName: fileEl.value, code: codeEl.value, tests, lang });
+    res = runCheck({
+      requirements: reqsEl.value,
+      fileName: fileEl.value,
+      code: codeEl.value,
+      tests,
+      lang,
+      ...(pr ? { files: prFiles, baseFiles: pr.baseFiles, changed: pr.changed } : {}),
+    });
   } catch (e) {
+    lastRes = null;
     lastRows = [];
     cardsEl.replaceChildren();
     codewrapEl.hidden = true;
@@ -346,9 +408,10 @@ function run(compare = false) {
   statusEl.textContent = '';
   changesInView?.disconnect();
   const previous = new Map((compare ? lastRows : []).map(row => [row.id, row]));
+  lastRes = res;
   lastRows = res.rows;
   renderedCode = codeEl.value;
-  renderedFile = codeFileName(fileEl.value);
+  renderedFile = pr ? active : codeFileName(fileEl.value);
   showJump(res.rows.length ? res.headline : '');
   if (!res.rows.length) {
     headlineEl.textContent = '';
@@ -374,7 +437,7 @@ function run(compare = false) {
       if (r.line) {
         const view = el('button', 'view-line', lang === 'ko' ? '근거 줄 보기' : 'View evidence line');
         view.type = 'button';
-        view.addEventListener('click', () => jump(r.line!));
+        view.addEventListener('click', () => jump(r.line!, r.file));
         details.append(' · ', view);
       }
       card.append(details);
@@ -391,7 +454,7 @@ function run(compare = false) {
         card.append(todo);
       }
       card.addEventListener('click', event => {
-        if (r.line && !(event.target as Element).closest('button')) jump(r.line);
+        if (r.line && !(event.target as Element).closest('button, a')) jump(r.line, r.file);
       });
       linkEvidence(card, r);
       const prior = previous.get(r.id);
@@ -419,38 +482,205 @@ if ('IntersectionObserver' in window) {
 }
 
 function renderCode(res: TryResult) {
-  const lines = codeEl.value.replace(/\r\n/g, '\n').split('\n');
+  const file = pr ? active : codeFileName(fileEl.value);
+  const lines = (pr ? prFiles[active] ?? '' : codeEl.value).replace(/\r\n/g, '\n').split('\n');
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  const mine = res.notes.filter((n) => n.file === file);
   const byLine = new Map<number, TryResult['notes']>();
-  for (const n of res.notes) byLine.set(n.line, [...(byLine.get(n.line) ?? []), n]);
-  if (!res.notes.length) {
+  for (const n of mine) byLine.set(n.line, [...(byLine.get(n.line) ?? []), n]);
+  // PR 을 보면 파일이 여럿이다: 근거가 있는 파일을 위에 늘어놓고 누르면 연다
+  const withNotes = [...new Set(res.notes.map((n) => n.file))];
+  if (!mine.length && !(pr && withNotes.length)) {
     codewrapEl.hidden = true;
     return;
   }
   codewrapEl.hidden = false;
-  codecapEl.textContent = `${fileEl.value.trim() || 'src/feature.ts'} · ${T.codecap[lang]}`;
+  if (pr && (withNotes.length > 1 || !mine.length)) {
+    codecapEl.replaceChildren(document.createTextNode(T.prFiles[lang]));
+    withNotes.forEach((f, i) => {
+      const b = el('button', 'filejump', `${f} (${res.notes.filter((n) => n.file === f).length})`);
+      b.type = 'button';
+      b.setAttribute('aria-current', String(f === file));
+      b.addEventListener('click', () => openFile(f));
+      codecapEl.append(...(i ? [document.createTextNode(' · ')] : []), b);
+    });
+    codecapEl.append(document.createTextNode(` · ${T.codecap[lang]}`));
+  } else codecapEl.textContent = `${pr ? file : fileEl.value.trim() || 'src/feature.ts'} · ${T.codecap[lang]}`;
+  // 긴 파일(PR 의 큰 파일)은 근거 줄 앞뒤만 보여 주고 나머지는 「⋯ N줄」로 접는다
+  const AROUND = 4;
+  const shown = (no: number) => lines.length <= 120 || [...byLine.keys()].some((l) => Math.abs(l - no) <= AROUND);
+  const gap = (n: number) => el('div', 'ln ln-gap', lang === 'ko' ? `⋯ ${n}줄` : `⋯ ${n} lines`);
+  let hidden = 0;
   codeviewEl.replaceChildren(
     ...lines.map((text, i) => {
       const no = i + 1;
+      if (!shown(no)) {
+        hidden++;
+        return no === lines.length ? [gap(hidden)] : [];
+      }
+      const before = hidden ? [gap(hidden)] : [];
+      hidden = 0;
       const notes = byLine.get(no) ?? [];
       const worst = [...notes].sort((a, b) => priority(a.overall) - priority(b.overall))[0];
       const row = el('div', `ln${worst ? ' hl-' + tones[worst.overall] : ''}`);
       row.id = `L${no}`;
       row.append(el('span', 'no', String(no)), el('span', 'tx', text || ' '));
-      if (!notes.length) return [row];
+      if (!notes.length) return [...before, row];
       // 좁은 화면에서도 잘리지 않게, 판정은 그 줄 바로 아래에 줄을 바꿔 보여 준다
-      return [row, ...notes.map((n) => el('div', `ln-note ${tones[n.overall]}`, `↑ ${n.head}${n.note ? ` · ${n.note}` : ''}`))];
+      return [...before, row, ...notes.map((n) => el('div', `ln-note ${tones[n.overall]}`, `↑ ${n.head}${n.note ? ` · ${n.note}` : ''}`))];
     }).flat(),
   );
 }
 
-function jump(line: number) {
+function jump(line: number, file?: string | null) {
+  if (pr && file && file !== active && file in prFiles) openFile(file);
   const row = document.getElementById(`L${line}`);
   if (!row) return;
   row.scrollIntoView({ behavior: 'smooth', block: 'center' });
   row.classList.add('flash');
   setTimeout(() => row.classList.remove('flash'), 1200);
 }
+
+// ---------------------------------------------------------------- 공개 GitHub PR 로 확인하기
+
+/** PR 파일 하나를 코드 칸과 아래 코드 보기에 연다 */
+function openFile(file: string) {
+  if (!pr || !(file in prFiles)) return;
+  if (active) prFiles[active] = codeEl.value;
+  active = file;
+  filePickEl.value = file;
+  codeEl.value = prFiles[file];
+  renderedCode = codeEl.value;
+  renderedFile = file;
+  if (lastRes) renderCode(lastRes);
+}
+
+function leavePr() {
+  if (!pr) return;
+  pr = null;
+  prFiles = {};
+  active = '';
+  filePickEl.hidden = true;
+  filePickEl.replaceChildren();
+  fileEl.hidden = false;
+  renderPrInfo();
+  const q = new URLSearchParams(location.search);
+  if (q.has('pr')) {
+    q.delete('pr');
+    const rest = q.toString();
+    history.replaceState(null, '', `${location.pathname}${rest ? `?${rest}` : ''}${location.hash}`);
+  }
+}
+
+const SKIP_WORDS: Record<SkipWhy, { en: string; ko: string }> = {
+  'not-code': { en: 'not TypeScript/JavaScript', ko: 'TypeScript · JavaScript 가 아님' },
+  generated: { en: 'generated or vendored', ko: '만들어진 파일 · 가져온 라이브러리' },
+  removed: { en: 'removed', ko: '지운 파일' },
+  'too-large': { en: 'too large', ko: '너무 큼' },
+  limit: { en: `over the ${MAX_CODE_FILES}-file limit`, ko: `${MAX_CODE_FILES}개 한도를 넘음` },
+  failed: { en: 'could not be read', ko: '읽지 못함' },
+};
+
+function renderPrInfo() {
+  prInfoEl.hidden = !pr;
+  if (!pr) return prInfoEl.replaceChildren();
+  const ko = lang === 'ko';
+  const head = el('p', 'prtitle');
+  const link = el('a', undefined, `${pr.ref.owner}/${pr.ref.repo} #${pr.ref.number}`);
+  link.href = pr.url;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  const state = { open: ko ? '열림' : 'open', closed: ko ? '닫힘' : 'closed', merged: ko ? '합쳐짐' : 'merged' }[pr.state];
+  head.append(link, document.createTextNode(` · ${pr.title} (${state})`));
+  const read = Object.keys(pr.files).length;
+  const counts = new Map<SkipWhy, number>();
+  for (const s of pr.skipped) counts.set(s.why, (counts.get(s.why) ?? 0) + 1);
+  const skipped = [...counts].map(([why, n]) => `${SKIP_WORDS[why][lang]} ${n}`).join(' · ');
+  const files = el('p', undefined, ko
+    ? `바뀐 파일 ${pr.totalFiles}개 중 ${read}개를 읽었습니다${skipped ? ` (안 읽음: ${skipped})` : ''}.`
+    : `Read ${read} of ${pr.totalFiles} changed files${skipped ? ` (not read: ${skipped})` : ''}.`);
+  // 출처 이름은 읽어 온 때의 언어로 만들어졌으므로 지금 언어로 맞춘다
+  const sources = pr.sources.map((s) => (ko ? s.replace(/^issue /, '이슈 ').replace(/ title$/, ' 제목') : s.replace(/^이슈 /, 'issue ').replace(/ 제목$/, ' title'))).join(', ');
+  const from = el('p', undefined, pr.requirements.length
+    ? (ko ? `요구사항을 가져온 곳: ${sources}` : `Requirements from: ${sources}`)
+    : T.prNoReqs[lang]);
+  const share = el('a', undefined, T.prShare[lang]);
+  share.href = `?pr=${encodeURIComponent(pr.url)}&lang=${lang}`;
+  const warn = el('p', 'prwarn', `${T.prTests[lang]} `);
+  warn.append(share);
+  prInfoEl.replaceChildren(head, files, from, warn);
+}
+
+let prSeq = 0;
+async function submitPr(address: string) {
+  const seq = ++prSeq;
+  prStatusEl.hidden = false;
+  prStatusEl.className = 'prstatus';
+  prStatusEl.textContent = T.prLoading[lang];
+  prGoEl.disabled = true;
+  let got: LoadedPr;
+  try {
+    setLang(lang);
+    got = await loadPr(address);
+  } catch (e) {
+    if (seq !== prSeq) return;
+    prGoEl.disabled = false;
+    prStatusEl.className = 'prstatus err';
+    const kind = e instanceof PrError ? e.kind : 'network';
+    const msg = e instanceof Error ? e.message : String(e);
+    prStatusEl.textContent =
+      kind === 'bad-url' ? T.prBadUrl[lang]
+      : kind === 'not-found' ? T.prNotFound[lang]
+      : kind === 'rate-limit' ? T.prRate[lang].replace('{time}', (e as PrError).resetAt?.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }) ?? (lang === 'ko' ? '한 시간' : 'an hour'))
+      : kind === 'no-code' ? T.prNoCode[lang]
+      : kind === 'http' ? T.prHttp[lang] + msg
+      : T.prNetwork[lang] + msg;
+    return;
+  }
+  if (seq !== prSeq) return;
+  prGoEl.disabled = false;
+  prStatusEl.hidden = true;
+  clearTimeout(timer);
+  current = null;
+  pr = got;
+  prFiles = { ...got.files };
+  tests = [];
+  testsFrom = null;
+  testsNoteEl.hidden = true;
+  const header = lang === 'ko'
+    ? `# ${got.sources.join(', ')}에서 가져왔습니다. 고치거나 더하면 결과가 바로 바뀝니다.`
+    : `# Imported from ${got.sources.join(', ')}. Fix or add lines and the result updates.`;
+  reqsEl.value = got.requirements.length ? [header, ...got.requirements.map((r, i) => `- R${i + 1}: ${r}`)].join('\n') + '\n' : '';
+  // 코드 칸: 검사가 아닌 파일을 먼저 늘어놓는다
+  const names = Object.keys(got.files).sort((a, b) => Number(/(\.test\.|\.spec\.|__tests__\/|(^|\/)tests?\/)/.test(a)) - Number(/(\.test\.|\.spec\.|__tests__\/|(^|\/)tests?\/)/.test(b)) || a.localeCompare(b));
+  filePickEl.replaceChildren(...names.map((n) => {
+    const o = el('option', undefined, n);
+    o.value = n;
+    return o;
+  }));
+  filePickEl.hidden = !names.length;
+  fileEl.hidden = names.length > 0;
+  active = '';
+  if (names.length) openFile(names[0]);
+  else codeEl.value = '';
+  renderExamples();
+  renderTests();
+  renderPrInfo();
+  run();
+  // 가장 먼저 볼 카드의 근거 파일을 연다
+  const first = [...(lastRes?.rows ?? [])].sort((a, b) => priority(a.overall) - priority(b.overall)).find((r) => r.file && r.file in prFiles);
+  if (first?.file && first.file !== active) openFile(first.file);
+  const q = new URLSearchParams(location.search);
+  q.set('pr', got.url);
+  history.replaceState(null, '', `${location.pathname}?${q}${location.hash}`);
+  outEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+prFormEl.addEventListener('submit', (e) => {
+  e.preventDefault();
+  void submitPr(prUrlEl.value);
+});
+filePickEl.addEventListener('change', () => openFile(filePickEl.value));
 
 function setLangTo(next: Lang) {
   if (next === lang) return;
@@ -501,3 +731,9 @@ document.head.append(style);
 applyTexts();
 statusEl.textContent = T.loading[lang];
 load(EXAMPLES[0]);
+// 「?pr=주소」로 열면 그 PR 을 바로 읽는다 (확인 결과를 링크로 나눌 수 있게)
+const startPr = new URLSearchParams(location.search).get('pr');
+if (startPr) {
+  prUrlEl.value = startPr;
+  void submitPr(startPr);
+}

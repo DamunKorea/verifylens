@@ -1,0 +1,138 @@
+// 체험 페이지의 「공개 GitHub PR 로 확인하기」. GitHub 는 가짜 응답으로 바꿔 끼운다 (시험이 실제 GitHub 를 부르지 않게).
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { closingIssues, loadPr, parsePrUrl, patchLines, PrError, type Fetch } from './pr.ts';
+import { runCheck } from './check.ts';
+import { extractRequirements } from '../src/requirements.ts';
+import { setLang } from '../src/i18n.ts';
+
+test('PR addresses: full URL with a tab, short form, and things that are not a PR', () => {
+  assert.deepEqual(parsePrUrl('https://github.com/MrLesk/Backlog.md/pull/1205/files'), { owner: 'MrLesk', repo: 'Backlog.md', number: 1205 });
+  assert.deepEqual(parsePrUrl(' github.com/o/r/pull/7?w=1 '), { owner: 'o', repo: 'r', number: 7 });
+  assert.deepEqual(parsePrUrl('o/r#12'), { owner: 'o', repo: 'r', number: 12 });
+  assert.equal(parsePrUrl('https://github.com/o/r/issues/7'), null);
+  assert.equal(parsePrUrl('https://gitlab.com/o/r/-/merge_requests/7'), null);
+  assert.equal(parsePrUrl(''), null);
+});
+
+test('changed lines come from the patch, closing issues from the PR text', () => {
+  assert.deepEqual(patchLines('@@ -1,3 +1,4 @@\n a\n-b\n+B\n+C\n c\n@@ -10,2 +11,2 @@\n x\n-y\n+Y\n\\ No newline at end of file'), [2, 3, 12]);
+  assert.equal(patchLines(undefined), null);
+  const ref = { owner: 'o', repo: 'r', number: 9 };
+  assert.deepEqual(closingIssues('Closes #3, fixes other/lib#4 and resolves https://github.com/o/r/issues/5. Also closes #3. See #6.', ref), [
+    { owner: 'o', repo: 'r', number: 3 },
+    { owner: 'other', repo: 'lib', number: 4 },
+    { owner: 'o', repo: 'r', number: 5 },
+  ]);
+});
+
+test('PR templates: process checklists and "I have …" lines are not requirements; prose under Expected behavior is', () => {
+  const pr = [
+    '## Summary',
+    'Unknown statuses now exit 1.',
+    '## Related Issue or Task',
+    'Closes #1181. Task: BACK-801',
+    '## Task Checklist',
+    '- [x] I have created a corresponding task',
+    '- [x] The task has clear acceptance criteria',
+    '## Testing',
+    '- Added a CLI regression test',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(pr), []);
+  assert.deepEqual(extractRequirements('- [x] I have read the guide\n- [ ] I\'ve added tests\n- A locked account cannot log in\n- Lock the account after 5 failures'), ['A locked account cannot log in', 'Lock the account after 5 failures']);
+  const issue = '**Describe the bug**\n\nIt exits 0.\n\n**Expected behavior**\n\nAn unknown status value exits non-zero with an error naming the valid statuses. An empty list must mean "no tasks in that status".\n\n**Environment**\n\n- OS: Linux';
+  assert.deepEqual(extractRequirements(issue), ['An unknown status value exits non-zero with an error naming the valid statuses', 'An empty list must mean "no tasks in that status"']);
+  // 한국어 「체크리스트」는 요구사항 칸으로 그대로 읽는다
+  assert.deepEqual(extractRequirements('## 체크리스트\n- [ ] 연속 5회 실패하면 계정을 잠근다\n'), ['연속 5회 실패하면 계정을 잠근다']);
+});
+
+const LOGIN = "export function onFailedLogin(user: { failures: number; locked: boolean }) {\n  user.failures += 1;\n  if (user.failures > 5) user.locked = true;\n}\n";
+const LOGIN_TEST = (n: number) => `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { onFailedLogin } from '../src/login.ts';\n\ntest('locks the account after 5 consecutive failures', () => {\n  const u = { failures: 0, locked: false };\n  for (let i = 0; i < ${n}; i++) onFailedLogin(u);\n  assert.equal(u.locked, true);\n});\n`;
+
+/** 가짜 GitHub. 부른 주소를 모은다 */
+function fakeGitHub(over: Record<string, () => Response> = {}) {
+  const calls: { url: string; headers?: Record<string, string> }[] = [];
+  const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200, headers: { 'content-type': 'application/json' } });
+  const routes: Record<string, () => Response> = {
+    'https://api.github.com/repos/o/r/pulls/9': () => json({
+      title: 'Lock accounts', html_url: 'https://github.com/o/r/pull/9', state: 'open', merged_at: null,
+      body: 'Adds the lockout. Closes #3.\n\n## Checklist\n- [x] I have added tests',
+      head: { sha: 'h1', repo: { full_name: 'fork/r' } }, base: { sha: 'b1', repo: { full_name: 'o/r' } },
+    }),
+    'https://api.github.com/repos/o/r/issues/3': () => json({ number: 3, title: 'Lockout', html_url: 'https://github.com/o/r/issues/3', body: '## Acceptance criteria\n- Lock the account after 5 consecutive failures\n' }),
+    'https://api.github.com/repos/o/r/pulls/9/files?per_page=100&page=1': () => json([
+      { filename: 'src/login.ts', status: 'modified', patch: '@@ -1,3 +1,4 @@\n export function onFailedLogin(user: { failures: number; locked: boolean }) {\n   user.failures += 1;\n+  if (user.failures > 5) user.locked = true;\n }' },
+      { filename: 'test/login.test.ts', status: 'renamed', previous_filename: 'test/auth.test.ts', patch: '@@ -1 +1 @@\n-a\n+b' },
+      { filename: 'README.md', status: 'modified' },
+      { filename: 'dist/login.js', status: 'modified' },
+      { filename: 'src/old.ts', status: 'removed' },
+      { filename: 'src/huge.ts', status: 'added' },
+    ]),
+    'https://api.github.com/repos/o/r/compare/b1...h1?per_page=1': () => json({ merge_base_commit: { sha: 'm1' } }),
+    'https://raw.githubusercontent.com/fork/r/h1/src/login.ts': () => new Response(LOGIN),
+    'https://raw.githubusercontent.com/fork/r/h1/test/login.test.ts': () => new Response(LOGIN_TEST(6)),
+    'https://raw.githubusercontent.com/o/r/m1/test/auth.test.ts': () => new Response(LOGIN_TEST(5)),
+    'https://raw.githubusercontent.com/fork/r/h1/src/huge.ts': () => new Response('x'.repeat(500_000)),
+    ...over,
+  };
+  const fetchImpl: Fetch = async (url, init) => {
+    calls.push({ url, headers: init?.headers });
+    const r = routes[url];
+    return r ? r() : new Response('not found', { status: 404 });
+  };
+  return { calls, fetchImpl };
+}
+
+test('a public PR is read from GitHub: requirements from the closed issue, changed code, and the test file before the change', async () => {
+  setLang('en');
+  const gh = fakeGitHub();
+  const pr = await loadPr('https://github.com/o/r/pull/9', gh.fetchImpl);
+  assert.equal(pr.title, 'Lock accounts');
+  // 이슈의 목록이 먼저, PR 글에는 목록이 없어(체크리스트는 절차) 제목을 쓴다
+  assert.deepEqual(pr.requirements, ['Lock the account after 5 consecutive failures', 'Lock accounts']);
+  assert.deepEqual(pr.sources, ['issue #3', 'PR #9 title']);
+  assert.deepEqual(Object.keys(pr.files).sort(), ['src/login.ts', 'test/login.test.ts']);
+  assert.deepEqual(Object.keys(pr.baseFiles), ['test/login.test.ts'], 'the renamed test is read under its old name and kept under the new one');
+  assert.deepEqual(pr.changed['src/login.ts'], [3]);
+  assert.deepEqual(pr.skipped.map((s) => `${s.path}:${s.why}`), ['dist/login.js:generated', 'README.md:not-code', 'src/huge.ts:too-large', 'src/old.ts:removed']);
+  assert.equal(pr.totalFiles, 6);
+  // GitHub 공개 주소 두 곳만, 토큰 없이 부른다
+  assert.ok(gh.calls.every((c) => /^https:\/\/(api\.github\.com|raw\.githubusercontent\.com)\//.test(c.url)));
+  assert.ok(gh.calls.every((c) => !c.headers || !Object.keys(c.headers).some((k) => /authorization/i.test(k))));
+  assert.ok(gh.calls.length <= 9, `${gh.calls.length} requests`);
+
+  // 같은 엔진으로 판정: 6번째에 잠그는 코드는 「다름」, 검사의 5 → 6 바뀜도 보인다
+  const res = runCheck({ requirements: '- R1: Lock the account after 5 consecutive failures', fileName: '', code: '', tests: [], lang: 'en', files: pr.files, baseFiles: pr.baseFiles, changed: pr.changed });
+  assert.equal(res.rows[0].overall, '다름');
+  assert.equal(res.rows[0].file, 'src/login.ts');
+  assert.equal(res.rows[0].line, 3);
+  assert.ok(res.notes.every((n) => n.file === 'src/login.ts'));
+  assert.match(res.rows[0].chain.find((s) => s.kind === 'test')?.text ?? '', /5 → 6/);
+});
+
+test('readable failures: not found, rate limit, no code, bad address', async () => {
+  const kind = async (p: Promise<unknown>) => {
+    try {
+      await p;
+      return 'ok';
+    } catch (e) {
+      return e instanceof PrError ? e.kind : 'other';
+    }
+  };
+  assert.equal(await kind(loadPr('https://github.com/o/private/pull/1', fakeGitHub().fetchImpl)), 'not-found');
+  const limited = fakeGitHub({ 'https://api.github.com/repos/o/r/pulls/9': () => new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1795000000' } }) });
+  try {
+    await loadPr('o/r#9', limited.fetchImpl);
+    assert.fail('should throw');
+  } catch (e) {
+    assert.ok(e instanceof PrError && e.kind === 'rate-limit');
+    assert.equal(e.resetAt?.getTime(), 1795000000 * 1000);
+  }
+  const docs = fakeGitHub({ 'https://api.github.com/repos/o/r/pulls/9/files?per_page=100&page=1': () => new Response(JSON.stringify([{ filename: 'README.md', status: 'modified' }])) });
+  assert.equal(await kind(loadPr('o/r#9', docs.fetchImpl)), 'no-code');
+  assert.equal(await kind(loadPr('not a pr', fakeGitHub().fetchImpl)), 'bad-url');
+  const offline: Fetch = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+  assert.equal(await kind(loadPr('o/r#9', offline)), 'network');
+});

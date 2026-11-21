@@ -37,6 +37,10 @@ export function parseRequirements(md: string): Requirement[] {
 
 const SECTION = /(acceptance\s*criteria|requirements?|definition\s*of\s*done|expected\s*behaviou?r|요구\s*사항|인수\s*조건|완료\s*조건|수용\s*기준|기대\s*동작|해야\s*할\s*일|체크\s*리스트)/i;
 const MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|된다|must|should|shall|when |if |needs? to|able to|cannot|can't)/i;
+// PR 양식의 절차 칸: 무엇을 만들지가 아니라 PR 을 올린 사람이 한 일이다 (공개 PR 「Task Checklist」에서 찾음, 11/22)
+const PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review/i;
+// 「I have created a task」 · 「I've added tests」: 올린 사람의 확인 문장
+const AUTHOR_ITEM = /^(?:I(?:'ve|'m|'d)\b|I\s+(?:have|has|am|did|added|ran|tested|updated|created|confirm(?:ed)?|agree|read|followed|checked|made|wrote|signed|performed|reviewed|verified|included|linked)\b|we(?:'ve|\s+have)\s|저는\s|제가\s)/i;
 
 /**
  * 이슈 · PR · 메신저에서 복사한 글에서 요구사항 후보 문장을 뽑는다 (규칙 기반, AI 없음).
@@ -56,20 +60,31 @@ export function extractRequirements(md: string, max = 12): string[] {
   const bullets: string[] = [];
   const sentences: string[] = [];
   let section = false;
+  let process = false;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('>') || /^notes?\s*:/i.test(line)) continue;
     const head = line.match(/^(#{1,6})\s+(.*)$/) ?? line.match(/^\*\*(.+?)\*\*:?$/) ?? line.match(/^([^-*\d].{0,40}):$/);
     if (head) {
-      section = SECTION.test(head[2] ?? head[1]);
+      const title = (head[2] ?? head[1]).trim();
+      section = SECTION.test(title);
+      // 「체크리스트」는 한국어 요구사항 칸으로도 쓰므로, 요구사항 칸 이름이 함께 있으면 절차 칸으로 보지 않는다
+      process = !section && PROCESS_SECTION.test(title);
       continue;
     }
+    if (process) continue;
     const item = line.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/);
     if (item) {
       const t = clean(item[1]);
+      if (AUTHOR_ITEM.test(t)) continue;
       (section ? inSection : bullets).push(t);
-    } else if (MODAL.test(line)) {
-      for (const part of line.split(/(?<=[.。!?])\s+/)) if (MODAL.test(part)) (section ? inSection : sentences).push(clean(part));
+    } else if (section || MODAL.test(line)) {
+      // 「Expected behavior」 같은 요구사항 칸 안의 줄글은 「must」 같은 말이 없어도 한 문장씩 후보로 쓴다
+      for (const part of line.split(/(?<=[.。!?])\s+/)) {
+        if (/[:：]$/.test(part.trim()) || AUTHOR_ITEM.test(part.trim())) continue;
+        if (section) inSection.push(clean(part));
+        else if (MODAL.test(part)) sentences.push(clean(part));
+      }
     }
   }
   const pool = inSection.length ? inSection : bullets.length >= 2 ? bullets : [...bullets, ...sentences];

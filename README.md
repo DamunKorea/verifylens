@@ -4,7 +4,7 @@
 
 [한국어 README](README.ko.md)
 
-**[Try it in your browser →](https://damunkorea.github.io/verifylens/)** No install. Paste a requirement and some code; nothing leaves the page.
+**[Try it in your browser →](https://damunkorea.github.io/verifylens/)** No install. Paste a requirement and some code; nothing leaves the page. Or paste the address of a public GitHub pull request: your browser reads its description, the issues it closes and the changed files from GitHub, and the page checks them (tests are not run there).
 
 The AI says "Done, all requirements implemented", and **every test passes.** The requirement can still be unmet.
 

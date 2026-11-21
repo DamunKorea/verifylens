@@ -8,7 +8,19 @@ import type { Overall } from '../src/types.ts';
 import { allLenses, attemptDots, attemptLines, chainSteps, setLang, treeModel, verifiedLine, wOverall, type ChainStep, type Lang } from '../vscode/src/model.ts';
 
 export type TryTest = { name: string; status: 'pass' | 'fail' };
-export type TryInput = { requirements: string; fileName: string; code: string; tests: TryTest[]; lang: Lang };
+export type TryInput = {
+  requirements: string;
+  fileName: string;
+  code: string;
+  tests: TryTest[];
+  lang: Lang;
+  /** GitHub PR 을 읽었을 때: 바뀐 코드 파일들 (있으면 fileName · code 대신 쓴다) */
+  files?: Record<string, string>;
+  /** 갈라진 지점의 검사 파일 (바뀐 검사를 보려고) */
+  baseFiles?: Record<string, string>;
+  /** 파일마다 PR 이 바꾼 줄 */
+  changed?: Record<string, number[] | null>;
+};
 export type TryRow = {
   id: string;
   text: string;
@@ -16,6 +28,8 @@ export type TryRow = {
   verdict: string;
   reason: string;
   summary: string;
+  /** 근거 줄이 있는 파일 (파일이 여럿일 때 그 파일을 연다) */
+  file: string | null;
   line: number | null;
   where: string;
   detail: string;
@@ -28,7 +42,7 @@ export type TryRow = {
   /** 시도 횟수 점 그림 (요구사항과 코드가 몇 번째에 동작하는가) */
   dots: { max: number; required: number; at: number } | null;
 };
-export type TryNote = { line: number; endLine: number; reqId: string; overall: Overall; severity: 'ok' | 'warn' | 'info'; head: string; note: string };
+export type TryNote = { file: string; line: number; endLine: number; reqId: string; overall: Overall; severity: 'ok' | 'warn' | 'info'; head: string; note: string };
 export type TryResult = { headline: string; rows: TryRow[]; notes: TryNote[]; requirementLines: string[] };
 
 /**
@@ -63,9 +77,9 @@ export function runCheck(input: TryInput): TryResult {
   setLang(input.lang);
   const requirementLines = normalizeRequirements(input.requirements);
   const reqs = parseRequirements(requirementLines.join('\n'));
-  const file = codeFileName(input.fileName);
+  const files = input.files ?? { [codeFileName(input.fileName)]: input.code };
   const tests = input.tests.filter((t) => t.name.trim()).map((t) => ({ name: t.name.trim(), status: t.status, message: '' }));
-  const set = analyzeFiles({ key: 'A', ref: 'try', sha: 'try', files: { [file]: input.code }, tests });
+  const set = analyzeFiles({ key: 'A', ref: 'try', sha: 'try', files, tests, baseFiles: input.baseFiles, changed: input.changed });
   const report = evaluate([set], reqs, '.', 'try');
   const rows = treeModel(report).map((r): TryRow => {
     const child = r.children[0];
@@ -78,6 +92,7 @@ export function runCheck(input: TryInput): TryResult {
       verdict: wOverall(r.overall),
       reason: r.reason,
       summary: r.summary,
+      file: child?.file ?? null,
       line: child?.line ?? null,
       where: child?.label ?? '',
       detail: child?.detail ?? '',
@@ -91,6 +106,6 @@ export function runCheck(input: TryInput): TryResult {
       })(),
     };
   });
-  const notes = allLenses(report).map((l) => ({ line: l.line, endLine: l.endLine, reqId: l.reqId, overall: l.overall, severity: l.severity, head: l.head, note: l.note }));
+  const notes = allLenses(report).map((l) => ({ file: l.file, line: l.line, endLine: l.endLine, reqId: l.reqId, overall: l.overall, severity: l.severity, head: l.head, note: l.note }));
   return { headline: reqs.length ? verifiedLine(report, input.lang) : '', rows, notes, requirementLines };
 }

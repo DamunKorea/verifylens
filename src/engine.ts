@@ -102,10 +102,23 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
 }
 
 /** 파일 내용만으로 결과 하나를 만든다 (git 없이). 시험과 사례 묶음에서 쓴다. */
-export function analyzeFiles(o: { key: 'A' | 'B'; ref: string; sha: string; files: Record<string, string>; tests?: TestCase[]; /** 기준 커밋의 파일 (검사 파일을 견줄 때) */ baseFiles?: Record<string, string> }): ResultSet {
+export function analyzeFiles(o: {
+  key: 'A' | 'B';
+  ref: string;
+  sha: string;
+  files: Record<string, string>;
+  tests?: TestCase[];
+  /** 기준 커밋의 파일 (검사 파일을 견줄 때) */
+  baseFiles?: Record<string, string>;
+  /** 파일마다 바뀐 줄 (없거나 null 이면 파일 전체를 바뀐 것으로 본다). 체험 페이지가 GitHub PR 의 diff 로 준다 */
+  changed?: Record<string, number[] | null>;
+}): ResultSet {
   const analyses = Object.entries(o.files)
     .filter(([f]) => CODE_EXT.test(f) && !TEST_FILE.test(f))
-    .map(([f, text]) => analyzeFile(f, text, null));
+    .map(([f, text]) => {
+      const lines = o.changed?.[f];
+      return analyzeFile(f, text, lines ? new Set(lines) : null);
+    });
   resolveRefs(analyses, (f) => o.files[f] ?? null, Object.keys(o.files));
   const testEdits: TestEdit[] = [];
   if (o.baseFiles) {

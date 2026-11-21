@@ -35,7 +35,7 @@ jobs:
           npm ci
           npm ci --prefix vscode
       - name: Check the examples
-        run: node --test web/check.test.ts
+        run: node --test web/check.test.ts web/pr.test.ts
       - name: Build
         run: node web/build.mjs
       - uses: actions/upload-pages-artifact@v5
