@@ -118,6 +118,9 @@ function onlyOnce(text: string, m: RegExpMatchArray): boolean {
   return m[1] === '한' && /^\s*번만/.test(text.slice(m.index! + m[0].length)) && !WINDOW.test(text);
 }
 
+/** 알림 · 안내를 보내는 요구사항 (그 날짜에 보낸다는 말이지, 그 이상이라는 말이 아니다) */
+const NOTIFY_CUE = /\b(?:remind(?:er|ers|s|ed)?|notif(?:y|ies|ied|ication|ications)|alert|e-?mail(?:s|ed)?|sends?|sent|messages?)\b|알림|안내|알려|보낸|보내|발송|문자/i;
+
 function makeConstraint(text: string, value: number, start: number, end: number): Constraint | null {
   const head = text.slice(Math.max(0, start - 30), start);
   const { unit, unitText, rest, skip } = readUnit(text.slice(end));
@@ -128,6 +131,10 @@ function makeConstraint(text: string, value: number, start: number, end: number)
   if (/\bafter\s*$/i.test(head)) rel = unit === 'cnt' ? 'count' : 'after';
   // 「6자리」 · 「6 digits」 · 「정확히 6」은 그 값과 같아야 한다
   if ((!rel || rel === 'value') && (/(?:정확히|exactly)\s*$/i.test(head) || /^\s*(?:자리|digits?\b)/i.test(text.slice(end)))) rel = 'eq';
+  // 「만료 3일 전에 알림을 보낸다」 · 「a reminder 3 days before the trial ends」: 그때 한 번 보내는 날이다 (이상이 아니다)
+  // (「링크는 보낸 지 1시간 뒤 만료된다」처럼 뒤 · after 에 만료가 함께 있으면 유효 기간이므로 그대로 둔다)
+  const notifyAfter = /^\s*(?:after\b|뒤에|후에)/i.test(rest);
+  if (!rel && unit && unit !== 'cnt' && unit !== 'qty' && NOTIFY_CUE.test(text) && /^\s*(?:전에|전(?=[^까가-힣]|$)|before\b|after\b|뒤에|후에)/i.test(rest) && (!notifyAfter || !/expir|만료|유효|valid/i.test(text))) rel = 'eq';
   // 「시작 1시간 전까지」 · 「1 hour before」: 그만큼 앞서야 한다
   if (!rel && unit && /^\s*(?:전까지|전에|before\b|in advance\b|ahead\b)/i.test(rest)) rel = 'gte';
   // 「14 days after signup」: 그만큼 지난 뒤
@@ -214,7 +221,9 @@ export function parseConstraints(text0: string): Constraint[] {
     if (/[A-Za-z]$/.test(text.slice(0, m.index)) || inRange(m.index!)) continue;
     add(makeConstraint(text, readNumber(m as RegExpExecArray), m.index!, m.index! + m[0].length));
   }
-  for (const m of text.matchAll(NATIVE_RE)) if (!onlyOnce(text, m)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
+  // 「두 번 예약할 수 없다」는 횟수 2가 아니라 두 번째를 막으라는 말이다 (중복 막기)
+  const twiceForbidden = (m: RegExpMatchArray) => /^두\s*번\s*(?:[가-힣]+\s*){0,2}?(?:수\s*없|못\s)/.test(text.slice(m.index));
+  for (const m of text.matchAll(NATIVE_RE)) if (!onlyOnce(text, m) && !twiceForbidden(m)) add(makeConstraint(text, NATIVE[m[1]], m.index!, m.index! + m[0].length));
   for (const m of text.matchAll(WORD_RE)) add(makeConstraint(text, WORDS[m[1].toLowerCase()], m.index!, m.index! + m[0].length));
   // 「at most twice a month」 · 「up to three times」의 twice · thrice 는 횟수다. 앞말(at most · up to · only)이 있을 때만 제한으로 본다
   for (const m of text.matchAll(/\b(twice|thrice)\b/gi)) {

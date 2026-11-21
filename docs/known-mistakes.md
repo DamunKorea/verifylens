@@ -10,6 +10,9 @@ Most of these were found by writing new cases ourselves or by trying VerifyLens 
 
 | Fixed in | What happened before |
 |---|---|
+| 0.18.0 | A check on another state was Verified: for "orders that have started shipping cannot be cancelled", code that blocks only `'delivered'` (so a shipping order can still be cancelled). The same for `'rejected'` against "only approved posts can be published" and `'refunded'` against "paid orders cannot be deleted". |
+| 0.18.0 | "A gift card can be redeemed only once" was Verified for `if (!card) throw new Error('NOT_FOUND')`: the word "found" in the error name was read as "already there". Error names now count only strong words (already, taken, duplicate, exists, used), and not after NOT_. Found on the first run of the last batch; fixed before release. |
+| 0.18.0 | With keywords, widening which tests are linked made a lockout test ("locks the account after 5 consecutive failures") verify "a locked account cannot log in". This appeared while 0.18.0 was being made; the change was taken back. |
 | 0.17.0 | In a file named for the requirement (`signup.ts`), the email check in `subscribe` made "sign-up rejects an invalid email" Verified while `signup` checks nothing. Found by our promotion team on the try page, not a user report. |
 | 0.17.0 | "~할 수 없다" was not read as a rejection rule, so for "만료된 쿠폰은 선물할 수 없다" a gift function without the check was Verified when the apply function had one. |
 | 0.17.0 | A shared check counted for every feature: `assertValidEmail` called only by `subscribe` verified "registration rejects an invalid email". |
@@ -41,6 +44,7 @@ Most of these were found by writing new cases ourselves or by trying VerifyLens 
 
 | Fixed in | What happened before |
 |---|---|
+| 0.18.0 | "Trial users get a reminder 3 days before the trial ends" was read as "at least 3 days", so `daysLeft === 3` was Different. A reminder or email N days before or after is now read as that day. A deadline ("2시간 전까지") and an expiry after sending stay as they were. |
 | 0.17.0 | A count kept in a variable before adding (`const count = await db.comment.count(…)`, then `count >= 10`, then `create`) was read as including the new one, so correct code for "at most 10 a day" was Different. |
 | 0.17.0 | A first rule for time windows matched too widely and made "3하루로 설정됨" false alarms in older sets. It was replaced before release. |
 | 0.15.0 | Without keywords, a 5,000 won flat coupon was compared with a 50,000 won free-shipping line in another file. |
@@ -62,6 +66,10 @@ These stay Not verified, or show a weaker evidence line. Add `| keywords: ...` t
 - Without keywords, a rate limit can be linked to a retry file, and English sentences sometimes pick a weaker evidence line.
 - A time window written another way than a time difference, a calendar check (`isSameDay`, `getMonth() ===`), `startOfDay` / `subHours`, or a name such as `today` / `recent`.
 - "Once a day" written as a list filtered to today (`today.length >= 1`) stays Not verified.
+- Rounding (`Math.floor` vs `Math.round`) is not judged, and a rate written inline (`total * 0.01`) is not read as "1%".
+- Times of day ("밤 10시부터 아침 8시 전까지") are not read.
+- A check on another state or role (`'delivered'` for "shipping started", `'viewer'` for "only the owner") is Not verified, not Different.
+- "Two bookings that overlap in time" is read as a duplicate rule, but an overlap check (`b.start < end && start < b.end`) is not recognised as one yet.
 - With keywords, a check in the right function stays Not verified when the keywords do not cover the test name.
 - class-validator decorators other than the format checks, `@Length`, `@MinLength` / `@MaxLength` and `@Min` / `@Max`.
 - Formulas are judged only for a fixed-amount branch (`if`, a ternary, `switch` or an object of functions named `fixed` / `flat` / `amount`). Other formulas are not judged.
@@ -87,6 +95,9 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 
 | 고친 판 | 전에 있던 일 |
 |---|---|
+| 0.18.0 | 다른 상태를 보는 조건이 「확인됨」: 「배송이 시작된 주문은 취소할 수 없다」에 `'delivered'` 만 막는 코드(배송 중에는 취소됨). 「승인된 글만 공개」에 `'rejected'` 만 막기, 「결제가 끝난 주문은 삭제할 수 없다」에 `'refunded'` 만 막기도 같았음 |
+| 0.18.0 | 「기프트 카드는 한 번만 쓸 수 있다」에 `if (!card) throw new Error('NOT_FOUND')` 가 「확인됨」: 오류 이름의 found 를 「이미 있음」으로 읽음. 이제 오류 이름에서는 강한 낱말(already · taken · duplicate · exists · used)만, NOT_ 뒤가 아닐 때만 셈. 마지막 묶음 첫 결과에서 찾아 공개 전에 고침 |
+| 0.18.0 | 키워드가 있을 때 검사 잇기를 넓혔더니 잠금 검사(「5번 실패하면 잠근다」)가 「잠긴 계정은 로그인할 수 없다」를 「확인됨」으로 만듦. 0.18.0 을 만들던 중 생겼고 그 변경을 되돌림 |
 | 0.17.0 | 요구사항 이름의 파일(`signup.ts`) 안에서 `subscribe` 의 이메일 검사로, `signup` 은 검사하지 않는데 「이메일이 틀리면 가입 거부」가 「확인됨」. 우리 홍보 세션이 체험 페이지에서 찾음(사용자 제보 아님) |
 | 0.17.0 | 「~할 수 없다」를 막는 규칙으로 읽지 못해, 「만료된 쿠폰은 선물할 수 없다」에 검사 없는 선물 함수가 쿠폰 적용 함수의 검사 때문에 「확인됨」 |
 | 0.17.0 | 함께 쓰는 검사 함수를 모든 기능의 근거로 씀: `subscribe` 만 부르는 `assertValidEmail` 로 「가입 시 잘못된 이메일 거부」가 「확인됨」 |
@@ -118,6 +129,7 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 
 | 고친 판 | 전에 있던 일 |
 |---|---|
+| 0.18.0 | 「체험 종료 3일 전에 알림」을 「3일 이상」으로 읽어 `daysLeft === 3` 을 「다름」. 이제 알림 · 메일을 N일 전 · 뒤에 보낸다는 말은 그날로 읽음. 마감(「2시간 전까지」)과 보낸 뒤 만료는 그대로 |
 | 0.17.0 | 더하기 전에 변수에 담은 개수(`const count = await db.comment.count(…)` 뒤 `count >= 10`, 그다음 `create`)를 새것까지 센 값으로 읽어, 「하루 10개까지」의 맞는 코드를 「다름」 |
 | 0.17.0 | 처음 만든 시간 창 규칙이 너무 넓게 걸려 예전 묶음에 「3하루로 설정됨」 거짓 경보가 생김. 공개 전에 바꿈 |
 | 0.15.0 | 키워드 없이 쓰면 5,000원 정액 쿠폰을 다른 파일의 5만 원 무료 배송 줄과 견줌 |
@@ -139,6 +151,10 @@ VerifyLens 는 LLM 이 아니라 규칙으로 판단해서, 규칙을 고치기 
 - 키워드 없이 쓰면 요청 횟수 제한이 재시도 파일에 이어질 수 있고, 영어 문장에서 근거 줄을 덜 맞게 고를 때가 있음
 - 시각 차이 · 달력 비교(`isSameDay` · `getMonth() ===`) · `startOfDay` / `subHours` · `today` / `recent` 같은 이름이 아닌 다른 방법으로 쓴 시간 창
 - 오늘 것만 거른 목록으로 쓴 「하루에 한 번」(`today.length >= 1`)은 「미확인」으로 남음
+- 반올림(`Math.floor` · `Math.round`)은 판단하지 않고, 식 안의 비율(`total * 0.01`)은 「1%」로 읽지 않음
+- 하루 중 시각(「밤 10시부터 아침 8시 전까지」)은 읽지 않음
+- 다른 상태 · 역할을 보는 조건(「배송 시작」에 `'delivered'`, 「소유자만」에 `'viewer'`)은 「다름」이 아니라 「미확인」
+- 「겹치는 시간에 두 번 예약할 수 없다」는 중복 막기로 읽지만, 겹침 검사(`b.start < end && start < b.end`)는 아직 그 검사로 알아보지 못함
 - 키워드가 검사 이름을 덮지 못하면, 맞는 함수에 검사가 있어도 「미확인」으로 남음
 - class-validator 데코레이터 가운데 형식 검사 · `@Length` · `@MinLength` / `@MaxLength` · `@Min` / `@Max` 가 아닌 것
 - 계산식은 정액 갈래(`if` · 삼항식 · `switch` · `fixed` / `flat` / `amount` 라는 이름의 함수 객체)만 판단함. 다른 계산식은 판단하지 않음

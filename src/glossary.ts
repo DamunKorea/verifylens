@@ -46,6 +46,8 @@ const GLOSSARY: [RegExp, string][] = [
   [/\d+\s*자리/, 'digit length'],
   [/약관/, 'terms term agreement'],
   [/한\s*번만|하나만|\bonly once\b|\bonly one\b/i, 'unique exists duplicate taken'],
+  // 「같은 시간에 두 번 예약할 수 없다」는 2번까지가 아니라 두 번째를 막으라는 뜻이다
+  [/두\s*번\s*(?:[가-힣]+\s*){0,2}?(?:수\s*없|못\s)/, 'unique exists duplicate taken'],
   [/거부|거절|차단|막는|막아|금지/, 'reject deny block forbid refuse'],
   [/허용|허락/, 'allow permit'],
   [/만료|유효\s*기간|기한/, 'expire expired expiry expiration ttl'],
@@ -56,6 +58,10 @@ const GLOSSARY: [RegExp, string][] = [
   [/\d+\s*시간/, 'hour ms sec'],
   [/활동이?\s*없|유휴/, 'idle inactive'],
   [/활성/, 'active enable enabled activate'],
+  // 상태 낱말 (status === 'canceled' · 'approved' · 'paid' 같은 조건과 견준다)
+  [/취소/, 'cancel canceled cancelled'],
+  [/승인/, 'approve approved'],
+  [/결제\s*(?:가|를|이)?\s*(?:끝난|완료|된)|결제된|입금\s*(?:된|완료)/, 'paid'],
   [/비활성|정지|중지/, 'inactive disable disabled suspend deactivate'],
   // 횟수 · 시간 · 한도
   [/연속|반복|거듭/, 'consecutive repeated repeat streak'],
@@ -104,7 +110,10 @@ const GLOSSARY: [RegExp, string][] = [
   // 금액을 말하면 코드에서는 amount · price · total 같은 이름으로 나온다 (10만 원을 넘는 환불 ↔ amount > 100000)
   [/\d[\d,]*\s*(?:만|천|백)?\s*원|[$₩]\s*\d|\d\s*(?:dollars?|won|usd|krw)\b/i, 'amount price total fee cost'],
   [/재고/, 'stock inventory'],
-  [/배송/, 'shipping delivery ship'],
+  // 「배송이 시작된」은 발송(shipped), 「배송 완료」는 도착(delivered)이다. 둘을 섞으면 delivered 만 보는 조건이 「배송 시작」의 근거가 된다
+  [/배송\s*(?:이|을|가)?\s*(?:시작|출발|중)|발송|출고/, 'ship shipping dispatch'],
+  [/배송\s*(?:이|을|가)?\s*완료|배달\s*(?:이|을|가)?\s*완료|도착/, 'deliver delivered delivery'],
+  [/배송(?!\s*(?:이|을|가)?\s*(?:시작|출발|중|완료))/, 'shipping delivery ship'],
   // 글 · 화면
   [/댓글/, 'comment reply'],
   [/게시|글\s*(?:쓰|작성)/, 'post article'],
@@ -199,6 +208,8 @@ export function normalizePhrases(text: string): string {
     .replace(/\bsign(?:s|ed|ing)?[\s-]+up\b/gi, 'signup')
     // 「Registration rejects …」 ↔ register()
     .replace(/\bregistrations?\b/gi, 'register')
+    // 「can be used only once」 ↔ 「using the same link twice」
+    .replace(/\b(?:using|uses|used)\b/gi, 'use')
     .replace(/\bcheck(?:s|ed|ing)?[\s-]+out\b/gi, 'checkout')
     .replace(/\btime(?:s|d)?[\s-]+out\b/gi, 'timeout');
 }

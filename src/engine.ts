@@ -188,7 +188,7 @@ const FIXED_MONEY = /할인|쿠폰|금액|discount|coupon|voucher|amount|\boff\b
 const TWICE_TEST = /twice|second|again|duplicat|already|only (?:one|once)|more than once|\bused\b|reus|re-us|redeemed|consumed|retr(?:y|ied|ies|ying)|resen[dt]|repeat|same key|두\s*번|중복|이미|다시|반복|한\s*번만|하나만|사용한|사용된|재사용/i;
 const isUniqueReq = (req: Requirement) => !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE));
 /** 「이미 있으면」을 보는 조건의 낱말: if (existing) · if (prev) return prev · if (seen.has(id)) */
-const DUP_GUARD = new Set(['uniqu', 'exist', 'duplicat', 'taken', 'prev', 'previou', 'already', 'seen', 'done', 'processed', 'found'].map(stem));
+const DUP_GUARD = new Set(['uniqu', 'exist', 'duplicat', 'taken', 'prev', 'previou', 'already', 'seen', 'done', 'processed', 'found', 'used', 'consumed', 'redeemed', 'claimed'].map(stem));
 /**
  * 설정값은 이름이 전부다. 이름(또는 그 값을 정한 문장)에 요구사항의 대상 낱말이 있어야 한다.
  * 요구사항이 「배송」비를 말하면 RETURN_FEE(반품비)는 같은 대상이 아니고, 「포인트」 적립률이면 TAX_RATE 는 아니다.
@@ -206,6 +206,41 @@ function configNamed(req: Requirement, f: Found): boolean {
  * 이름에서 이것만 겹치면, 그 줄이 든 함수 · 문장이 요구사항의 대상을 말할 때만 같은 대상으로 본다.
  * (LOCK_MINUTES = 15 와 「로그인 토큰은 15분 뒤 만료」, canRejoin 의 daysSinceLeft 와 「세션은 7일 뒤 만료」, 가입 양식의 age.min(14) 와 「무료 체험은 14일」)
  */
+const ERROR_TEXT = /\b(?:Error|Exception|[A-Z]\w*(?:Error|Exception))\s*\(\s*('[^']*'|"[^"]*"|`[^`]*`)/g;
+/** 오류 이름에서 「이미 있음」을 말하는 강한 낱말 (ALREADY_REFUNDED · EMAIL_TAKEN · DUPLICATE). found · done 처럼 약한 낱말은 세지 않는다 */
+const STRONG_DUP = new Set(['already', 'duplicat', 'duplicate', 'taken', 'exist', 'exists', 'used', 'redeemed', 'consumed', 'claimed', 'uniqu', 'conflict'].map(stem));
+/**
+ * 조건이 「이미 있는지」를 보는가: 코드 낱말(오류 글 밖)이 중복 낱말이거나, 오류 이름이 강한 중복 낱말을 말한다.
+ * throw new Error('NOT_FOUND') 의 found 는 「이미 찾았으면」이 아니다 (0.18.0 첫 결과에서 찾음). NOT_ · NO_ 뒤의 낱말도 세지 않는다.
+ */
+function dupSignal(text: string, dupWords: Set<string>): boolean {
+  if (tokenize(text.replace(ERROR_TEXT, 'Error(')).some((t) => dupWords.has(t))) return true;
+  for (const m of text.matchAll(ERROR_TEXT)) {
+    const words = tokenize(m[1].replace(/['"`]/g, '').replace(/_/g, ' '));
+    if (words.some((w, i) => STRONG_DUP.has(w) && !['not', 'no', 'non'].includes(words[i - 1] ?? ''))) return true;
+  }
+  return false;
+}
+/** 상태 · 역할 칸을 글자와 견주는 조건: order.status === 'delivered' · 'owner' !== member.role */
+const STATE_LIT = /([A-Za-z_.]*(?:status|state|stage|phase|role|plan|tier))\s*[!=]==?\s*['"`]([\w-]+)['"`]|['"`]([\w-]+)['"`]\s*[!=]==?\s*([A-Za-z_.]*(?:status|state|stage|phase|role|plan|tier))\b/gi;
+const IRREGULAR: Record<string, string> = { paid: 'pay', sent: 'send', sold: 'sell' };
+/**
+ * 조건이 견주는 상태(delivered)가 요구사항이 말하는 상태(배송 시작 = shipped)와 다르면 다른 상태를 보는 조건이다.
+ * (0.17.0 뒤 새 업무 영역 사례: 「배송이 시작된 주문은 취소할 수 없다」에 delivered 만 막는 코드가 「확인됨」)
+ */
+function stateMismatch(req: Requirement, text: string): boolean {
+  const lits: string[] = [];
+  for (const m of text.matchAll(STATE_LIT)) lits.push(m[2] ?? m[3]);
+  if (!lits.length) return false;
+  const words = [...new Set([...req.tokens, ...req.concepts.flat()])].filter((w) => w.length >= 3);
+  const near = (a: string, b: string) => {
+    const k = Math.min(a.length, b.length, 5);
+    return k >= 3 && a.slice(0, k) === b.slice(0, k);
+  };
+  const litWords = lits.flatMap((l) => tokenize(l)).map((w) => IRREGULAR[w] ?? w);
+  return !litWords.some((w) => words.some((r) => near(w, r) || near(IRREGULAR[r] ?? r, w)));
+}
+
 /** 요구사항의 대상 낱말 (일반 낱말 · 시간 낱말 빼고). 키워드를 줬어도 문장의 낱말(「리뷰를 쓸 수 없다」의 write)을 함께 본다 */
 const subjectOf = (req: Requirement) => new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t)));
 /** 이름(함수 · 파일)에 든 요구사항 낱말. 함수 이름에 든 낱말을 파일 이름에만 든 낱말보다 두 배로 친다 */
@@ -306,7 +341,8 @@ function judgeConstraints(req: Requirement, units: Unit[]): { b: Boundary; u: Un
     const others = all
       .filter((f) => !used.has(f.p) && fitsUnit(c, f.p) && (sameTarget(req, f) || timeDiffTarget(req, c, f)) && (f.p.op !== '!==' || c.rel === 'eq') && (f.p.op !== '===' || c.rel === 'eq' || f.p.source === 'config'))
       // length > 0 처럼 비었는지 보는 조건은 이 숫자와 상관없다 (0.7 같은 비율은 빼지 않는다)
-      .filter((f) => f.p.lit === undefined || f.p.source === 'loop' || c.unit === 'pct' || !(Math.abs(f.p.lit) <= 1 && c.value >= 3))
+      // (「정확히 그날」을 말하는 요구사항의 daysLeft === 1 은 빈 값 검사가 아니라 다른 날이다)
+      .filter((f) => f.p.lit === undefined || f.p.source === 'loop' || c.unit === 'pct' || (c.rel === 'eq' && f.p.op === '===') || !(Math.abs(f.p.lit) <= 1 && c.value >= 3))
       .filter((f) => f.p.lit === undefined || sameThing(c, f.p) || timeDiffTarget(req, c, f))
       .sort((a, b) => Number(b.p.lit !== undefined) - Number(a.p.lit !== undefined) || rank(b) - rank(a));
     if (others[0]) take(c, others[0]);
@@ -404,6 +440,18 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
   }
   // 근거 줄은 판정한 숫자 조건이 있는 줄로 맞춘다
   let unit = worst?.u ?? best!.u;
+  // 확인하는 조건이 있어야 하는 요구사항(만 · must · 거부)인데 근거가 함수 전체이면, 그 함수 안에서 요구사항 낱말을 말하는 막는 조건이 근거다
+  // (키워드 「gallery, type」 ↔ uploadToGallery 안의 !['image/png', 'image/jpeg'].includes(file.type)). 아래 「다른 기능 함수」 규칙이 그 조건에도 그대로 걸린다
+  if (!judged.length && unit.kind === 'function' && req.needsCheck && !isUniqueReq(req)) {
+    const words = new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t)));
+    const fnWords = new Set(tokenize(unit.fn ?? ''));
+    const host = unit;
+    const inner = units
+      .filter((u) => u.kind === 'condition' && u.guard && u.file === host.file && u.fn === host.fn && tokenize(u.text).some((t) => words.has(t) && !fnWords.has(t)))
+      .map((u) => ({ u, score: scoreUnit(req, u).score }))
+      .sort((a, b) => b.score - a.score)[0];
+    if (inner) unit = inner.u;
+  }
   // 막는 조건이 요구사항이 말하는 기능이 아닌 다른 함수에 있으면 근거가 아니다 (X 에서 받은 버그:
   // 「잘못된 이메일이면 가입 거부」 ↔ 가입은 검사하지 않고 newsletter 의 subscribe 만 이메일을 검사).
   // 요구사항의 낱말을 이름(함수 · 파일)에 가진 다른 함수가 있으면 그쪽을 근거로 두고 「일부 발견」으로 둔다.
@@ -459,7 +507,8 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
   // 중복 막기(한 번만 · 하나만)인데 근거가 함수 전체이면, 그 함수 안의 「이미 있으면」 조건(if (existing) return existing)이 근거다
   if (!judged.length && unit.kind === 'function' && isUniqueReq(req)) {
     const dupWords = new Set([...(req.concepts.find((g) => g.includes(UNIQUE)) ?? []), ...DUP_GUARD]);
-    const inner = units.find((u) => u.kind === 'condition' && u.guard && u.file === unit.file && u.startLine >= unit.startLine && u.endLine <= unit.endLine && u.tokens.some((t) => dupWords.has(t)));
+    // 조건 글자만 본다. 줄 낱말에는 함수 이름(redeem)이 섞여 있어 if (!card) throw 도 「이미 썼으면」으로 읽혔다 (0.18.0 첫 결과에서 찾음)
+    const inner = units.find((u) => u.kind === 'condition' && u.guard && u.file === unit.file && u.startLine >= unit.startLine && u.endLine <= unit.endLine && dupSignal(u.text, dupWords));
     if (inner) {
       unit = inner;
       dupInner = true;
@@ -480,7 +529,14 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
   // (「상품 리뷰는 한 사람당 하나만」 ↔ 다른 파일의 if (items.length > 100) return 400)
   const notDuplicateCheck =
     !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE)) && unit.kind === 'condition' && (unit.cond?.parts ?? []).some((p) => p.lit !== undefined && Math.abs(p.lit) > 1);
-  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
+  // 상태 · 역할 글자를 견주는 조건이 요구사항이 말하는 상태와 다른 상태를 본다 (delivered ↔ 배송 시작 · viewer ↔ owner 만)
+  const otherState = !judged.length && unit.kind === 'condition' && stateMismatch(req, unit.text);
+  // 「한 번만 · 하나만」(중복 막기)인데 근거 조건이 이미 있는지를 보지 않으면(if (!t) throw) 중복 막기가 아니다
+  // (0.18.0 을 만들던 중 「재설정 링크는 한 번만」에 usedAt 확인이 없는 코드가 「확인됨」이 될 뻔함)
+  const dupWords = new Set([...(req.concepts.find((g) => g.includes(UNIQUE)) ?? []), ...DUP_GUARD]);
+  const notDupGuard =
+    isUniqueReq(req) && !dupInner && unit.kind === 'condition' && !dupSignal(unit.text, dupWords) && !/\.(?:some|includes|has|find|findFirst|findUnique|indexOf|exists?|count)\s*\(/.test(unit.text);
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
   // 「잘못된 이메일은 거부」인데 바뀐 스키마가 그 칸을 검사 없이 받으면(email: z.string()) 다른 곳의 검사로 확인됐다고 하지 않는다 (X 에서 받은 버그)
   const words = new Set(req.tokens);
   const unchecked =
@@ -596,6 +652,8 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
     const negOk = (t: TestCase) => !req.guardCue || NEGATIVE_TEST.test(t.name);
     // 「3번까지」의 경계 검사(a fourth … is rejected)는 서수가 숫자 하나 몫을 한다
     const edge = (t: TestCase) => (boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) ? 1 : 0);
+    // (키워드 하나 + 요구사항 문장 낱말 하나로 잇는 것은 0.18.0 을 만들며 해 봤다가 되돌렸다:
+    //  「잠긴 계정은 맞는 비밀번호로도 로그인할 수 없다」에 「5번 실패하면 잠근다」 검사가 이어져 「확인됨」이 됐다)
     return tests.filter((t) => sameRule(t) || agrees(t) || (twiceOk(t) && negOk(t) && limitOk(t) && new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size + edge(t) >= need));
   }
   // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.

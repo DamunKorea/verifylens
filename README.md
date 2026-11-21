@@ -148,6 +148,7 @@ The code is analyzed on the runner and is not sent anywhere. The same check runs
 - **Not verified** does not stop the agent unless you add `--fail-on different,failed,unverified`.
 - The requirements file is `.verifylens/requirements.md` in the project (`--requirements` to change). A project without one is skipped, so the hook can also go in your user settings.
 - `--junit report.xml` adds test results. A report older than the code is ignored.
+- **Tests that failed must be run again.** The names of failed tests are kept inside the git folder (`.git/verifylens-failed-tests.json`, never committed). After the code changes, if a new report does not include them, or the report is older than the code, they are reported as not run again. The hook asks the agent once to run those tests again, and a Failed requirement lists its failed tests by name. A test that passes is removed from the list. (The idea came from a comment on X: before calling a bug fixed, re-run the exact step that failed.)
 
 Below, `/path/to/verifylens` is the folder where you cloned and installed VerifyLens (see [Quick start](#quick-start)). Use forward slashes on Windows too, and quote the path if it has spaces.
 

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSampleRepo } from '../../src/demo.ts';
@@ -146,6 +146,50 @@ test('ci --hook cursor: follow-up message once; stays quiet without code changes
   uncommitted(null);
   const clean = run({ hook: 'cursor', requirements: wt.reqFile }, { status: 'completed', loop_count: 0, workspace_roots: [wt.repo] });
   assert.deepEqual([clean.code, clean.out], [0, '{}']);
+});
+
+test('ci: tests that failed before must be run again after the code changes (hook asks once)', () => {
+  // X 의견: 「고쳤다고 하면 원래 실패하던 단계를 그대로 다시 돌리게 한다」
+  setLang('en');
+  uncommitted('b');
+  const dir = mkdtempSync(join(tmpdir(), 'vl-rerun-'));
+  const report = join(dir, 'junit.xml');
+  const lockName = 'locks the account after 5 consecutive failures';
+  const xml = (cases: string) => `<?xml version="1.0"?>\n<testsuites><testsuite name="t">${cases}</testsuite></testsuites>\n`;
+  const pass = (n: string) => `<testcase name="${n}" classname="t"/>`;
+  const fail = (n: string) => `<testcase name="${n}" classname="t"><failure message="expected locked"/></testcase>`;
+  const state = join(wt.repo, '.git', 'verifylens-failed-tests.json');
+  rmSync(state, { force: true });
+  try {
+    // 1) 새 결과에 실패한 검사가 있으면 적어 둔다
+    writeFileSync(report, xml(pass('login succeeds with the right password') + fail(lockName)));
+    run({ repo: wt.repo, base: 'main', worktree: 'true', requirements: wt.reqFile, junit: report });
+    assert.deepEqual(JSON.parse(readFileSync(state, 'utf8')).tests, [lockName]);
+    // 실패한 요구사항이면 훅이 실패한 검사 이름을 짚어 다시 돌리라고 한다
+    const failedHook = run({ hook: 'claude', requirements: wt.reqFile, junit: report }, { stop_hook_active: false, cwd: wt.repo });
+    assert.match(JSON.parse(failedHook.out).reason, /Failed tests \(run them again after the fix\): "locks the account after 5 consecutive failures"/);
+    // 2) 코드가 바뀐 뒤 그 결과가 오래됐으면 훅이 한 번 「그 검사를 다시 돌려라」고 돌려보낸다
+    const old = new Date(Date.now() - 3_600_000);
+    utimesSync(report, old, old);
+    const hook = run({ hook: 'claude', requirements: wt.reqFile, junit: report }, { stop_hook_active: false, cwd: wt.repo });
+    const reason = JSON.parse(hook.out).reason as string;
+    assert.match(reason, /tests that failed before were not run again after the code changed: "locks the account after 5 consecutive failures"/);
+    // 3) 새 결과가 다른 검사만 돌렸으면 아직 다시 돌리지 않은 것이다
+    writeFileSync(report, xml(pass('login succeeds with the right password')));
+    const partial = run({ repo: wt.repo, base: 'main', worktree: 'true', requirements: wt.reqFile, junit: report });
+    assert.match(partial.out, /were not run again/);
+    // 4) 그 검사가 통과하면 알리고 목록에서 지운다
+    writeFileSync(report, xml(pass('login succeeds with the right password') + pass(lockName)));
+    const passed = run({ repo: wt.repo, base: 'main', worktree: 'true', requirements: wt.reqFile, junit: report });
+    assert.match(passed.out, /Tests that failed before pass now: "locks the account after 5 consecutive failures"/);
+    assert.equal(existsSync(state), false);
+    // 테스트 결과 파일을 주지 않으면 아무것도 적지 않는다
+    run({ repo: wt.repo, base: 'main', worktree: 'true', requirements: wt.reqFile });
+    assert.equal(existsSync(state), false);
+  } finally {
+    rmSync(state, { force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('ci: usage errors are 2 in CI and 1 in a hook (2 would tell Claude Code to keep going)', () => {

@@ -9,16 +9,21 @@
 //   고치라는 말을 돌려준다 (Claude Code: {"decision":"block"}, Cursor: {"followup_message"}).
 //   한 번 돌려보낸 뒤에도 그대로면 더 막지 않고 사람에게만 알린다 (종료 코드 1). 끝없이 돌지 않게 하려는 것이다.
 //   훅에서는 표준 출력을 에이전트에게 주는 JSON 에만 쓰고, 알림은 표준 오류로 보낸다. 요구사항별 줄은 쓰지 않는다.
-import { appendFileSync, existsSync, readFileSync, statSync } from 'node:fs';
+// 실패했던 검사를 다시 돌렸는가 (X 의견: 「고쳤다고 하면 원래 실패하던 단계를 그대로 다시 돌리게 한다」):
+//   작업 폴더를 볼 때 --junit 을 주면, 실패한 검사 이름을 git 폴더 안(.git/verifylens-failed-tests.json)에 적어 둔다.
+//   코드가 바뀐 뒤 새 결과에 그 검사가 없거나(일부만 돌림) 결과가 코드보다 오래됐으면 「다시 돌리지 않음」으로 알리고,
+//   훅에서는 에이전트에게 한 번 그 검사를 다시 돌리라고 돌려보낸다. 통과하면 목록에서 지운다.
+import { appendFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { analyzeResult, evaluate } from './engine.ts';
 import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from './git.ts';
 import { parseRequirements } from './requirements.ts';
+import { parseTestReport } from './tests.ts';
 import { testPointsLine } from './testpoints.ts';
 import { undecidedReasons } from './summary.ts';
 import { undecidedLabel } from './numeric.ts';
 import { L, wOverall } from './i18n.ts';
-import type { Overall, ReqSummary } from './types.ts';
+import type { Overall, Report, ReqSummary, TestCase } from './types.ts';
 import { allLenses, prSummary, summaryLine } from '../vscode/src/model.ts';
 import type { Lens } from '../vscode/src/model.ts';
 
@@ -107,8 +112,10 @@ const mtime = (p: string) => {
 
 const slash = (p: string) => p.split('\\').join('/');
 
-/** 에이전트에게 돌려줄 말: 어긋난 요구사항, 이유, 근거 줄. */
-function agentMessage(blocking: ReqSummary[], why: (s: ReqSummary) => string, lenses: Lens[], reqPath: string): string {
+const quoteList = (names: string[]) => names.map((n) => `"${n}"`).join(', ');
+
+/** 에이전트에게 돌려줄 말: 어긋난 요구사항, 이유, 근거 줄, 실패한 검사 이름. */
+function agentMessage(blocking: ReqSummary[], why: (s: ReqSummary) => string, lenses: Lens[], reqPath: string, report: Report): string {
   const lines = [
     L(`VerifyLens: 코드가 ${reqPath} 의 요구사항 ${blocking.length}개와 맞지 않습니다.`, `VerifyLens: the code does not match ${blocking.length} requirement(s) in ${reqPath}.`),
   ];
@@ -117,6 +124,9 @@ function agentMessage(blocking: ReqSummary[], why: (s: ReqSummary) => string, le
     lines.push(`- ${s.req.id} · ${wOverall(s.overall)}: ${s.req.text}`);
     const detail = [why(s), lens ? `${lens.file}:${lens.line}` : ''].filter(Boolean).join(' — ');
     if (detail) lines.push(`  ${detail}`);
+    // 실패한 검사는 이름으로 짚는다. 고친 뒤 바로 그 검사를 다시 돌려야 고쳤다고 할 수 있다
+    const failed = (report.sets[0]?.perReq[s.req.id]?.tests ?? []).filter((t) => t.status === 'fail').map((t) => t.name);
+    if (failed.length) lines.push(`  ${L('실패한 검사(고친 뒤 다시 돌릴 것)', 'Failed tests (run them again after the fix)')}: ${quoteList(failed)}`);
     // 테스트도 같은 착각으로 쓰지 않게, 요구사항의 숫자에서 뽑은 경계값을 함께 준다
     const points = testPointsLine(s.req);
     if (points) lines.push(`  ${L('경계에서 시험할 값', 'Values to test at the boundary')}: ${points}`);
@@ -128,6 +138,57 @@ function agentMessage(blocking: ReqSummary[], why: (s: ReqSummary) => string, le
     ),
   );
   return lines.join('\n');
+}
+
+/** 전에 실패한 검사를 적어 두는 파일 (git 폴더 안이라 커밋되지 않는다) */
+function failedStatePath(repo: string): string {
+  return resolve(repo, git(repo, ['rev-parse', '--git-path', 'verifylens-failed-tests.json']).trim());
+}
+function readFailedState(file: string): string[] {
+  try {
+    const v: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    const tests = v && typeof v === 'object' ? (v as { tests?: unknown }).tests : undefined;
+    return Array.isArray(tests) ? tests.filter((t): t is string => typeof t === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export type RerunCheck = { notRun: string[]; passedNow: string[] };
+
+/**
+ * 전에 실패한 검사를 다시 돌렸는가.
+ * fresh: 지금 코드보다 새 테스트 결과(없으면 null). staleFailed: 코드보다 오래된 결과에서 실패한 검사.
+ * 다시 돌리지 않은 것 · 아직 실패하는 것은 다음 번을 위해 남기고, 통과한 것은 지운다.
+ */
+export function checkRerun(stateFile: string, fresh: TestCase[] | null, staleFailed: string[]): RerunCheck {
+  const before = readFailedState(stateFile);
+  let notRun: string[];
+  let passedNow: string[] = [];
+  let failingNow: string[] = [];
+  if (!fresh) {
+    notRun = [...new Set([...before, ...staleFailed])];
+  } else {
+    const status = new Map(fresh.map((t) => [t.name, t.status]));
+    notRun = before.filter((n) => !status.has(n));
+    passedNow = before.filter((n) => status.get(n) === 'pass');
+    failingNow = fresh.filter((t) => t.status === 'fail').map((t) => t.name);
+  }
+  const keep = [...new Set([...failingNow, ...notRun])];
+  try {
+    if (keep.length) writeFileSync(stateFile, JSON.stringify({ tests: keep, at: new Date().toISOString() }, null, 2) + '\n');
+    else rmSync(stateFile, { force: true });
+  } catch {
+    // 적어 두지 못해도 이번 검사는 그대로 한다
+  }
+  return { notRun, passedNow };
+}
+
+function rerunMessage(notRun: string[]): string {
+  return L(
+    `VerifyLens: 전에 실패한 검사를 코드가 바뀐 뒤 다시 돌리지 않았습니다: ${quoteList(notRun)}. 그 검사를 다시 돌려 결과를 본 뒤에 끝내세요 (테스트 결과 파일도 새로 써야 합니다).`,
+    `VerifyLens: tests that failed before were not run again after the code changed: ${quoteList(notRun)}. Run them again and look at the result before you finish (the test report must be written again too).`,
+  );
 }
 
 /**
@@ -183,15 +244,26 @@ function check(opts: Record<string, string>, hook: Hook | undefined, input: Reco
     junit = undefined;
   }
   // 작업 폴더를 볼 때, 테스트 결과가 코드보다 오래됐으면 쓰지 않는다 (고치기 전의 「통과」는 지금 코드의 근거가 아니다)
+  // 그 오래된 결과에서 실패한 검사는 「다시 돌려야 할 검사」로 남긴다
+  let staleFailed: string[] = [];
   if (junit && worktree) {
     const newest = Math.max(0, ...worktreeChangedFiles(repo, mergeBase(repo, base)).filter((f) => CODE_EXT.test(f)).map((f) => mtime(join(repo, f))));
     if (mtime(junit) + 1500 < newest) {
       say(L(`테스트 결과가 코드보다 오래돼 쓰지 않습니다: ${junit} (테스트를 다시 돌리세요)`, `The test report is older than the code, so it is not used: ${junit} (run the tests again)`));
+      try {
+        staleFailed = parseTestReport(readFileSync(junit, 'utf8')).filter((t) => t.status === 'fail').map((t) => t.name);
+      } catch {
+        staleFailed = [];
+      }
       junit = undefined;
     }
   }
   const set = analyzeResult({ key: 'A', repo, base, ref: worktree ? 'HEAD' : head, junit, worktree });
   const report = evaluate([set], reqs, repo, base);
+  // 실패했던 검사를 다시 돌렸는가 (작업 폴더 · 훅에서 테스트 결과 파일을 줄 때만)
+  const rerun = worktree && opts.junit ? checkRerun(failedStatePath(repo), junit ? set.tests : null, staleFailed) : { notRun: [], passedNow: [] };
+  if (rerun.notRun.length) say(rerunMessage(rerun.notRun));
+  if (rerun.passedNow.length) say(L(`전에 실패한 검사가 이제 통과합니다: ${quoteList(rerun.passedNow)}`, `Tests that failed before pass now: ${quoteList(rerun.passedNow)}`));
   if (!set.analyses.length) {
     say(
       worktree
@@ -231,8 +303,9 @@ function check(opts: Record<string, string>, hook: Hook | undefined, input: Reco
     );
     return blocking.length ? 1 : 0;
   }
-  if (!blocking.length) return pass();
-  const message = agentMessage(blocking, why, lenses, slash(relative(dir, reqFile)));
+  // 어긋난 요구사항도, 다시 돌리지 않은 실패 검사도 없으면 통과
+  if (!blocking.length && !rerun.notRun.length) return pass();
+  const message = [blocking.length ? agentMessage(blocking, why, lenses, slash(relative(dir, reqFile)), report) : '', rerun.notRun.length ? rerunMessage(rerun.notRun) : ''].filter(Boolean).join('\n\n');
   // 이미 한 번 돌려보낸 뒤라면 더 막지 않고 사람에게만 알린다
   const retried = hook === 'claude' ? input.stop_hook_active === true : Number(input.loop_count ?? 0) >= 1;
   if (retried) {

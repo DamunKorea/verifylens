@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30, allRows, score } from './cases/run.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -23,7 +23,7 @@ test('unseen cases with keywords: every verdict is the expected one', () => {
 });
 
 test('without keywords nothing wrong is called verified, and nothing right is called different', () => {
-  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28]) {
+  for (const cases of [CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30]) {
     const s = score(allRows(false, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -32,7 +32,7 @@ test('without keywords nothing wrong is called verified, and nothing right is ca
 
 // 이 두 묶음은 일부러 다 맞히게 고치지 않는다. 남은 「미확인」은 알려진 한계로 둔다.
 test('the latest unseen batches never call wrong code verified when keywords are given', () => {
-  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28]) {
+  for (const cases of [HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30]) {
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
@@ -397,4 +397,39 @@ test('a check belongs to the functions that call it or use its setting', () => {
   const svc = (inCart: boolean) => `export class CartService {\n  add(item: { stock: number }) {\n${inCart ? "    if (item.stock <= 0) throw new Error('OUT_OF_STOCK');\n" : ''}    return cart.push(item);\n  }\n}\nexport class WishlistService {\n  add(item: { stock: number }) {\n${inCart ? '' : "    if (item.stock <= 0) throw new Error('OUT_OF_STOCK');\n"}    return wishlist.push(item);\n  }\n}\n`;
   assert.equal(many('재고가 없는 상품은 장바구니에 담을 수 없다', { 'src/services.ts': svc(false) }, '재고가 없는 상품을 장바구니에 담으면 거부한다').overall, '미확인');
   assert.equal(many('재고가 없는 상품은 장바구니에 담을 수 없다', { 'src/services.ts': svc(true) }, '재고가 없는 상품을 장바구니에 담으면 거부한다').overall, '확인됨');
+});
+
+test('a check on another state or role is not evidence (shipped vs delivered, owner vs viewer)', () => {
+  const cancel = (states: string[]) => `export function cancelOrder(order: { status: string }) {\n  if (${states.map((s) => `order.status === '${s}'`).join(' || ')}) throw new Error('ALREADY_SHIPPED');\n  order.status = 'canceled';\n}\n`;
+  const t = '배송이 시작된 주문의 취소는 거부한다';
+  assert.equal(many('배송이 시작된 주문은 취소할 수 없다', { 'src/order.ts': cancel(['shipped', 'delivered']) }, t).overall, '확인됨');
+  assert.notEqual(many('배송이 시작된 주문은 취소할 수 없다', { 'src/order.ts': cancel(['delivered']) }, t).overall, '확인됨');
+  const del = (cond: string) => `export function deleteProject(member: { role: string }, id: string) {\n  if (${cond}) throw new Error('FORBIDDEN');\n  return projects.remove(id);\n}\n`;
+  assert.equal(many('Only the owner can delete a project', { 'src/project.ts': del("member.role !== 'owner'") }, 'a non-owner cannot delete a project').overall, '확인됨');
+  assert.notEqual(many('Only the owner can delete a project', { 'src/project.ts': del("member.role === 'viewer'") }, 'a non-owner cannot delete a project').overall, '확인됨');
+});
+
+test('a reminder N days before or after is that day, and "cannot do twice" is a duplicate rule', () => {
+  const remind = (n: number) => `export function needsReminder(daysLeft: number) {\n  return daysLeft === ${n};\n}\n`;
+  const req = 'Trial users get a reminder 3 days before the trial ends';
+  assert.deepEqual(parseConstraints(req).map((c) => [c.value, c.unit, c.rel]), [[3, 'day', 'eq']]);
+  assert.equal(many(req, { 'src/trial.ts': remind(3) }, 'sends a reminder 3 days before the trial ends').overall, '확인됨');
+  assert.equal(many(req, { 'src/trial.ts': remind(1) }, 'sends a reminder 3 days before the trial ends').overall, '다름');
+  // 마감(「전까지」)과 보낸 뒤 만료는 그대로 기간이다
+  assert.deepEqual(parseConstraints('모임 시작 2시간 전까지만 참가를 취소할 수 있다').map((c) => c.rel), ['gte']);
+  assert.notEqual(parseConstraints('Email verification links expire 24 hours after they are sent')[0].rel, 'eq');
+  // 「두 번 예약할 수 없다」는 2번까지가 아니다
+  assert.deepEqual(parseConstraints('같은 회의실은 겹치는 시간에 두 번 예약할 수 없다'), []);
+  const vote = (check: boolean) => `export function vote(poll: { voters: string[] }, userId: string) {\n${check ? "  if (poll.voters.includes(userId)) throw new Error('ALREADY_VOTED');\n" : ''}  poll.voters.push(userId);\n}\n`;
+  assert.equal(many('같은 투표에 두 번 투표할 수 없다', { 'src/poll.ts': vote(true) }, '같은 투표에 두 번째 투표는 거부한다').overall, '확인됨');
+  assert.equal(many('같은 투표에 두 번 투표할 수 없다', { 'src/poll.ts': vote(false) }, '같은 투표에 두 번째 투표는 거부한다').overall, '미확인');
+});
+
+test('"only once" needs a check that looks at whether it was already used; an error named NOT_FOUND is not one', () => {
+  const card = (used: boolean) => `export function redeem(card: { redeemedAt: Date | null } | null) {\n  if (!card) throw new Error('NOT_FOUND');\n${used ? "  if (card.redeemedAt) throw new Error('ALREADY_REDEEMED');\n" : ''}  card.redeemedAt = new Date();\n}\n`;
+  const req = 'A gift card code can be redeemed only once';
+  const t = 'redeeming the same gift card twice is rejected';
+  assert.equal(many(req, { 'src/giftcard.ts': card(true) }, t).overall, '확인됨');
+  assert.equal(many(`${req} | keywords: gift, redeem`, { 'src/giftcard.ts': card(false) }, t).overall, '미확인');
+  assert.equal(many(req, { 'src/giftcard.ts': card(false) }, t).overall, '미확인');
 });

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.18.0
+
+Re-run the tests that failed, and checks on the wrong state. The re-run idea came from a comment on X; the verdict fixes were found by writing cases in areas we had not covered (order states, roles, reminders, single-use codes, bookings). None are user reports.
+
+- **Tests that failed must be run again.** With `--junit`, `ci --worktree` and the agent hooks keep the names of failed tests inside the git folder (`.git/verifylens-failed-tests.json`, never committed). After the code changes, if a new report does not include them, or the report is older than the code, they are named as not run again, and the hook asks the agent once to run them. A Failed requirement lists its failed tests by name. A test that passes is removed from the list.
+- **A check on another state is not evidence.** "Orders that have started shipping cannot be cancelled" with code that blocks only `'delivered'` is no longer Verified. The same goes for roles (`'viewer'` against "only the owner"). Korean state words are read: 배송 시작 (shipped) and 배송 완료 (delivered) are told apart; 취소, 승인 and 결제 완료 (paid) are known.
+- **A reminder N days before or after is that day.** "A reminder 3 days before the trial ends" is `daysLeft === 3`, not "at least 3 days". Deadlines ("2시간 전까지") and expiry after sending are unchanged.
+- **"두 번 예약할 수 없다" is a duplicate rule**, not a limit of two.
+- **"Only once" needs a check that looks at whether it was already used** (`usedAt`, `redeemedAt`, `includes`, `some`, an error named `ALREADY_…`). `if (!card) throw new Error('NOT_FOUND')` is not one.
+- **How often it says Not verified** is now in [docs/benchmark.md](https://github.com/DamunKorea/verifylens/blob/main/docs/benchmark.md), as asked on X: not an accuracy number, the split of the three verdicts.
+- **How far to trust it.** On 20 cases in new areas written before the changes, 0.17.0 gave the expected verdict for 9 with keywords and 10 without, calling wrong code Verified once each and correct code Different once each. On the 20 cases written after the changes, 0.17.0 gave 10 and 9 with 3 wrong Verified each and one false alarm without keywords; the first run of 0.18.0 gave 12 and 15 with 1 wrong Verified each (a gift card check named `NOT_FOUND`), fixed before release. On the way, widening which tests are linked with keywords made a lockout test verify "a locked account cannot log in"; that change was taken back. All 845 cases run with the tests and none gets a wrong verdict. In the older sets 3 verdicts got better and none got worse. The fixed open-source set is unchanged.
+- Still not read: rounding, times of day ("밤 10시"), and an overlap check for bookings. A check on another state is Not verified rather than Different.
+
 ## 0.17.0
 
 Whose check it is, decorators, time windows and count limits. One wrong Verified in 0.16.0 was found by our own promotion team on the try page; the rest were "not read yet" items in 0.16.0, found by writing new cases ourselves. None are user reports.
