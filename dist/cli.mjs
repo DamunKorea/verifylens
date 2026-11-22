@@ -5175,9 +5175,14 @@ var HELP = `VerifyLens \u2014 \uCF54\uB4DC\uB294 \uC774 PC \uBC16\uC73C\uB85C \u
 
   node src/cli.ts check   (\uC5D4\uC9C4 \uC810\uAC80: \uC0D8\uD50C \uACB0\uACFC\uB97C \uD45C\uB85C \uCD9C\uB825)
 `;
+function systemLang() {
+  const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || "";
+  const loc = /^(C|POSIX)?(\.|$)/i.test(env) ? Intl.DateTimeFormat().resolvedOptions().locale : env;
+  return /^ko/i.test(loc) ? "ko" : "en";
+}
 async function main(argv) {
   const { cmd, opts } = args(argv);
-  const lang = opts.lang ?? process.env.VERIFYLENS_LANG;
+  const lang = opts.lang ?? process.env.VERIFYLENS_LANG ?? systemLang();
   if (lang === "en" || lang === "ko") setLang(lang);
   if (cmd === "extract") {
     if (!opts["pr-body"]) throw new Error(L("--pr-body \uD30C\uC77C\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.", "--pr-body <file> is required."));

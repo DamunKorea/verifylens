@@ -77,10 +77,18 @@ const HELP = `VerifyLens — 코드는 이 PC 밖으로 나가지 않습니다 (
   node src/cli.ts check   (엔진 점검: 샘플 결과를 표로 출력)
 `;
 
+/** 이 컴퓨터의 언어 (LC_ALL · LANG, 없거나 C 면 Intl). 한국어가 아니면 영어 */
+function systemLang(): 'en' | 'ko' {
+  const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
+  const loc = /^(C|POSIX)?(\.|$)/i.test(env) ? Intl.DateTimeFormat().resolvedOptions().locale : env;
+  return /^ko/i.test(loc) ? 'ko' : 'en';
+}
+
 export async function main(argv: string[]) {
   const { cmd, opts } = args(argv);
-  // 글의 언어: --lang en|ko, 없으면 환경 변수 VERIFYLENS_LANG, 둘 다 없으면 한국어.
-  const lang = opts.lang ?? process.env.VERIFYLENS_LANG;
+  // 글의 언어: --lang en|ko, 없으면 환경 변수 VERIFYLENS_LANG, 둘 다 없으면 이 컴퓨터의 언어(한국어가 아니면 영어).
+  // (전에는 늘 한국어여서, npx 로 처음 돌린 해외 사용자에게 한국어 도움말이 나왔다)
+  const lang = opts.lang ?? process.env.VERIFYLENS_LANG ?? systemLang();
   if (lang === 'en' || lang === 'ko') setLang(lang);
   if (cmd === 'extract') {
     if (!opts['pr-body']) throw new Error(L('--pr-body 파일이 필요합니다.', '--pr-body <file> is required.'));
