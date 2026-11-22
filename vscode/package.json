@@ -2,7 +2,7 @@
   "name": "verifylens",
   "displayName": "VerifyLens",
   "description": "See per requirement whether an AI-generated change is verified, different, or not yet verified — linked to code lines and the tests that ran. Local, no LLM.",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "publisher": "damun",
   "license": "MIT",
   "icon": "media/icon.png",

@@ -59,6 +59,8 @@ Someone on X asked how often VerifyLens ends up saying Not verified. This is not
 
 **On rules it had not seen** (first run of a batch written in new areas, before fixing): of 20 cases with right code, 0.17.0 called 10 Verified with keywords and 11 without; most of the rest were Not verified. On rules of a new kind, expect about half of correct code to stay Not verified at first.
 
+**Since 0.24.0** we worked on that number. On 16 cases with right code, written after the 0.24.0 fix in areas we had not covered (403 and 409 responses, sending and recording, sorting, defaults, a check in another file, Korean sentences), the first run called 15 Verified with keywords and 14 without. 0.23.0 called 14 and 12. In the same batch, wrong code was called Verified twice with keywords and twice without (0.23.0: 4 and 3). Both remaining cases are listed in [known mistakes](known-mistakes.md).
+
 How often it happens on your own code is not known yet. If you try it, we would like to hear which verdicts were wrong.
 
 ---

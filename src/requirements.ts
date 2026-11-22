@@ -9,6 +9,10 @@ const ONLY_CUE = /[가-힣]만(?=\s|$)|\bonly\b/i;
 // 「선물할 수 없다」 · 「로그인할 수 없다」도 막으라는 말이다 (0.17.0 전에는 영어 cannot 만 읽었다)
 const GUARD_CUE = /(않|차단|거부|막|금지|불가|수\s*없|reject|deny|block|forbid|refuse|must not|cannot|can't)/i;
 /** 무엇을 확인하거나 막는 조건이 코드에 있어야 하는 요구사항 (함수 이름만 겹쳐서는 근거가 되지 않는다) */
+/** 「없으면 404」 · 「when the project does not exist」: 없는 경우를 걸러 내는 조건이 코드에 있어야 한다 (0.24.0, 맞는 코드 묶음에서 찾음) */
+const MISSING_CUE = /\b(?:does not|doesn't|do not|don't)\s+exist|\bnot found\b|\bis missing\b|\bno such\b|없으면|존재하지\s*않|찾을\s*수\s*없/i;
+/** 「Return 404 …」 · 「responds with 403」: HTTP 상태 번호는 숫자 조건이 아니라 코드에 그대로 나오는 낱말이다 */
+const HTTP_STATUS = /\b(?:return|returns|respond|responds|response|status|http|with)\s+(?:an?\s+|the\s+|http\s+)?([1-5]\d\d)\b|\b([1-5]\d\d)\s+(?:error|status|response|not found|forbidden|unauthori[sz]ed|conflict)\b/gi;
 const CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있|\bonce\s+(?:per|a|each|for)\b|\bonly once\b|\bonly one\b|한\s*번(?:씩)?만|하나만|중복/i;
 
 export function parseRequirements(md: string): Requirement[] {
@@ -29,8 +33,10 @@ export function parseRequirements(md: string): Requirement[] {
     // 키워드는 「코드에 나오는 영어 낱말」이지만 한국어로 적는 사람도 있다(「| keywords: 실패, 잠금」).
     // 한국어 키워드는 용어집으로 영어 낱말을 함께 쓴다. 그대로면 코드의 failures · locked 와 이어지지 않아 모두 「미확인」이 됐다.
     const kwTokens = keywords.flatMap((k) => (/[가-힣]/.test(k) ? [...conceptsFor(k).flat(), ...tokenize(k)] : tokenize(k)));
-    const tokens = auto ? concepts.flat() : kwTokens;
-    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) });
+    const statuses = [...text.matchAll(HTTP_STATUS)].map((x) => x[1] ?? x[2]);
+    for (const s of statuses) if (!concepts.some((g) => g.includes(s))) concepts.push([s]);
+    const tokens = auto ? concepts.flat() : [...kwTokens, ...statuses];
+    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) || MISSING_CUE.test(text) });
   }
   return reqs;
 }

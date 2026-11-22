@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.24.0
+
+Correct code is called Not verified less often. On a kind of rule VerifyLens had not seen, about half of correct code used to stay Not verified. Someone on X said that is the number they would watch. We wrote new cases of rules that pull requests often carry, and fixed what kept correct code unverified. All of these are our own cases; none is a user report.
+
+- **Tests link more easily, and only where the code agrees.**
+  - A test is linked when its name covers at least half of the requirement's ideas and shares a word with the evidence line. Before, it had to cover two thirds. For example, "writes an audit entry when a role changes" now links to "Every role change is written to the audit log".
+  - With keywords, a test can also be linked through the requirement sentence. It no longer needs two of the keywords.
+  - Korean test names are read through the glossary, so `관리자가 아니면 공지를 올릴 수 없다` links to the keywords `admin, notice`.
+  - When the requirement has numbers that VerifyLens could not judge, the wider linking is not used. Otherwise wrong code would be Verified on words alone.
+- **"Return 404 when …" is read as a check.** The status code is matched in the code (`res.status(404)`). "When … does not exist / is not found" asks for a condition that handles the missing case.
+- **"No activity for 90 days" means at least 90 days.** It used to be read as a value with no direction, so it stayed Not verified.
+- **Sending and recording must actually happen.** For "A welcome email is sent after signup" or "… is written to the audit log", a function counts only if it calls something that sends or records. Before, a `mailer` or `audit` parameter that the function never called was enough for Verified.
+- **How far to trust it.** Same with and without keywords unless noted.
+
+  | Cases | 0.23.0 | 0.24.0 |
+  |---|---|---|
+  | 22 cases (37 verdicts) written before the fix: correct code Verified | 16 and 13 of 22 | 19 and 19 of 22 (seen while fixing) |
+  | 16 cases (29 verdicts) written after the fix: correct code Verified | 14 and 12 of 16 | **first run 15 and 14 of 16** |
+  | the same 16 cases: wrong code called Verified | 4 and 3 | **first run 2 and 2** |
+
+  - The pairs are "with keywords" and "without keywords".
+  - On all earlier cases, 10 verdicts changed. All 10 were correct code that is now Verified, and no other verdict changed.
+- **Still wrong or not read:**
+  - Two wrong Verified remain in the last batch, and 0.23.0 made both too:
+    - "Archived projects are hidden from the project list" with no filter, because the function name matches.
+    - "The audit log keeps the id of the user who changed a setting" when the log entry leaves the user out.
+  - A duration added to a date (`signedUpAt + 14 * DAY_MS`) is not read.
+  - An allow-list kept in a constant (`ALLOWED_TYPES.includes(file.type)`) is not read as the check.
+  - "Stored in lowercase" and "sorted by relevance" can stay Not verified.
+
 ## 0.23.0
 
 The first run on the browser page says more, and a wrong verdict can be reported in two clicks. All of it comes from reading back every reaction we got in Korea and on X: everyone asked how far to trust the verdicts, and nobody has run VerifyLens on their own code yet. No new rule is added, and no verdict changes.

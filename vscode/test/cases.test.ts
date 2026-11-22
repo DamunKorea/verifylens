@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30, HOLDOUT31, HOLDOUT32, HOLDOUT33, HOLDOUT34, HOLDOUT35, HOLDOUT36, HOLDOUT37, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30, HOLDOUT31, HOLDOUT32, HOLDOUT33, HOLDOUT34, HOLDOUT35, HOLDOUT36, HOLDOUT37, HOLDOUT38, HOLDOUT39, allRows, score } from './cases/run.ts';
 import type { EvVariant } from './cases/holdout33.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
@@ -460,4 +460,18 @@ test('"only once" needs a check that looks at whether it was already used; an er
   assert.equal(many(req, { 'src/giftcard.ts': card(true) }, t).overall, '확인됨');
   assert.equal(many(`${req} | keywords: gift, redeem`, { 'src/giftcard.ts': card(false) }, t).overall, '미확인');
   assert.equal(many(req, { 'src/giftcard.ts': card(false) }, t).overall, '미확인');
+});
+
+// 0.24.0: 맞는 코드가 「미확인」으로 남는 것 (국내외 반응 정리 11/22 의 ④). 서른아홉 번째 묶음은 고치기 전에 써서 고치면서 봤고,
+// 마흔 번째 묶음은 고친 뒤 처음 쓴 것이다. 남은 것은 docs/known-mistakes.md 의 한계와 같아야 한다.
+// 마흔 번째 묶음의 틀린 「확인됨」 둘(목록에서 숨기기 · 바꾼 사람 기록)은 0.23.0 에서도 틀렸던 것이다.
+test('correct code is verified more often, without new wrong Verified', () => {
+  assert.deepEqual(wrong(allRows(true, HOLDOUT38)), ['c6-email-case / 소문자로 맞춤: 기대 확인됨, 결과 미확인', 'c14-trial / 14일: 기대 확인됨, 결과 미확인', 'c14-trial / 30일: 기대 다름, 결과 미확인', 'c20-upload / png · jpeg: 기대 확인됨, 결과 미확인']);
+  assert.deepEqual(wrong(allRows(false, HOLDOUT38)), ['c2-password / 10자: 기대 다름, 결과 미확인', 'c6-email-case / 소문자로 맞춤: 기대 확인됨, 결과 미확인', 'c14-trial / 14일: 기대 확인됨, 결과 미확인', 'c14-trial / 30일: 기대 다름, 결과 미확인', 'c20-upload / png · jpeg: 기대 확인됨, 결과 미확인']);
+  assert.deepEqual(wrong(allRows(true, HOLDOUT39)), ['d3-archived / 거르지 않음: 기대 미확인, 결과 확인됨', 'd7-lowercase / toLowerCase: 기대 확인됨, 결과 미확인', 'd16-changed-by / 누가 바꿨는지 빠짐: 기대 미확인, 결과 확인됨']);
+  assert.deepEqual(wrong(allRows(false, HOLDOUT39)), ['d3-archived / 거르지 않음: 기대 미확인, 결과 확인됨', 'd6-relevance / 높은 순: 기대 확인됨, 결과 미확인', 'd7-lowercase / toLowerCase: 기대 확인됨, 결과 미확인', 'd9-upload / 10MB: 기대 다름, 결과 미확인', 'd16-changed-by / 누가 바꿨는지 빠짐: 기대 미확인, 결과 확인됨']);
+  for (const kw of [true, false]) {
+    assert.equal(score(allRows(kw, HOLDOUT38)).falseVerified, 0);
+    assert.equal(score(allRows(kw, HOLDOUT39)).goodVerified, kw ? 15 : 14);
+  }
 });

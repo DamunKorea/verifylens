@@ -1037,6 +1037,8 @@ function makeConstraint(text, value, start, end) {
   const window = !!unit && unit !== "cnt" && unit !== "qty" && (/^\s*(?:에|당)(?![가-힣])/.test(rest) || /\bper\s*$/i.test(head));
   const trigger = !window && (!rel || rel === "value" || rel === "eq") && (/\b(?:when|if|once)\b[^.]*\b(?:is|are|has|have|contains|equals|reaches|hits|becomes)\s*$/i.test(head) || /^\s*(?:이면|일\s*때|이\s*되면|가\s*되면|이\s*될\s*때)/.test(rest));
   if (trigger) rel = "eq";
+  const quietFor = /\b(?:no|without)\s+(?:[a-z]+\s+){0,2}for\s*$/i.test(head) || /\b(?:inactive|idle|unused|dormant|stale)\s+(?:for\s*)?$/i.test(head) || /^\s*(?:동안|간)/.test(rest) && /활동이?\s*없|유휴|접속하지\s*않|사용하지\s*않/.test(text);
+  if ((!rel || rel === "value") && !trigger && !window && unit && unit !== "cnt" && unit !== "qty" && quietFor) rel = "gte";
   if (window) rel = "value";
   if (!rel) {
     if (unit === "cnt") rel = "count";
@@ -1971,6 +1973,11 @@ var init_glossary = __esm({
       [/수량|개수/, "quantity count qty"],
       [/할인율/, "rate"],
       [/관리자/, "admin administrator"],
+      // 0.24.0: 맞는 코드 묶음에서 「관리자만 공지를 올릴 수 있다」 ↔ 「관리자가 아니면 공지를 올릴 수 없다」 검사가 이어지지 않았다
+      [/공지/, "notice announcement"],
+      [/올리|게시|등록하/, "post publish create"],
+      // (영어 password 를 pw 와 잇는 것은 해 봤다가 뺐다: 「Passwords must contain at least one digit」에 길이만 보는
+      //  if (pw.length < 8) throw 가 근거가 되어 숫자 검사가 없는 코드가 「확인됨」이 됐다 — 예전 사례 s-pw-digit)
       [/권한|역할/, "permission role authorize authorization access"],
       [/인증/, "auth authenticate authentication verify verification"],
       [/인증\s*(?:번호|코드)|\botp\b/i, "code otp"],
@@ -2585,7 +2592,9 @@ function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Se
   const condLoose = new Set((unit.condTokens ?? []).map(loose));
   const notThisCheck = !judged.length && (req.guardCue || req.needsCheck) && !dupInner && unit.kind === "condition" && unit.guard && (unit.setTokens ?? []).some((t) => reqWords.has(loose(t)) && !condLoose.has(loose(t)));
   const plainStatement = req.guardCue && !judged.length && !dupInner && unit.kind === "condition" && !unit.guard && !unit.condTokens && !unit.cond?.parts?.some((p) => p.source === "compare");
-  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && !stateUnread && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
+  const reqWordsAll = new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t)));
+  const noAction = !judged.length && !req.needsCheck && unit.kind === "function" && ACTION_REQ.test(normalizePhrases(req.text)) && !(unit.calls ?? []).some((c) => tokenize(c).some((t) => ACTION_VERBS.has(t) || reqWordsAll.has(t)));
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && !stateUnread && !noAction && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
   const words2 = new Set(req.tokens);
   const unchecked = found && !judged.length && (req.guardCue || req.needsCheck) ? fields.find((f) => !f.checked && tokenize(f.name).some((t) => words2.has(t)) && !(f.file === unit.file && f.line >= unit.startLine && f.line <= unit.endLine)) : void 0;
   const perPeriod = PER_PERIOD.test(req.text) && !req.constraints.some((c) => c.window) && req.constraints.some((c) => (c.rel === "lte" || c.rel === "lt") && (c.unit === "cnt" || c.unit === "qty" || c.unit === null));
@@ -2653,17 +2662,11 @@ function mapTests(req, tests, ev) {
   };
   const capReq = req.constraints.some((c) => (c.rel === "lte" || c.rel === "lt") && !c.window && (c.unit === "cnt" || c.unit === "qty" || c.unit === null && PER_PERIOD.test(req.text)));
   const limitOk = (t) => !capReq || NEGATIVE_TEST.test(t.name) || LIMIT_TEST.test(t.name) || namedNumbers(t.name).length > 0;
-  if (!req.auto) {
-    const set = /* @__PURE__ */ new Set([...req.tokens, ...req.numbers.map(String)]);
-    const need = Math.min(2, set.size);
-    const negOk = (t) => !req.guardCue || NEGATIVE_TEST.test(t.name);
-    const edge = (t) => boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) ? 1 : 0;
-    return tests.filter((t) => sameRule(t) || agrees(t) || twiceOk(t) && negOk(t) && limitOk(t) && new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size + edge(t) >= need);
-  }
   const groups = [...req.concepts, ...req.numbers.map((n) => [String(n)])];
   const scope = new Set([...req.text.matchAll(/\b(?:per|each|every)\s+([a-z]+)/gi)].map((m) => stem(m[1].toLowerCase())).filter((s) => !TIME_WORDS.has(s) && !WEAK_NAME.has(s)));
-  return tests.filter((t) => {
-    if (sameRule(t) || agrees(t)) return true;
+  const reqWords = /* @__PURE__ */ new Set([...req.tokens, ...req.concepts.flat()]);
+  const evWords = ev.status === "\uBC1C\uACAC" && ev.unit ? /* @__PURE__ */ new Set([...ev.unit.tokens, ...tokenize(ev.unit.fn ?? "")]) : null;
+  const bySentence = (t) => {
     const names = testWords(t.name);
     if (groups.length < 2 || !twiceOk(t) || !limitOk(t)) return false;
     if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
@@ -2671,8 +2674,20 @@ function mapTests(req, tests, ev) {
     const real = groups.filter((g) => !g.every((x) => FILLER.has(x) || SAME_AGAIN.has(x) || scope.has(x)));
     if (boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) && real.some((g) => !/^\d/.test(g[0]) && g.some((x) => names.has(x)))) return true;
     const covered = real.filter((g) => g.some((x) => names.has(x)) || uniqueSaid && g.includes(UNIQUE)).length;
-    return covered >= 2 && covered / real.length >= 2 / 3;
-  });
+    if (covered < 2) return false;
+    if (covered / real.length >= 2 / 3) return true;
+    const agreesWithCode = !!evWords && [...names].some((x) => reqWords.has(x) && evWords.has(x) && !BROAD.has(x) && !FILLER.has(x));
+    const numbersSettled = !req.numbers.length || settled;
+    return numbersSettled && covered * 2 >= real.length && agreesWithCode;
+  };
+  if (!req.auto) {
+    const set = /* @__PURE__ */ new Set([...req.tokens, ...req.numbers.map(String)]);
+    const need = Math.min(2, set.size);
+    const negOk = (t) => !req.guardCue || NEGATIVE_TEST.test(t.name);
+    const edge = (t) => boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) ? 1 : 0;
+    return tests.filter((t) => sameRule(t) || agrees(t) || twiceOk(t) && negOk(t) && limitOk(t) && new Set([...testWords(t.name)].filter((x) => set.has(x))).size + edge(t) >= need || bySentence(t));
+  }
+  return tests.filter((t) => sameRule(t) || agrees(t) || bySentence(t));
 }
 function editLinked(req, e, mapped, ev) {
   if (mapped.some((t) => sameTestName(t.name, e.full) || sameTestName(t.name, e.title))) return true;
@@ -2734,7 +2749,7 @@ function summarize(req, sets) {
   else overall = "\uBBF8\uD655\uC778";
   return { req, relation, overall, notes };
 }
-var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, NOT_STATE, STATE_LEAD, STATE_WHO, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName;
+var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, ACTION_REQ, ACTION_VERBS, NOT_STATE, STATE_LEAD, STATE_WHO, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName;
 var init_engine = __esm({
   "src/engine.ts"() {
     init_analyze();
@@ -2791,6 +2806,8 @@ var init_engine = __esm({
     STRONG_DUP = new Set(["already", "duplicat", "duplicate", "taken", "exist", "exists", "used", "redeemed", "consumed", "claimed", "uniqu", "conflict"].map(stem));
     STATE_LIT = /([A-Za-z_.]*(?:status|state|stage|phase|role|plan|tier))\s*[!=]==?\s*['"`]([\w-]+)['"`]|['"`]([\w-]+)['"`]\s*[!=]==?\s*([A-Za-z_.]*(?:status|state|stage|phase|role|plan|tier))\b/gi;
     IRREGULAR = { paid: "pay", sent: "send", sold: "sell" };
+    ACTION_REQ = /\b(?:send|sends|sent|e-?mailed|mailed|notif(?:y|ies|ied)|logged|written|writes|recorded|publish(?:es|ed)?|emit(?:s|ted)?|enqueue[sd]?|tracked)\b|보낸다|보내|발송|기록(?:한|된|해|돼|을\s*남)|남긴다|남겨/i;
+    ACTION_VERBS = new Set(["send", "mail", "email", "notify", "notification", "log", "logger", "write", "record", "audit", "publish", "emit", "enqueue", "queue", "track", "dispatch", "post", "push", "alert", "insert", "append", "save"].map(stem));
     NOT_STATE = new Set(["other", "another", "new", "old", "same", "all", "any", "some", "each", "every", "most", "many", "this", "that", "these", "those", "such", "regular", "normal", "single", "first", "last", "second", "third", "current", "existing", "given", "different", "one", "two", "no", "non", "only", "same"].map(stem));
     STATE_LEAD = /^\s*(?:(?:an?|the)\s+)?([a-z]+)\s+[a-z]+(?:\s+[a-z]+)?\s+(?:cannot|can't|can not|may not|must not|should not|must never|can never|(?:is|are) not allowed to)\b/i;
     STATE_WHO = /\b(?:who|that|which)\s+(?:is|are|has been|have been|was|were)\s+(?:already\s+)?([a-z]+)\b/i;
@@ -2846,8 +2863,10 @@ function parseRequirements(md) {
     const auto = !keywords.length;
     const concepts = conceptsFor(text.replace(/(\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten))\s*times?\b/gi, "$1"));
     const kwTokens = keywords.flatMap((k) => /[가-힣]/.test(k) ? [...conceptsFor(k).flat(), ...tokenize(k)] : tokenize(k));
-    const tokens = auto ? concepts.flat() : kwTokens;
-    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) });
+    const statuses = [...text.matchAll(HTTP_STATUS)].map((x) => x[1] ?? x[2]);
+    for (const s of statuses) if (!concepts.some((g) => g.includes(s))) concepts.push([s]);
+    const tokens = auto ? concepts.flat() : [...kwTokens, ...statuses];
+    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) || MISSING_CUE.test(text) });
   }
   return reqs;
 }
@@ -2904,7 +2923,7 @@ function draftRequirements(cands, source = "", start = 1) {
 function extractFromPrBody(md) {
   return draftRequirements(extractRequirements(md));
 }
-var ONLY_CUE, GUARD_CUE, CHECK_CUE, SECTION, MODAL, PROCESS_SECTION, AUTHOR_ITEM;
+var ONLY_CUE, GUARD_CUE, MISSING_CUE, HTTP_STATUS, CHECK_CUE, SECTION, MODAL, PROCESS_SECTION, AUTHOR_ITEM;
 var init_requirements = __esm({
   "src/requirements.ts"() {
     init_tokens();
@@ -2913,6 +2932,8 @@ var init_requirements = __esm({
     init_numeric();
     ONLY_CUE = /[가-힣]만(?=\s|$)|\bonly\b/i;
     GUARD_CUE = /(않|차단|거부|막|금지|불가|수\s*없|reject|deny|block|forbid|refuse|must not|cannot|can't)/i;
+    MISSING_CUE = /\b(?:does not|doesn't|do not|don't)\s+exist|\bnot found\b|\bis missing\b|\bno such\b|없으면|존재하지\s*않|찾을\s*수\s*없/i;
+    HTTP_STATUS = /\b(?:return|returns|respond|responds|response|status|http|with)\s+(?:an?\s+|the\s+|http\s+)?([1-5]\d\d)\b|\b([1-5]\d\d)\s+(?:error|status|response|not found|forbidden|unauthori[sz]ed|conflict)\b/gi;
     CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있|\bonce\s+(?:per|a|each|for)\b|\bonly once\b|\bonly one\b|한\s*번(?:씩)?만|하나만|중복/i;
     SECTION = /(acceptance\s*criteria|requirements?|definition\s*of\s*done|expected\s*behaviou?r|요구\s*사항|인수\s*조건|완료\s*조건|수용\s*기준|기대\s*동작|해야\s*할\s*일|체크\s*리스트)/i;
     MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|된다|must|should|shall|when |if |needs? to|able to|cannot|can't)/i;

@@ -144,6 +144,9 @@ function makeConstraint(text: string, value: number, start: number, end: number)
   // 「재고가 0이면」 · 「when the stock is 0」: 그 값일 때 조건이 걸려야 한다
   const trigger = !window && (!rel || rel === 'value' || rel === 'eq') && (/\b(?:when|if|once)\b[^.]*\b(?:is|are|has|have|contains|equals|reaches|hits|becomes)\s*$/i.test(head) || /^\s*(?:이면|일\s*때|이\s*되면|가\s*되면|이\s*될\s*때)/.test(rest));
   if (trigger) rel = 'eq';
+  // 「no activity for 90 days」 · 「inactive for 30 days」 · 「90일 동안 활동이 없으면」: 그만큼 지나면이므로 이상이다 (0.24.0)
+  const quietFor = /\b(?:no|without)\s+(?:[a-z]+\s+){0,2}for\s*$/i.test(head) || /\b(?:inactive|idle|unused|dormant|stale)\s+(?:for\s*)?$/i.test(head) || (/^\s*(?:동안|간)/.test(rest) && /활동이?\s*없|유휴|접속하지\s*않|사용하지\s*않/.test(text));
+  if ((!rel || rel === 'value') && !trigger && !window && unit && unit !== 'cnt' && unit !== 'qty' && quietFor) rel = 'gte';
   if (window) rel = 'value';
   if (!rel) {
     if (unit === 'cnt') rel = 'count';

@@ -294,6 +294,11 @@ function stateMismatch(req: Requirement, text: string): boolean {
 }
 
 /** 요구사항의 대상 낱말 (일반 낱말 · 시간 낱말 빼고). 키워드를 줬어도 문장의 낱말(「리뷰를 쓸 수 없다」의 write)을 함께 본다 */
+/** 무엇을 보내거나 남기는 동작 요구사항 (그 동작을 부르는 코드가 있어야 한다). 「log in」은 normalizePhrases 로 login 이 된 뒤에 본다 */
+// 동사만 본다: 「Notifications are listed …」의 notifications · 「the audit log」의 log 같은 이름 낱말은 동작이 아니다
+const ACTION_REQ = /\b(?:send|sends|sent|e-?mailed|mailed|notif(?:y|ies|ied)|logged|written|writes|recorded|publish(?:es|ed)?|emit(?:s|ted)?|enqueue[sd]?|tracked)\b|보낸다|보내|발송|기록(?:한|된|해|돼|을\s*남)|남긴다|남겨/i;
+/** 그 동작을 하는 함수 이름의 낱말 */
+const ACTION_VERBS = new Set(['send', 'mail', 'email', 'notify', 'notification', 'log', 'logger', 'write', 'record', 'audit', 'publish', 'emit', 'enqueue', 'queue', 'track', 'dispatch', 'post', 'push', 'alert', 'insert', 'append', 'save'].map(stem));
 /** 상태로 읽지 않는 꾸밈말 (「Other users cannot …」의 other) */
 const NOT_STATE = new Set(['other', 'another', 'new', 'old', 'same', 'all', 'any', 'some', 'each', 'every', 'most', 'many', 'this', 'that', 'these', 'those', 'such', 'regular', 'normal', 'single', 'first', 'last', 'second', 'third', 'current', 'existing', 'given', 'different', 'one', 'two', 'no', 'non', 'only', 'same'].map(stem));
 const STATE_LEAD = /^\s*(?:(?:an?|the)\s+)?([a-z]+)\s+[a-z]+(?:\s+[a-z]+)?\s+(?:cannot|can't|can not|may not|must not|should not|must never|can never|(?:is|are) not allowed to)\b/i;
@@ -649,7 +654,14 @@ function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] 
   // 막는 요구사항인데 근거가 막지 않는 문장 하나(`account.failures = 0;` 같은 대입)이면 그 요구사항을 확인하는 코드가 아니다
   // (근거 줄을 고치던 중 「메서드로 잠금」 사례에서 찾음: if 블록 점수가 줄자 이 대입문이 「잠긴 계정은 로그인할 수 없다」의 근거가 됐다)
   const plainStatement = req.guardCue && !judged.length && !dupInner && unit.kind === 'condition' && !unit.guard && !unit.condTokens && !unit.cond?.parts?.some((p) => p.source === 'compare');
-  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && !stateUnread && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
+  // 보내기 · 기록하기 같은 동작 요구사항(「A welcome email is sent after signup」 · 「written to the audit log」)인데 근거가 함수 전체이면,
+  // 그 함수가 실제로 무엇을 불러야 한다: 부르는 함수 이름이 동작(send · log · audit …)이거나 요구사항 낱말이어야 한다.
+  // (매개변수에 mailer · audit 가 있다는 것만으로 부르지 않는 함수가 「확인됨」이던 것 — 맞는 코드 묶음에서 찾음, 0.24.0)
+  const reqWordsAll = new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t)));
+  const noAction =
+    !judged.length && !req.needsCheck && unit.kind === 'function' && ACTION_REQ.test(normalizePhrases(req.text)) &&
+    !(unit.calls ?? []).some((c) => tokenize(c).some((t) => ACTION_VERBS.has(t) || reqWordsAll.has(t)));
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && !stateUnread && !noAction && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
   // 「잘못된 이메일은 거부」인데 바뀐 스키마가 그 칸을 검사 없이 받으면(email: z.string()) 다른 곳의 검사로 확인됐다고 하지 않는다 (X 에서 받은 버그)
   const words = new Set(req.tokens);
   const unchecked =
@@ -758,24 +770,14 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
   // 「sends a reset mail」처럼 한 번 하는 검사는 「1시간에 3번까지」의 근거가 아니다
   const capReq = req.constraints.some((c) => (c.rel === 'lte' || c.rel === 'lt') && !c.window && (c.unit === 'cnt' || c.unit === 'qty' || (c.unit === null && PER_PERIOD.test(req.text))));
   const limitOk = (t: TestCase) => !capReq || NEGATIVE_TEST.test(t.name) || LIMIT_TEST.test(t.name) || namedNumbers(t.name).length > 0;
-  if (!req.auto) {
-    const set = new Set([...req.tokens, ...req.numbers.map(String)]);
-    // 키워드가 하나뿐이면 그 낱말 하나로 잇는다 (둘을 요구하면 영영 이어지지 않는다)
-    const need = Math.min(2, set.size);
-    // 막는 요구사항이면 키워드로 잇는 검사도 거부를 말해야 한다 (「저장한다」 검사는 「형식이 틀리면 저장하지 않는다」의 근거가 아니다)
-    const negOk = (t: TestCase) => !req.guardCue || NEGATIVE_TEST.test(t.name);
-    // 「3번까지」의 경계 검사(a fourth … is rejected)는 서수가 숫자 하나 몫을 한다
-    const edge = (t: TestCase) => (boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) ? 1 : 0);
-    // (키워드 하나 + 요구사항 문장 낱말 하나로 잇는 것은 0.18.0 을 만들며 해 봤다가 되돌렸다:
-    //  「잠긴 계정은 맞는 비밀번호로도 로그인할 수 없다」에 「5번 실패하면 잠근다」 검사가 이어져 「확인됨」이 됐다)
-    return tests.filter((t) => sameRule(t) || agrees(t) || (twiceOk(t) && negOk(t) && limitOk(t) && new Set(tokenize(plainNumbers(t.name)).filter((x) => set.has(x))).size + edge(t) >= need));
-  }
-  // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
-  // 조건: 요구사항의 개념(숫자 포함) 가운데 3분의 2 이상을 검사 이름이 담고, 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
+  // 요구사항 문장의 개념으로 잇는다 (키워드 없는 연결의 규칙, 키워드를 적어도 쓴다 — 0.24.0).
+  // 검사 이름이 개념의 3분의 2 이상을 담거나, 절반 이상을 담으면서 그 낱말이 근거 줄(또는 그 함수 이름)에도 나와야 한다.
+  // (「Every role change is written to the audit log」 ↔ 「writes an audit entry when a role changes」: written · log 는 이름에 없어도 audit · role 이 근거와 같다)
   const groups = [...req.concepts, ...req.numbers.map((n) => [String(n)])];
   const scope = new Set([...req.text.matchAll(/\b(?:per|each|every)\s+([a-z]+)/gi)].map((m) => stem(m[1].toLowerCase())).filter((s) => !TIME_WORDS.has(s) && !WEAK_NAME.has(s)));
-  return tests.filter((t) => {
-    if (sameRule(t) || agrees(t)) return true;
+  const reqWords = new Set([...req.tokens, ...req.concepts.flat()]);
+  const evWords = ev.status === '발견' && ev.unit ? new Set([...ev.unit.tokens, ...tokenize(ev.unit.fn ?? '')]) : null;
+  const bySentence = (t: TestCase) => {
     const names = testWords(t.name);
     if (groups.length < 2 || !twiceOk(t) || !limitOk(t)) return false;
     if (req.guardCue && !NEGATIVE_TEST.test(t.name)) return false;
@@ -787,8 +789,30 @@ function mapTests(req: Requirement, tests: TestCase[], ev: Evidence): TestCase[]
     // 「하루에 3번까지」 ↔ 「a fourth invite on the same day is rejected」: 바로 다음 서수와 거부를 말하면 대상 하나만 겹쳐도 경계 검사다
     if (boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) && real.some((g) => !/^\d/.test(g[0]) && g.some((x) => names.has(x)))) return true;
     const covered = real.filter((g) => g.some((x) => names.has(x)) || (uniqueSaid && g.includes(UNIQUE))).length;
-    return covered >= 2 && covered / real.length >= 2 / 3;
-  });
+    if (covered < 2) return false;
+    if (covered / real.length >= 2 / 3) return true;
+    const agreesWithCode = !!evWords && [...names].some((x) => reqWords.has(x) && evWords.has(x) && !BROAD.has(x) && !FILLER.has(x));
+    // 숫자가 있는데 판정하지 못한 요구사항(「밤 10시부터 아침 8시 전까지」처럼 아직 못 읽는 숫자)에는 넓혀 잇지 않는다:
+    // 낱말만 맞는 검사가 이어지면 숫자가 틀린 코드도 「확인됨」이 된다 (넓히다가 예전 사례 t-quiet-hours 에서 찾음)
+    const numbersSettled = !req.numbers.length || settled;
+    return numbersSettled && covered * 2 >= real.length && agreesWithCode;
+  };
+  if (!req.auto) {
+    const set = new Set([...req.tokens, ...req.numbers.map(String)]);
+    // 키워드가 하나뿐이면 그 낱말 하나로 잇는다 (둘을 요구하면 영영 이어지지 않는다)
+    const need = Math.min(2, set.size);
+    // 막는 요구사항이면 키워드로 잇는 검사도 거부를 말해야 한다 (「저장한다」 검사는 「형식이 틀리면 저장하지 않는다」의 근거가 아니다)
+    const negOk = (t: TestCase) => !req.guardCue || NEGATIVE_TEST.test(t.name);
+    // 「3번까지」의 경계 검사(a fourth … is rejected)는 서수가 숫자 하나 몫을 한다
+    const edge = (t: TestCase) => (boundaryTest(req, t.name) && NEGATIVE_TEST.test(t.name) ? 1 : 0);
+    // (키워드 하나 + 요구사항 문장 낱말 하나로 잇는 것은 0.18.0 을 만들며 해 봤다가 되돌렸다:
+    //  「잠긴 계정은 맞는 비밀번호로도 로그인할 수 없다」에 「5번 실패하면 잠근다」 검사가 이어져 「확인됨」이 됐다)
+    // 검사 이름도 용어집으로 읽는다: 한국어 검사 이름(「관리자가 아니면 …」)이 영어 키워드(admin)와 이어진다 (0.24.0)
+    return tests.filter((t) => sameRule(t) || agrees(t) || (twiceOk(t) && negOk(t) && limitOk(t) && new Set([...testWords(t.name)].filter((x) => set.has(x))).size + edge(t) >= need) || bySentence(t));
+  }
+  // 자동 연결은 넓게 걸리므로 검사 연결은 좁게 잡는다. 잘못 이어서 「확인됨」이 되는 것보다 「미실행」으로 남는 쪽이 낫다.
+  // 조건: 위 bySentence — 개념의 3분의 2(또는 근거와 맞는 절반), 거부 요구사항이면 검사 이름도 거부·실패를 말해야 한다.
+  return tests.filter((t) => sameRule(t) || agrees(t) || bySentence(t));
 }
 
 const sameTestName = (a: string, b: string) => {

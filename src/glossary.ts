@@ -24,6 +24,11 @@ const GLOSSARY: [RegExp, string][] = [
   [/수량|개수/, 'quantity count qty'],
   [/할인율/, 'rate'],
   [/관리자/, 'admin administrator'],
+  // 0.24.0: 맞는 코드 묶음에서 「관리자만 공지를 올릴 수 있다」 ↔ 「관리자가 아니면 공지를 올릴 수 없다」 검사가 이어지지 않았다
+  [/공지/, 'notice announcement'],
+  [/올리|게시|등록하/, 'post publish create'],
+  // (영어 password 를 pw 와 잇는 것은 해 봤다가 뺐다: 「Passwords must contain at least one digit」에 길이만 보는
+  //  if (pw.length < 8) throw 가 근거가 되어 숫자 검사가 없는 코드가 「확인됨」이 됐다 — 예전 사례 s-pw-digit)
   [/권한|역할/, 'permission role authorize authorization access'],
   [/인증/, 'auth authenticate authentication verify verification'],
   [/인증\s*(?:번호|코드)|\botp\b/i, 'code otp'],
