@@ -30,10 +30,15 @@ jobs:
         run: npm ci --prefix vscode --no-audit --no-fund
       - name: dist/cli.mjs matches src
         run: node tools/build-cli.mjs --check
-      - name: Install from GitHub with npx and run the sample check
+      # npm 10 (bundled with Node 22) fails on `github:owner/repo#<commit sha>` with
+      # "GitFetcher requires an Arborist constructor to pack a tarball"; a branch or a tag works.
+      # So this commit is installed from its tarball, and the README form from the branch.
+      - name: Install this commit with npx and run the sample check
         working-directory: ${{ runner.temp }}
         run: |
-          npx -y "github:${{ github.repository }}#${{ github.sha }}" check > check.txt
+          npx -y "https://codeload.github.com/${{ github.repository }}/tar.gz/${{ github.sha }}" check > check.txt
           tail -n 4 check.txt
           grep -q "R2" check.txt
-          npx -y "github:${{ github.repository }}#${{ github.sha }}" help | head -n 4
+      - name: Install the README way (npx github:owner/repo#branch)
+        working-directory: ${{ runner.temp }}
+        run: npx -y "github:${{ github.repository }}#${{ github.ref_name }}" help | head -n 4
