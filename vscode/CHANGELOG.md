@@ -18,8 +18,8 @@ The evidence-line limits left in 0.21.0 are fixed, and so is a path problem for 
   | Cases | 0.21.0 | 0.22.0 |
   |---|---|---|
   | 4 known limits from 0.21.0 | 3 Verified with no check, 1 Not verified with the check | all 4 right |
-  | 25 written before this fix | 5 Verified with no check | 0 (seen while fixing, not a score) |
-  | 32 written after this fix | 5 Verified with no check, 25 of 32 right | **first run: none, 31 of 32 right** |
+  | 12 cases (25 verdicts) written before this fix | 5 Verified with no check | 0 (seen while fixing, not a score) |
+  | 16 cases (32 verdicts) written after this fix | 5 Verified with no check, 25 of 32 right | **first run: none, 31 of 32 right** |
 
   The verdicts on all other earlier cases are the same as 0.21.0.
 - **Still not read:**
