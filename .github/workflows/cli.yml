@@ -1,0 +1,39 @@
+# `npx -y github:DamunKorea/verifylens …` runs dist/cli.mjs, the command line bundled from src/ by tools/build-cli.mjs.
+# This checks that the bundle in the repository matches src/, and that npx installs it from GitHub and runs it.
+name: CLI package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'dist/**'
+      - 'samples/**'
+      - 'vscode/src/model.ts'
+      - 'tools/build-cli.mjs'
+      - 'package.json'
+      - '.github/workflows/cli.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install esbuild
+        run: npm ci --prefix vscode --no-audit --no-fund
+      - name: dist/cli.mjs matches src
+        run: node tools/build-cli.mjs --check
+      - name: Install from GitHub with npx and run the sample check
+        working-directory: ${{ runner.temp }}
+        run: |
+          npx -y "github:${{ github.repository }}#${{ github.sha }}" check > check.txt
+          tail -n 4 check.txt
+          grep -q "R2" check.txt
+          npx -y "github:${{ github.repository }}#${{ github.sha }}" help | head -n 4

@@ -112,6 +112,16 @@ cd jetbrains
 
 ## 내 저장소에 쓰기
 
+설치 없이 한 줄로 됩니다(Node.js 22.18+ 와 git 필요). 저장소의 `.verifylens/requirements.md` 에 요구사항을 적고(`- R1: 연속 5회 실패하면 계정을 잠근다`) 이렇게 돌립니다.
+
+```bash
+npx -y github:DamunKorea/verifylens ci --worktree
+```
+
+작업 폴더(커밋 전 파일 포함)를 `origin/main`(없으면 `main`)과 비교해 요구사항마다 한 줄씩 보여 주고, 「다름」 · 「실패」가 있으면 종료 코드 1 로 끝납니다. 처음 한 번은 GitHub 에서 VerifyLens 를, 코드를 읽는 데 쓰는 TypeScript 와 함께 내려받고, 그 뒤로는 내려받은 것을 다시 씁니다.
+
+이 저장소를 받아 두었으면 같은 명령을 `node src/cli.ts …` 로 돌립니다.
+
 ```bash
 # 1) PR 설명에서 요구사항 초안을 뽑고 직접 고칩니다
 node src/cli.ts extract --pr-body pr.md > requirements.md
@@ -150,7 +160,7 @@ jobs:
           lang: ko
 ```
 
-코드는 러너 안에서만 분석하고 밖으로 보내지 않습니다. 같은 검사를 PC 에서는 `node src/cli.ts ci --repo . --base origin/main --requirements .verifylens/requirements.md` 로 돌립니다.
+코드는 러너 안에서만 분석하고 밖으로 보내지 않습니다. 같은 검사를 PC 에서는 `npx -y github:DamunKorea/verifylens ci --repo . --base origin/main --requirements .verifylens/requirements.md` 로 돌립니다.
 
 ## AI 에이전트가 「끝났다」고 하기 전에 검사하기 (훅)
 
@@ -164,7 +174,7 @@ jobs:
 - **실패했던 검사를 다시 돌렸는지 봅니다.** 실패한 검사 이름을 git 폴더 안(`.git/verifylens-failed-tests.json`, 커밋되지 않음)에 적어 두고, 코드가 바뀐 뒤 새 결과에 그 검사가 없거나 결과가 코드보다 오래됐으면 「다시 돌리지 않음」으로 알립니다. 훅은 그 검사 이름을 짚어 한 번 다시 돌리라고 돌려보내고, 「실패」 요구사항에는 실패한 검사 이름도 함께 적습니다. 통과하면 목록에서 지웁니다. (X 댓글에서 받은 생각: 버그를 고쳤다고 하기 전에 원래 실패하던 단계를 그대로 다시 돌린다)
 - **통과하려고 바꾼 검사를 봅니다.** 검사 파일을 기준과 검사 단위로 견줍니다. 요구사항에 이어진 검사의 숫자가 바뀌었거나(`i < 5` → `i < 6`), 기대값이 바뀌었거나, 확인을 느슨하게 · 거꾸로 바꿨거나(`toBe(0)` → `toBeGreaterThanOrEqual(0)`), 확인 줄을 지웠거나, 검사를 지우거나 건너뛰게 했으면, 요구사항이 「확인됨」이어도 훅이 한 번 검사를 요구사항대로 되돌리라고 돌려보냅니다. PR 요약과 검사 줄의 주석에도 같은 말이 나옵니다. (X 에서 여러 사람이 말한 「에이전트가 검사를 고쳐서 초록을 만든다」)
 
-아래 `/path/to/verifylens` 는 VerifyLens 를 받아 설치한 폴더입니다([빠르게 해 보기](#빠르게-해-보기) 참고). Windows 에서도 `/` 를 쓰고, 경로에 빈칸이 있으면 따옴표로 감쌉니다.
+아래 명령에는 Node.js 22.18+ 와 git 만 있으면 됩니다. `npx` 가 처음 한 번 GitHub 에서 VerifyLens 를 내려받고(첫 실행은 1분쯤 걸릴 수 있음) 그 뒤로는 다시 씁니다. 받아 둔 저장소를 쓰려면 `npx -y github:DamunKorea/verifylens` 를 `node --no-warnings /path/to/verifylens/src/cli.ts` 로 바꿉니다.
 
 **Claude Code** — 프로젝트의 `.claude/settings.json`. Claude 는 이 말을 「멈추지 말고 계속할 이유」로 받습니다(`"decision": "block"`).
 
@@ -174,7 +184,7 @@ jobs:
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook claude", "timeout": 120 }
+          { "type": "command", "command": "npx -y github:DamunKorea/verifylens ci --hook claude", "timeout": 120 }
         ]
       }
     ]
@@ -189,7 +199,7 @@ jobs:
   "version": 1,
   "hooks": {
     "stop": [
-      { "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook cursor" }
+      { "command": "npx -y github:DamunKorea/verifylens ci --hook cursor" }
     ]
   }
 }
@@ -199,7 +209,7 @@ jobs:
 
 ```sh
 #!/bin/sh
-node --no-warnings /path/to/verifylens/src/cli.ts ci --worktree
+npx -y github:DamunKorea/verifylens ci --worktree
 ```
 
 Windows 에서 각 도구가 주는 훅 입력을 명령에 그대로 넣어 시험했습니다(`vscode/test/ci.test.ts`). 실제 Claude Code · Cursor 세션 안에서는 아직 돌려 보지 않았습니다.

@@ -104,6 +104,16 @@ Download `verifylens-jetbrains-0.14.0.zip` from the [JetBrains preview release](
 
 ## Use it on your own repo
 
+One line, no install (Node.js 22.18+ and git). In your repository, write the requirements in `.verifylens/requirements.md` (`- R1: Lock the account after 5 consecutive failures`), then:
+
+```bash
+npx -y github:DamunKorea/verifylens ci --worktree --lang en
+```
+
+It compares your working folder, including uncommitted files, with `origin/main` (or `main`), prints one line per requirement and exits with 1 when one is Different or Failed. The first run downloads VerifyLens from GitHub together with TypeScript, which it uses to read your code; later runs reuse the download.
+
+From a clone of this repository, the same commands run as `node src/cli.ts …`:
+
 ```bash
 # 1) Draft requirements from a PR description, then edit them by hand
 node src/cli.ts extract --pr-body pr.md > requirements.md
@@ -141,7 +151,7 @@ jobs:
           fail-on: different,failed   # add unverified to be strict
 ```
 
-The code is analyzed on the runner and is not sent anywhere. The same check runs locally with `node src/cli.ts ci --repo . --base origin/main --requirements .verifylens/requirements.md`.
+The code is analyzed on the runner and is not sent anywhere. The same check runs locally with `npx -y github:DamunKorea/verifylens ci --repo . --base origin/main --requirements .verifylens/requirements.md`.
 
 ## Check before an AI agent says it is done (hooks)
 
@@ -155,7 +165,7 @@ The code is analyzed on the runner and is not sent anywhere. The same check runs
 - **Tests that failed must be run again.** The names of failed tests are kept inside the git folder (`.git/verifylens-failed-tests.json`, never committed). After the code changes, if a new report does not include them, or the report is older than the code, they are reported as not run again. The hook asks the agent once to run those tests again, and a Failed requirement lists its failed tests by name. A test that passes is removed from the list. (The idea came from a comment on X: before calling a bug fixed, re-run the exact step that failed.)
 - **Tests changed to pass.** Each test file is compared with the base, test by test. If a test linked to a requirement had a number changed (`i < 5` → `i < 6`), an expected value changed, an assertion weakened or flipped (`toBe(0)` → `toBeGreaterThanOrEqual(0)`), an assertion removed, or the test removed or skipped, the hook asks the agent once to make the test check the requirement again, even when the requirement is Verified. The same line appears in the PR summary and as an annotation on the test. (Several people on X describe agents that make a suite green by editing the test.)
 
-Below, `/path/to/verifylens` is the folder where you cloned and installed VerifyLens (see [Quick start](#quick-start)). Use forward slashes on Windows too, and quote the path if it has spaces.
+The commands below need Node.js 22.18+ and git, and nothing else: `npx` downloads VerifyLens from GitHub on the first run (give that run a minute) and reuses it after that. To use a clone instead, replace `npx -y github:DamunKorea/verifylens` with `node --no-warnings /path/to/verifylens/src/cli.ts`.
 
 **Claude Code** — `.claude/settings.json` in your project. Claude receives the message as the reason to keep working (`"decision": "block"`).
 
@@ -165,7 +175,7 @@ Below, `/path/to/verifylens` is the folder where you cloned and installed Verify
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook claude --lang en", "timeout": 120 }
+          { "type": "command", "command": "npx -y github:DamunKorea/verifylens ci --hook claude --lang en", "timeout": 120 }
         ]
       }
     ]
@@ -180,7 +190,7 @@ Below, `/path/to/verifylens` is the folder where you cloned and installed Verify
   "version": 1,
   "hooks": {
     "stop": [
-      { "command": "node --no-warnings /path/to/verifylens/src/cli.ts ci --hook cursor --lang en" }
+      { "command": "npx -y github:DamunKorea/verifylens ci --hook cursor --lang en" }
     ]
   }
 }
@@ -190,7 +200,7 @@ Below, `/path/to/verifylens` is the folder where you cloned and installed Verify
 
 ```sh
 #!/bin/sh
-node --no-warnings /path/to/verifylens/src/cli.ts ci --worktree --lang en
+npx -y github:DamunKorea/verifylens ci --worktree --lang en
 ```
 
 These were tested by piping each tool's hook input into the command on Windows (`vscode/test/ci.test.ts`). They have not yet been tried inside a real Claude Code or Cursor session.

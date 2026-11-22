@@ -321,7 +321,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p . --noEmit",
-    "test": "node --test test/model.test.ts test/cases.test.ts test/ci.test.ts test/edits.test.ts test/display.test.ts ../web/check.test.ts ../web/pr.test.ts && node test/smoke.cjs",
+    "test": "node --test test/model.test.ts test/cases.test.ts test/ci.test.ts test/edits.test.ts test/display.test.ts ../web/check.test.ts ../web/pr.test.ts && node test/smoke.cjs && node ../tools/build-cli.mjs --check",
     "package": "node build.mjs && vsce package --no-dependencies",
     "test:vscode": "node test/integration/run.cjs"
   },

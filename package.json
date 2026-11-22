@@ -7,6 +7,8 @@
   "license": "MIT",
   "keywords": ["ai", "code-review", "verification", "requirements", "git", "typescript"],
   "engines": { "node": ">=22.18" },
+  "bin": { "verifylens": "dist/cli.mjs" },
+  "files": ["dist/", "samples/", "LICENSE", "README.md"],
   "scripts": {
     "demo": "node src/cli.ts demo --open",
     "demo:en": "node src/cli.ts demo --open --lang en",

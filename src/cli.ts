@@ -159,7 +159,9 @@ export async function main(argv: string[]) {
     }
     return;
   }
-  console.log(L(HELP, HELP_EN));
+  // npx 로 받은 묶음(dist/cli.mjs)으로 돌고 있으면 그 실행법으로 보여 준다
+  const viaNpx = /dist[\\/]cli\.mjs$/.test(process.argv[1] ?? '');
+  console.log(L(HELP, HELP_EN).replaceAll('node src/cli.ts', viaNpx ? 'npx -y github:DamunKorea/verifylens' : 'node src/cli.ts'));
 }
 
 main(process.argv.slice(2)).catch((e) => {
