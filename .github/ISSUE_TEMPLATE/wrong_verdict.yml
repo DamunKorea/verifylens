@@ -30,4 +30,4 @@ body:
     id: why
     attributes:
       label: Why? / 왜 그런가요?
-      description: For example "the check is in another file", "this line only logs". / 예: 「검사는 다른 파일에 있다」, 「이 줄은 기록만 한다」.
+      description: 'For example "the check is in another file" or "this line only logs". / 예를 들어 「검사는 다른 파일에 있다」, 「이 줄은 기록만 한다」.'
