@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.22.0
+
+The evidence-line limits left in 0.21.0 are fixed, and so is a path problem for projects opened through a mapped drive or a link. We found all of it ourselves: the engine limits on cases we wrote after 0.21.0, and the path problem on our JetBrains build. None of it comes from a user report.
+
+- **A state that the code names must be read by the check.** Take "A banned user cannot post comments". When the code has a field, constant or enum value for that state (`banned`, `SUSPENDED`, `CardState.Frozen`), the evidence must be a condition that reads it. Before, two kinds of code with no check at all could be Verified:
+  - a block that sets the state another way than `=`, such as `user.ban()`, `sub.state = SubState.Cancelled` or `driver.status = SUSPENDED`;
+  - a guard that names the state only in its error message, such as `if (!canEdit) throw new Error('NO_PERMISSION_OR_ARCHIVED')`.
+
+  Now the evidence moves to the condition that reads the state. If there is none, the requirement stays Not verified. This reads English sentences of the form "A <state> <thing> cannot …" and "… who are <state> cannot …".
+- **A check in a helper that nothing calls does not count.** A function that is not exported, and whose name appears nowhere else in the file, never runs. Its checks are no longer evidence.
+- **Helpers called through other helpers.** `listProduct → checkSeller → assertNotSuspended` is now traced back, up to four steps. Before, the check was put down to a different function and stayed Not verified.
+- **A method the checking function calls belongs to the same feature.** `login` calling `account.lock()` no longer makes `lock()` look like a different feature, so the real check `if (account.locked)` stays the evidence. This was a known limit in 0.21.0, where the result was Not verified.
+- **Projects opened through a mapped drive or a link.** This covers a `subst` drive such as `V:`, a junction and a symbolic link. git reports the repository's real path. So the editor showed no line notes, the Problems list pointed at the real path, and opening a result opened a second copy of the file. The repository root now keeps the path you opened. Our JetBrains build found this and fixed it in its own 0.14.1; the VS Code extension had the same problem. We checked it in VS Code on a folder opened through a junction, and on a `subst` drive.
+- **How far to trust it.** Keywords made no difference.
+
+  | Cases | 0.21.0 | 0.22.0 |
+  |---|---|---|
+  | 4 known limits from 0.21.0 | 3 Verified with no check, 1 Not verified with the check | all 4 right |
+  | 25 written before this fix | 5 Verified with no check | 0 (seen while fixing, not a score) |
+  | 32 written after this fix | 5 Verified with no check, 25 of 32 right | **first run: none, 31 of 32 right** |
+
+  The verdicts on all other earlier cases are the same as 0.21.0.
+- **Still not read:**
+  - A helper called through a list, such as `for (const check of [ensureNotExpired]) check(invite)`. It stays Not verified.
+  - Uncalled class methods and exported helpers are not recognised as uncalled. In our cases they came out right only because the function name pointed elsewhere.
+  - The state rule reads English sentences only. For Korean sentences, use keywords.
+  - When the code names the state (`disabled`) but the check reads another word (`!key.enabled`), the requirement stays Not verified.
+
 ## 0.21.0
 
 A block that only sets a state is no longer taken as the check for it, and requirements import more cleanly from pull requests. We found all of this ourselves. The engine fix came from our own demo pull request, and the import fixes came from trying a real public pull request on the browser page. None of it comes from a user report.

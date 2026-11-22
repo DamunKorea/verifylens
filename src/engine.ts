@@ -294,6 +294,22 @@ function stateMismatch(req: Requirement, text: string): boolean {
 }
 
 /** 요구사항의 대상 낱말 (일반 낱말 · 시간 낱말 빼고). 키워드를 줬어도 문장의 낱말(「리뷰를 쓸 수 없다」의 write)을 함께 본다 */
+/** 상태로 읽지 않는 꾸밈말 (「Other users cannot …」의 other) */
+const NOT_STATE = new Set(['other', 'another', 'new', 'old', 'same', 'all', 'any', 'some', 'each', 'every', 'most', 'many', 'this', 'that', 'these', 'those', 'such', 'regular', 'normal', 'single', 'first', 'last', 'second', 'third', 'current', 'existing', 'given', 'different', 'one', 'two', 'no', 'non', 'only', 'same'].map(stem));
+const STATE_LEAD = /^\s*(?:(?:an?|the)\s+)?([a-z]+)\s+[a-z]+(?:\s+[a-z]+)?\s+(?:cannot|can't|can not|may not|must not|should not|must never|can never|(?:is|are) not allowed to)\b/i;
+const STATE_WHO = /\b(?:who|that|which)\s+(?:is|are|has been|have been|was|were)\s+(?:already\s+)?([a-z]+)\b/i;
+/**
+ * 막는 요구사항이 말하는 상태 낱말: 「A banned user cannot post comments」의 banned, 「Users who are suspended cannot …」의 suspended.
+ * in- · un- 꼴(inactive)은 뿌리(active)도 함께 돌려준다: 코드는 흔히 !user.active 로 본다. 영어 문장만 읽는다.
+ */
+function stateStems(req: Requirement): string[] {
+  const m = req.text.match(STATE_LEAD) ?? req.text.match(STATE_WHO);
+  if (!m) return [];
+  const w = m[1].toLowerCase();
+  if (NOT_STATE.has(stem(w))) return [];
+  const base = w.match(/^(?:in|un|non|dis)([a-z]{4,})$/)?.[1];
+  return base ? [stem(w), stem(base)] : [stem(w)];
+}
 const subjectOf = (req: Requirement) => new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t)));
 /** 이름(함수 · 파일)에 든 요구사항 낱말. 함수 이름에 든 낱말을 파일 이름에만 든 낱말보다 두 배로 친다 */
 function nameScore(subject: Set<string>, u: Unit): number {
@@ -455,7 +471,11 @@ const conflictSay = (b: Boundary, file: string, p: NumPart) => {
 
 const severity = (b: Boundary) => (b.ok === false ? 0 : b.ok === null ? 1 : 2);
 
-function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = []): Evidence {
+function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] = [], names: Set<string> = new Set()): Evidence {
+  // 아무도 부르지 않는 함수(내보내지 않았고 파일 안에서 이름이 다시 나오지 않음)의 검사는 돌지 않으므로 근거가 아니다
+  // (「잠긴 계정은 로그인할 수 없다」 ↔ 부르지 않는 assertNotLocked 안의 if (account.locked) throw — 근거 줄 고친 뒤 새 묶음에서 찾음, 11/22)
+  const dead = new Set(allUnits.filter((u) => u.kind === 'function' && u.uncalled).map((u) => `${u.file}#${u.fn}`));
+  const units = dead.size ? allUnits.filter((u) => !dead.has(`${u.file}#${u.fn}`)) : allUnits;
   let best: { u: Unit; score: number; why: string[]; num: boolean } | null = null;
   for (const u of units) {
     const { score, why, num } = scoreUnit(req, u);
@@ -504,6 +524,23 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
       .sort((a, b) => b.score - a.score)[0];
     if (inner) unit = inner.u;
   }
+  // 상태 낱말 규칙: 「A banned user cannot …」의 banned 처럼 요구사항이 상태를 말하고 코드에 그 이름(칸 · 상수 · 열거형 값)이 있으면,
+  // 그 상태를 확인하는 조건은 조건식에서 그 이름을 읽어야 한다. 근거가 읽지 않으면 읽는 조건으로 옮기고, 그런 조건이 없으면 확인하는 코드가 아니다.
+  // (오류 글에만 있는 상태 낱말 if (!canEdit) throw new Error('NO_PERMISSION_OR_ARCHIVED') · 메서드로 정하는 user.ban() · 상수 driver.status = SUSPENDED 가
+  // 검사 없이 「확인됨」이 되던 것 — 근거 줄 고친 뒤 새 묶음에서 찾음, 11/22)
+  let stateUnread = false;
+  const state = stateStems(req);
+  if (!judged.length && (req.guardCue || req.needsCheck) && state.length && state.some((t) => names.has(t))) {
+    const reads = (u: Unit) => u.kind === 'condition' && !!u.condTokens?.some((t) => state.includes(t));
+    if (!reads(unit)) {
+      const pick = units
+        .filter(reads)
+        .map((u) => ({ u, score: scoreUnit(req, u).score }))
+        .sort((a, b) => b.score - a.score)[0];
+      if (pick) unit = pick.u;
+      else stateUnread = true;
+    }
+  }
   // 막는 조건이 요구사항이 말하는 기능이 아닌 다른 함수에 있으면 근거가 아니다 (X 에서 받은 버그:
   // 「잘못된 이메일이면 가입 거부」 ↔ 가입은 검사하지 않고 newsletter 의 subscribe 만 이메일을 검사).
   // 요구사항의 낱말을 이름(함수 · 파일)에 가진 다른 함수가 있으면 그쪽을 근거로 두고 「일부 발견」으로 둔다.
@@ -522,13 +559,23 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
     // 검사의 주인은 그 검사를 쓰는 함수다: 검사 함수를 부르는 함수(assertValidEmail ← register), 같은 파일에서 설정값을 쓰는 함수(MAX_VIDEO_BYTES ← uploadImage).
     // 쓰는 함수가 없으면 검사가 든 함수 자신이다. 검사 함수 이름(assertValidEmail 의 email)은 기능 이름이 아니므로 부르는 함수가 있으면 그쪽 이름으로 본다
     const callee = unit.fn.split('.').pop()!;
-    const users = units.filter((x) => x.kind === 'function' && (configName ? x.file === unit.file && !!x.refs?.includes(configName) : !!x.calls?.includes(callee)));
+    const fnsCalling = (names: Set<string>) => units.filter((x) => x.kind === 'function' && !!x.calls?.some((c) => names.has(c)));
+    let users = units.filter((x) => x.kind === 'function' && (configName ? x.file === unit.file && !!x.refs?.includes(configName) : !!x.calls?.includes(callee)));
+    // 도우미를 거쳐 부르면(listProduct → checkSeller → assertNotSuspended) 거슬러 올라간 함수도 모두 주인이다
+    for (let depth = 0, front = users; depth < 4 && front.length; depth++) {
+      const seen = new Set(users.map((x) => `${x.file}#${x.fn}`));
+      front = fnsCalling(new Set(front.map((x) => x.fn.split('.').pop()!))).filter((x) => !seen.has(`${x.file}#${x.fn}`));
+      users = [...users, ...front];
+    }
     if (configName && !users.length) {
       // 아무 함수도 쓰지 않는 설정값은 예전처럼 그대로 둔다
     } else {
     const owners = new Set(users.map((x) => `${x.file}#${x.fn}`));
+    // 검사가 든 함수와 그 주인이 부르는 함수(account.lock())는 같은 기능의 일부다. 이름이 요구사항 낱말(lock)이어도 다른 기능으로 보지 않는다
+    // (「잠긴 계정은 로그인할 수 없다」 ↔ login 이 부르는 lock() 메서드가 진짜 검사를 가리던 것)
+    const ownCalls = new Set(units.filter((x) => x.kind === 'function' && ((x.file === unit.file && x.fn === unit.fn) || owners.has(`${x.file}#${x.fn}`))).flatMap((x) => x.calls ?? []));
     const mine = users.length ? Math.max(...users.map((x) => nameScore(subject, x))) : nameScore(subject, unit);
-    const pool = units.filter((u) => u.fn !== unit.fn && !owners.has(`${u.file}#${u.fn}`) && nameScore(subject, u) > mine && (!judged.length || u.file === unit.file));
+    const pool = units.filter((u) => u.fn !== unit.fn && !owners.has(`${u.file}#${u.fn}`) && !ownCalls.has(u.fn.split('.').pop()!) && nameScore(subject, u) > mine && (!judged.length || u.file === unit.file));
     if (pool.length) {
       const top = Math.max(...pool.map((u) => nameScore(subject, u)));
       const theirs = pool.filter((u) => nameScore(subject, u) === top);
@@ -601,7 +648,7 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
   // 막는 요구사항인데 근거가 막지 않는 문장 하나(`account.failures = 0;` 같은 대입)이면 그 요구사항을 확인하는 코드가 아니다
   // (근거 줄을 고치던 중 「메서드로 잠금」 사례에서 찾음: if 블록 점수가 줄자 이 대입문이 「잠긴 계정은 로그인할 수 없다」의 근거가 됐다)
   const plainStatement = req.guardCue && !judged.length && !dupInner && unit.kind === 'condition' && !unit.guard && !unit.condTokens && !unit.cond?.parts?.some((p) => p.source === 'compare');
-  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && !stateUnread && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
   // 「잘못된 이메일은 거부」인데 바뀐 스키마가 그 칸을 검사 없이 받으면(email: z.string()) 다른 곳의 검사로 확인됐다고 하지 않는다 (X 에서 받은 버그)
   const words = new Set(req.tokens);
   const unchecked =
@@ -766,8 +813,9 @@ function testStatus(ts: TestCase[]): TestStatus {
 
 export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, base: string): Report {
   for (const s of sets) {
+    const names = new Set(s.analyses.flatMap((a) => a.names ?? []));
     for (const r of reqs) {
-      const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []));
+      const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
       const mapped = mapTests(r, s.tests, evidence);
       const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped) };
       // 이번 변경에서 바뀐 검사 가운데 이 요구사항의 것: 실행 결과와 같은 이름 규칙으로 잇는다 (지운 검사는 실행 결과에 없다)

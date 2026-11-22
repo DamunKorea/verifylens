@@ -29,6 +29,26 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     ts.forEachChild(n, countMethods);
   };
   countMethods(sf);
+
+  // 코드에 나오는 이름(글자 안은 빼고): 칸 · 변수 · 상수 · 열거형 값 · 메서드. 몇 번 나오는지도 센다.
+  // 「잠긴 계정은 …」에서 코드에 locked 라는 칸이 있으면, 그 상태를 보는 검사는 그 칸을 읽어야 한다 (engine 의 상태 낱말 규칙)
+  const idCount = new Map<string, number>();
+  const countIds = (n: ts.Node) => {
+    if (ts.isIdentifier(n) || ts.isPrivateIdentifier(n)) idCount.set(n.text, (idCount.get(n.text) ?? 0) + 1);
+    ts.forEachChild(n, countIds);
+  };
+  countIds(sf);
+  const exported = (n: ts.Node) => !!(ts.getCombinedModifierFlags(n as ts.Declaration) & ts.ModifierFlags.Export);
+  /** 내보내지 않았고 파일 안 어디에서도 이름이 다시 나오지 않는 함수: 아무도 부르지 않으므로 그 안의 검사는 돌지 않는다 */
+  const isUncalled = (fn: ts.Node, name: string): boolean => {
+    if ((idCount.get(name) ?? 0) !== 1) return false;
+    if (ts.isFunctionDeclaration(fn)) return !exported(fn) && !(ts.getCombinedModifierFlags(fn) & ts.ModifierFlags.Default);
+    if ((ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && ts.isVariableDeclaration(fn.parent)) {
+      const list = fn.parent.parent;
+      return ts.isVariableDeclarationList(list) && ts.isVariableStatement(list.parent) && !exported(list.parent) && ts.isSourceFile(list.parent.parent);
+    }
+    return false;
+  };
   const fnName = (n: ts.Node): string | null => {
     if (ts.isMethodDeclaration(n) && n.name) {
       const m = n.name.getText(sf);
@@ -534,6 +554,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       changed: isChanged(startLine, endLine),
       calls: [...calls],
       refs: [...refs],
+      ...(isUncalled(fn, name) ? { uncalled: true } : {}),
     });
     if (body) flows.push(buildFlow(name, fn as FnNode & { body: ts.Block }));
   };
@@ -838,7 +859,8 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
   };
   visitFields(sf);
 
-  return { file, units, dyn, flows, constants, imports, reexports, fields };
+  const names = [...new Set(tokenize([...idCount.keys()].join(' ')))];
+  return { file, units, dyn, flows, constants, imports, reexports, fields, names };
 }
 
 /** 조건식이 비교 하나뿐이면 그 값을 cond 에 바로 둔다 (두 결과 비교 · 화면 표시에 쓴다). */

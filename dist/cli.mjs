@@ -139,6 +139,22 @@ function analyzeFile(file, content, changed) {
     ts.forEachChild(n, countMethods);
   };
   countMethods(sf);
+  const idCount = /* @__PURE__ */ new Map();
+  const countIds = (n) => {
+    if (ts.isIdentifier(n) || ts.isPrivateIdentifier(n)) idCount.set(n.text, (idCount.get(n.text) ?? 0) + 1);
+    ts.forEachChild(n, countIds);
+  };
+  countIds(sf);
+  const exported = (n) => !!(ts.getCombinedModifierFlags(n) & ts.ModifierFlags.Export);
+  const isUncalled = (fn, name) => {
+    if ((idCount.get(name) ?? 0) !== 1) return false;
+    if (ts.isFunctionDeclaration(fn)) return !exported(fn) && !(ts.getCombinedModifierFlags(fn) & ts.ModifierFlags.Default);
+    if ((ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && ts.isVariableDeclaration(fn.parent)) {
+      const list2 = fn.parent.parent;
+      return ts.isVariableDeclarationList(list2) && ts.isVariableStatement(list2.parent) && !exported(list2.parent) && ts.isSourceFile(list2.parent.parent);
+    }
+    return false;
+  };
   const fnName = (n) => {
     if (ts.isMethodDeclaration(n) && n.name) {
       const m = n.name.getText(sf);
@@ -599,7 +615,8 @@ function analyzeFile(file, content, changed) {
       guard: false,
       changed: isChanged(startLine, endLine),
       calls: [...calls],
-      refs: [...refs]
+      refs: [...refs],
+      ...isUncalled(fn, name) ? { uncalled: true } : {}
     });
     if (body) flows.push(buildFlow(name, fn));
   };
@@ -798,13 +815,13 @@ function analyzeFile(file, content, changed) {
     const decos2 = ts.canHaveDecorators(n) ? ts.getDecorators(n) ?? [] : [];
     if (!decos2.length) return;
     const calls = decos2.map((d) => d.expression).filter(ts.isCallExpression).filter((c) => ts.isIdentifier(c.expression));
-    const names = calls.map((c) => c.expression.text);
+    const names2 = calls.map((c) => c.expression.text);
     const l = line(n.getStart(sf));
     if (!isChanged(l, line(n.getEnd()))) return;
     const name = n.name.getText(sf);
-    const stringy = names.includes("IsString") || n.type?.getText(sf) === "string";
-    if (stringy) fields.push({ file, line: l, name, checked: names.some((x) => DECO_FORMAT.test(x) || DECO_LENGTH.test(x)) });
-    if (!names.some((x) => DECO_FORMAT.test(x) || x === "Length")) return;
+    const stringy = names2.includes("IsString") || n.type?.getText(sf) === "string";
+    if (stringy) fields.push({ file, line: l, name, checked: names2.some((x) => DECO_FORMAT.test(x) || DECO_LENGTH.test(x)) });
+    if (!names2.some((x) => DECO_FORMAT.test(x) || x === "Length")) return;
     const parts = [];
     for (const c of calls) {
       const arg = c.arguments[0];
@@ -866,7 +883,8 @@ function analyzeFile(file, content, changed) {
     ts.forEachChild(n, visitFields);
   };
   visitFields(sf);
-  return { file, units: units2, dyn, flows, constants, imports, reexports, fields };
+  const names = [...new Set(tokenize([...idCount.keys()].join(" ")))];
+  return { file, units: units2, dyn, flows, constants, imports, reexports, fields, names };
 }
 function syncPrimary(c) {
   const p = c.single && c.parts?.length === 1 ? c.parts[0] : void 0;
@@ -1507,6 +1525,8 @@ var init_numeric = __esm({
 
 // src/git.ts
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 function git(repo, args2) {
   return execFileSync("git", ["-c", "core.quotepath=false", "-C", repo, ...args2], {
     encoding: "utf8",
@@ -1514,6 +1534,25 @@ function git(repo, args2) {
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
+}
+function topLevel(dir) {
+  const root = git(dir, ["rev-parse", "--show-toplevel"]).trim();
+  return root ? inCallerSpelling(dir, root) : root;
+}
+function inCallerSpelling(start, root) {
+  const same = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  try {
+    const from = resolve(start);
+    const realRoot = realpathSync.native(root);
+    const below = relative(realRoot, realpathSync.native(from));
+    if (below === ".." || below.startsWith(".." + sep) || isAbsolute(below)) return root;
+    let dir = from;
+    for (const part of below.split(sep)) if (part) dir = dirname(dir);
+    if (same(dir, resolve(root))) return root;
+    return same(realpathSync.native(dir), realRoot) ? dir : root;
+  } catch {
+    return root;
+  }
 }
 function shortSha(repo, ref) {
   return git(repo, ["rev-parse", "--short", ref]).trim();
@@ -2305,6 +2344,14 @@ function stateMismatch(req, text) {
   const litWords = lits.flatMap((l) => tokenize(l)).map((w) => IRREGULAR[w] ?? w);
   return !litWords.some((w) => words2.some((r) => near2(w, r) || near2(IRREGULAR[r] ?? r, w)));
 }
+function stateStems(req) {
+  const m = req.text.match(STATE_LEAD) ?? req.text.match(STATE_WHO);
+  if (!m) return [];
+  const w = m[1].toLowerCase();
+  if (NOT_STATE.has(stem(w))) return [];
+  const base2 = w.match(/^(?:in|un|non|dis)([a-z]{4,})$/)?.[1];
+  return base2 ? [stem(w), stem(base2)] : [stem(w)];
+}
 function nameScore(subject, u) {
   const fn = new Set(tokenize(u.fn ?? "").filter((t) => subject.has(t)));
   const file = new Set(tokenize(u.file.split("/").pop().replace(/\.[^.]+$/, "")).filter((t) => subject.has(t) && !fn.has(t)));
@@ -2404,7 +2451,9 @@ function judgeConstraints(req, units2) {
   }
   return req.constraints.map((c) => out.get(c));
 }
-function findEvidence(req, units2, fields = []) {
+function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Set()) {
+  const dead = new Set(allUnits.filter((u) => u.kind === "function" && u.uncalled).map((u) => `${u.file}#${u.fn}`));
+  const units2 = dead.size ? allUnits.filter((u) => !dead.has(`${u.file}#${u.fn}`)) : allUnits;
   let best = null;
   for (const u of units2) {
     const { score, why, num: num2 } = scoreUnit(req, u);
@@ -2446,18 +2495,35 @@ function findEvidence(req, units2, fields = []) {
     const inner = units2.filter((u) => u.kind === "condition" && u.guard && u.file === host.file && u.fn === host.fn && tokenize(u.text).some((t) => words3.has(t) && !fnWords.has(t))).map((u) => ({ u, score: scoreUnit(req, u).score })).sort((a, b) => b.score - a.score)[0];
     if (inner) unit = inner.u;
   }
+  let stateUnread = false;
+  const state = stateStems(req);
+  if (!judged.length && (req.guardCue || req.needsCheck) && state.length && state.some((t) => names.has(t))) {
+    const reads = (u) => u.kind === "condition" && !!u.condTokens?.some((t) => state.includes(t));
+    if (!reads(unit)) {
+      const pick2 = units2.filter(reads).map((u) => ({ u, score: scoreUnit(req, u).score })).sort((a, b) => b.score - a.score)[0];
+      if (pick2) unit = pick2.u;
+      else stateUnread = true;
+    }
+  }
   let foreign = false;
   const isFn = (file, fn) => units2.some((x) => x.kind === "function" && x.file === file && x.fn === fn);
   const configName = unit.kind === "condition" && !isFn(unit.file, unit.fn) ? (unit.cond?.parts ?? []).find((p) => p.source === "config")?.left.split(".").pop() : void 0;
   if (unit.kind === "condition" && (unit.guard || configName || judged.length > 0 && isFn(unit.file, unit.fn))) {
     const subject = subjectOf(req);
     const callee2 = unit.fn.split(".").pop();
-    const users = units2.filter((x) => x.kind === "function" && (configName ? x.file === unit.file && !!x.refs?.includes(configName) : !!x.calls?.includes(callee2)));
+    const fnsCalling = (names2) => units2.filter((x) => x.kind === "function" && !!x.calls?.some((c) => names2.has(c)));
+    let users = units2.filter((x) => x.kind === "function" && (configName ? x.file === unit.file && !!x.refs?.includes(configName) : !!x.calls?.includes(callee2)));
+    for (let depth = 0, front = users; depth < 4 && front.length; depth++) {
+      const seen = new Set(users.map((x) => `${x.file}#${x.fn}`));
+      front = fnsCalling(new Set(front.map((x) => x.fn.split(".").pop()))).filter((x) => !seen.has(`${x.file}#${x.fn}`));
+      users = [...users, ...front];
+    }
     if (configName && !users.length) {
     } else {
       const owners = new Set(users.map((x) => `${x.file}#${x.fn}`));
+      const ownCalls = new Set(units2.filter((x) => x.kind === "function" && (x.file === unit.file && x.fn === unit.fn || owners.has(`${x.file}#${x.fn}`))).flatMap((x) => x.calls ?? []));
       const mine = users.length ? Math.max(...users.map((x) => nameScore(subject, x))) : nameScore(subject, unit);
-      const pool = units2.filter((u) => u.fn !== unit.fn && !owners.has(`${u.file}#${u.fn}`) && nameScore(subject, u) > mine && (!judged.length || u.file === unit.file));
+      const pool = units2.filter((u) => u.fn !== unit.fn && !owners.has(`${u.file}#${u.fn}`) && !ownCalls.has(u.fn.split(".").pop()) && nameScore(subject, u) > mine && (!judged.length || u.file === unit.file));
       if (pool.length) {
         const top = Math.max(...pool.map((u) => nameScore(subject, u)));
         const theirs = pool.filter((u) => nameScore(subject, u) === top);
@@ -2504,7 +2570,7 @@ function findEvidence(req, units2, fields = []) {
   const condLoose = new Set((unit.condTokens ?? []).map(loose));
   const notThisCheck = !judged.length && (req.guardCue || req.needsCheck) && !dupInner && unit.kind === "condition" && unit.guard && (unit.setTokens ?? []).some((t) => reqWords.has(loose(t)) && !condLoose.has(loose(t)));
   const plainStatement = req.guardCue && !judged.length && !dupInner && unit.kind === "condition" && !unit.guard && !unit.condTokens && !unit.cond?.parts?.some((p) => p.source === "compare");
-  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && !stateUnread && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
   const words2 = new Set(req.tokens);
   const unchecked = found && !judged.length && (req.guardCue || req.needsCheck) ? fields.find((f) => !f.checked && tokenize(f.name).some((t) => words2.has(t)) && !(f.file === unit.file && f.line >= unit.startLine && f.line <= unit.endLine)) : void 0;
   const perPeriod = PER_PERIOD.test(req.text) && !req.constraints.some((c) => c.window) && req.constraints.some((c) => (c.rel === "lte" || c.rel === "lt") && (c.unit === "cnt" || c.unit === "qty" || c.unit === null));
@@ -2604,8 +2670,9 @@ function testStatus(ts3) {
 }
 function evaluate(sets, reqs, repo, base2) {
   for (const s of sets) {
+    const names = new Set(s.analyses.flatMap((a) => a.names ?? []));
     for (const r of reqs) {
-      const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []));
+      const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
       const mapped = mapTests(r, s.tests, evidence);
       const rr = { evidence, tests: mapped, testStatus: testStatus(mapped) };
       const edits = (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
@@ -2651,7 +2718,7 @@ function summarize(req, sets) {
   else overall = "\uBBF8\uD655\uC778";
   return { req, relation, overall, notes };
 }
-var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName;
+var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, NOT_STATE, STATE_LEAD, STATE_WHO, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName;
 var init_engine = __esm({
   "src/engine.ts"() {
     init_analyze();
@@ -2708,6 +2775,9 @@ var init_engine = __esm({
     STRONG_DUP = new Set(["already", "duplicat", "duplicate", "taken", "exist", "exists", "used", "redeemed", "consumed", "claimed", "uniqu", "conflict"].map(stem));
     STATE_LIT = /([A-Za-z_.]*(?:status|state|stage|phase|role|plan|tier))\s*[!=]==?\s*['"`]([\w-]+)['"`]|['"`]([\w-]+)['"`]\s*[!=]==?\s*([A-Za-z_.]*(?:status|state|stage|phase|role|plan|tier))\b/gi;
     IRREGULAR = { paid: "pay", sent: "send", sold: "sell" };
+    NOT_STATE = new Set(["other", "another", "new", "old", "same", "all", "any", "some", "each", "every", "most", "many", "this", "that", "these", "those", "such", "regular", "normal", "single", "first", "last", "second", "third", "current", "existing", "given", "different", "one", "two", "no", "non", "only", "same"].map(stem));
+    STATE_LEAD = /^\s*(?:(?:an?|the)\s+)?([a-z]+)\s+[a-z]+(?:\s+[a-z]+)?\s+(?:cannot|can't|can not|may not|must not|should not|must never|can never|(?:is|are) not allowed to)\b/i;
+    STATE_WHO = /\b(?:who|that|which)\s+(?:is|are|has been|have been|was|were)\s+(?:already\s+)?([a-z]+)\b/i;
     subjectOf = (req) => new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t)));
     AGE = stem("age");
     WEAK_NAME = new Set(["day", "minute", "min", "ms", "sec", "second", "hour", "week", "month", "age"].map(stem));
@@ -2838,7 +2908,7 @@ var init_requirements = __esm({
 // src/demo.ts
 import { cpSync, mkdirSync, mkdtempSync, existsSync as existsSync2 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join as join2 } from "node:path";
+import { dirname as dirname2, join as join2 } from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { fileURLToPath } from "node:url";
 function buildSampleRepo(o = {}) {
@@ -2894,7 +2964,7 @@ var here, SAMPLE, DEMO_DATE;
 var init_demo = __esm({
   "src/demo.ts"() {
     init_i18n();
-    here = dirname(fileURLToPath(import.meta.url));
+    here = dirname2(fileURLToPath(import.meta.url));
     SAMPLE = join2(here, "..", "samples", "login-lockout");
     DEMO_DATE = "2026-01-01T00:00:00Z";
   }
@@ -4851,7 +4921,7 @@ __export(ci_exports, {
   runCi: () => runCi
 });
 import { appendFileSync, existsSync as existsSync3, readFileSync as readFileSync3, rmSync, statSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join4, relative, resolve } from "node:path";
+import { join as join4, relative as relative2, resolve as resolve2 } from "node:path";
 function parseFailOn(value) {
   const words2 = (value ?? "different,failed").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   const unknown = words2.filter((w) => !FAIL_WORDS[w]);
@@ -4877,9 +4947,9 @@ function hookDir(hook, input) {
   if (hook === "cursor") return str(process.env.CURSOR_PROJECT_DIR) ?? (Array.isArray(input.workspace_roots) ? str(input.workspace_roots[0]) : void 0);
   return void 0;
 }
-function topLevel(dir) {
+function topLevel2(dir) {
   try {
-    return resolve(git(dir, ["rev-parse", "--show-toplevel"]).trim());
+    return resolve2(topLevel(dir));
   } catch {
     throw new UsageError(L(`git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4: ${dir}`, `Not a git repository: ${dir}`));
   }
@@ -4939,7 +5009,7 @@ function editedMessage(items) {
   ].join("\n");
 }
 function failedStatePath(repo) {
-  return resolve(repo, git(repo, ["rev-parse", "--git-path", "verifylens-failed-tests.json"]).trim());
+  return resolve2(repo, git(repo, ["rev-parse", "--git-path", "verifylens-failed-tests.json"]).trim());
 }
 function readFailedState(file) {
   try {
@@ -4996,8 +5066,8 @@ function check(opts, hook, input, io) {
     return 0;
   };
   if (hook === "cursor" && str(input.status) && input.status !== "completed") return pass();
-  const dir = resolve(opts.repo ?? hookDir(hook, input) ?? ".");
-  const reqFile = resolve(dir, opts.requirements ?? ".verifylens/requirements.md");
+  const dir = resolve2(opts.repo ?? hookDir(hook, input) ?? ".");
+  const reqFile = resolve2(dir, opts.requirements ?? ".verifylens/requirements.md");
   const failOn = parseFailOn(opts["fail-on"]);
   if (!existsSync3(reqFile)) {
     if (hook) {
@@ -5008,11 +5078,11 @@ function check(opts, hook, input, io) {
   }
   const reqs = parseRequirements(readFileSync3(reqFile, "utf8"));
   if (!reqs.length) throw new UsageError(L("\uC694\uAD6C\uC0AC\uD56D\uC744 \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \u300C- R1: \uBB38\uC7A5\u300D \uD615\uC2DD\uC778\uC9C0 \uD655\uC778\uD558\uC138\uC694.", 'No requirements could be read. Each line must look like "- R1: sentence".'));
-  const repo = topLevel(dir);
+  const repo = topLevel2(dir);
   if (hook && !uncommittedFiles(repo).some((f) => CODE_EXT3.test(f))) return pass();
   const base2 = pickBase(repo, opts.base, worktree);
   const head = opts.head ?? "HEAD";
-  let junit = opts.junit ? resolve(dir, opts.junit) : void 0;
+  let junit = opts.junit ? resolve2(dir, opts.junit) : void 0;
   if (junit && !existsSync3(junit)) {
     say(L(`\uD14C\uC2A4\uD2B8 \uACB0\uACFC \uD30C\uC77C\uC774 \uC5C6\uC5B4 \uAC80\uC0AC \uC5C6\uC774 \uD310\uB2E8\uD569\uB2C8\uB2E4: ${junit}`, `The test report was not found, so tests are not used: ${junit}`));
     junit = void 0;
@@ -5041,7 +5111,7 @@ function check(opts, hook, input, io) {
     );
   }
   const github = !hook && (!!process.env.GITHUB_ACTIONS || opts.github === "true");
-  const workspace = process.env.GITHUB_WORKSPACE ? resolve(process.env.GITHUB_WORKSPACE) : repo;
+  const workspace = process.env.GITHUB_WORKSPACE ? resolve2(process.env.GITHUB_WORKSPACE) : repo;
   const lenses = allLenses(report);
   const why = (s) => summaryLine(report, s);
   for (const s of report.summaries) {
@@ -5053,14 +5123,14 @@ function check(opts, hook, input, io) {
     for (const { e } of changed) say(`    \u26A0 ${changedTestLine(e)}`);
     if (github) {
       for (const { e } of changed) {
-        const at = e.kind === "removed" ? "" : `file=${escProp(slash(relative(workspace, join4(repo, e.file))))},line=${e.line},`;
+        const at = e.kind === "removed" ? "" : `file=${escProp(slash(relative2(workspace, join4(repo, e.file))))},line=${e.line},`;
         io.out(`::warning ${at}title=${escProp(`VerifyLens ${s.req.id} \xB7 ${L("\uAC80\uC0AC \uBC14\uB01C", "test changed")}`)}::${escData(`${s.req.text} \u2014 ${changedTestLine(e)}`)}`);
       }
     }
     if (!github || s.overall === "\uD655\uC778\uB428") continue;
     const level = s.overall === "\uBBF8\uD655\uC778" ? "warning" : "error";
     const lens = lenses.find((l) => l.reqId === s.req.id);
-    const where3 = lens ? `file=${escProp(slash(relative(workspace, join4(repo, lens.file))))},line=${lens.line},` : "";
+    const where3 = lens ? `file=${escProp(slash(relative2(workspace, join4(repo, lens.file))))},line=${lens.line},` : "";
     const title = `VerifyLens ${s.req.id} \xB7 ${wOverall(s.overall)}`;
     const message2 = [s.req.text, why(s), reasons.join(", ")].filter(Boolean).join(" \u2014 ");
     io.out(`::${level} ${where3}title=${escProp(title)}::${escData(message2)}`);
@@ -5082,7 +5152,7 @@ No requirement is ${names}.`)
   const edited = report.summaries.filter((s) => !blocking.includes(s)).flatMap((s) => changedTests(report, s.req.id).map(({ e }) => ({ s, e })));
   if (!blocking.length && !rerun.notRun.length && !edited.length) return pass();
   const message = [
-    blocking.length ? agentMessage(blocking, why, lenses, slash(relative(dir, reqFile)), report) : "",
+    blocking.length ? agentMessage(blocking, why, lenses, slash(relative2(dir, reqFile)), report) : "",
     rerun.notRun.length ? rerunMessage(rerun.notRun) : "",
     edited.length ? editedMessage(edited) : ""
   ].filter(Boolean).join("\n\n");
@@ -5133,7 +5203,7 @@ init_requirements();
 init_demo();
 init_i18n();
 import { mkdirSync as mkdirSync2, readFileSync as readFileSync4 } from "node:fs";
-import { resolve as resolve2 } from "node:path";
+import { resolve as resolve3 } from "node:path";
 import { spawn } from "node:child_process";
 function openInBrowser(file) {
   const [cmd, cmdArgs, verbatim] = process.platform === "win32" ? ["cmd", ["/c", "start", '""', `"${file}"`], true] : process.platform === "darwin" ? ["open", [file], false] : ["xdg-open", [file], false];
@@ -5229,7 +5299,7 @@ async function main(argv) {
     let repo, base2, a, b, reqFile, ja, jb;
     let pr;
     if (cmd === "report") {
-      repo = resolve2(opts.repo ?? ".");
+      repo = resolve3(opts.repo ?? ".");
       base2 = opts.base ?? "main";
       a = opts.a ?? opts.head;
       b = opts.b;
@@ -5268,7 +5338,7 @@ async function main(argv) {
       return;
     }
     const { writeOutputs: writeOutputs2 } = await Promise.resolve().then(() => (init_output(), output_exports));
-    const out = resolve2(opts.out ?? (cmd === "demo" ? "out" : "verifylens-out"));
+    const out = resolve3(opts.out ?? (cmd === "demo" ? "out" : "verifylens-out"));
     mkdirSync2(out, { recursive: true });
     const files = writeOutputs2(report, out, pr, cmd === "demo" && lang !== "en");
     console.log(L("\uB9AC\uD3EC\uD2B8\uB97C \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (\uCF54\uB4DC\uB294 \uC774 PC \uBC16\uC73C\uB85C \uB098\uAC00\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4):", "Report written (your code did not leave this machine):"));

@@ -11,7 +11,7 @@ import { draftRequirements, extractRequirements, parseRequirements } from '../..
 import { buildSampleRepo } from '../../src/demo.ts';
 import { renderHtml } from '../../src/output.ts';
 import { attention, counts, renderSummaryMd, undecidedReasons, type Attention } from '../../src/summary.ts';
-import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
+import { git, mergeBase, topLevel, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
 import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../src/types.ts';
 import { L, getLang, setLabel, testPhrase, wOverall, wTest } from '../../src/i18n.ts';
 import { boundaryLine, boundaryShort, checkWord, pick, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
@@ -125,7 +125,7 @@ export function runRepo(p: RepoParams): Run {
 // ---------------------------------------------------------------- git 도우미
 export function gitRoot(dir: string): string | null {
   try {
-    return git(dir, ['rev-parse', '--show-toplevel']).trim() || null;
+    return topLevel(dir) || null;
   } catch {
     return null;
   }

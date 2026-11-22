@@ -22,7 +22,7 @@ const NODE_MODULES = /^(node:)?(fs|path|os|crypto|child_process|url|module|inspe
 const STUB_NAMES = [
   'execFileSync', 'spawn', 'spawnSync', 'createHash', 'cpSync', 'mkdirSync', 'mkdtempSync', 'existsSync', 'readFileSync', 'statSync', 'writeFileSync',
   'readdirSync', 'rmSync', 'copyFileSync', 'tmpdir', 'homedir', 'dirname', 'join', 'resolve', 'relative', 'basename', 'isAbsolute', 'extname',
-  'fileURLToPath', 'pathToFileURL', 'createRequire',
+  'fileURLToPath', 'pathToFileURL', 'createRequire', 'realpathSync', 'sep',
 ];
 const nodeStub = {
   name: 'node-stub',

@@ -16,7 +16,7 @@
 import { appendFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { analyzeResult, evaluate } from './engine.ts';
-import { git, mergeBase, uncommittedFiles, worktreeChangedFiles } from './git.ts';
+import { git, mergeBase, topLevel as gitTopLevel, uncommittedFiles, worktreeChangedFiles } from './git.ts';
 import { parseRequirements } from './requirements.ts';
 import { parseTestReport } from './tests.ts';
 import { testPointsLine } from './testpoints.ts';
@@ -75,7 +75,7 @@ function hookDir(hook: Hook | undefined, input: Record<string, unknown>): string
 
 function topLevel(dir: string): string {
   try {
-    return resolve(git(dir, ['rev-parse', '--show-toplevel']).trim());
+    return resolve(gitTopLevel(dir));
   } catch {
     throw new UsageError(L(`git 저장소가 아닙니다: ${dir}`, `Not a git repository: ${dir}`));
   }

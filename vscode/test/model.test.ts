@@ -621,3 +621,23 @@ test('test values go to the requirements a person must fix, not to verified ones
   assert.match(M.hoverMarkdown(r.report, 'R2')!, /\*\*경계에서 시험할 값\*\* 4번째 → 아직 동작 안 함 · 5번째 → 동작/);
   assert.doesNotMatch(M.hoverMarkdown(r.report, 'R1')!, /경계에서 시험할 값/);
 });
+
+// ---------------------------------------------------------------- 0.22.0: junction · 심볼릭 링크 · subst 드라이브로 연 폴더
+import { symlinkSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
+
+test('repository root keeps the spelling of the folder that was opened (junction / symlink)', () => {
+  const r = demo(null);
+  const raw = execFileSync('git', ['-C', r.repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+  // 링크가 없으면 git 이 준 그대로 (예전과 같음)
+  assert.equal(M.gitRoot(r.repo), raw);
+  assert.equal(M.gitRoot(join(r.repo, 'src')), raw);
+  const link = join(mkdtempSync(join(tmpdir(), 'vl-link-')), 'opened');
+  symlinkSync(r.repo, link, 'junction');
+  // git 은 실제 경로를 알려 주지만, 편집기가 연 경로로 돌려준다
+  assert.notEqual(resolvePath(execFileSync('git', ['-C', link, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()).toLowerCase(), resolvePath(link).toLowerCase());
+  assert.equal(M.gitRoot(link), resolvePath(link));
+  assert.equal(M.gitRoot(join(link, 'src')), resolvePath(link));
+  // 저장소 밖의 폴더는 그대로 null
+  assert.equal(M.gitRoot(dirname(link)), null);
+});

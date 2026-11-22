@@ -77,6 +77,8 @@ export type Unit = {
   calls?: string[];
   /** 함수 줄만: 몸통에서 쓰는 이름(변수 · 상수) */
   refs?: string[];
+  /** 함수 줄만: 내보내지 않았고 파일 안 아무 데서도 부르거나 넘기지 않는 함수 (그 안의 검사는 돌지 않는다) */
+  uncalled?: boolean;
 };
 
 export type DynCall = { file: string; line: number; text: string };
@@ -108,6 +110,8 @@ export type FileAnalysis = {
   reexports: { all: string[]; named: Record<string, { from: string; name: string }> };
   /** 스키마의 문자열 칸 (email: z.string().email()). checked 는 형식 · 길이 검사가 붙었는지 */
   fields?: SchemaField[];
+  /** 코드에 나오는 이름의 낱말(글자 안은 뺌): 칸 · 변수 · 상수 · 열거형 값 · 메서드 */
+  names?: string[];
 };
 
 export type SchemaField = { file: string; line: number; name: string; checked: boolean };

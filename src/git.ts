@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 export function git(repo: string, args: string[]): string {
   return execFileSync('git', ['-c', 'core.quotepath=false', '-C', repo, ...args], {
@@ -7,6 +9,34 @@ export function git(repo: string, args: string[]): string {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+/** 저장소 뿌리. 폴더를 연 경로 그대로 돌려준다 (inCallerSpelling). */
+export function topLevel(dir: string): string {
+  const root = git(dir, ['rev-parse', '--show-toplevel']).trim();
+  return root ? inCallerSpelling(dir, root) : root;
+}
+
+/**
+ * git 은 저장소 뿌리를 실제 경로(C:/…)로 알려 준다. subst 드라이브(V:) · junction · 심볼릭 링크로 연 폴더면
+ * 편집기가 쓰는 경로와 어긋나서, 열린 파일이 결과와 이어지지 않는다.
+ * 실제 경로로 몇 단계 아래인지 세어 부른 쪽 경로에서 그만큼 올라간다. 어긋나지 않으면 git 이 준 그대로.
+ * Node 의 realpathSync(JS 판)는 subst 드라이브를 풀지 못해 .native 를 쓴다.
+ */
+export function inCallerSpelling(start: string, root: string): string {
+  const same = (a: string, b: string) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+  try {
+    const from = resolve(start);
+    const realRoot = realpathSync.native(root);
+    const below = relative(realRoot, realpathSync.native(from));
+    if (below === '..' || below.startsWith('..' + sep) || isAbsolute(below)) return root;
+    let dir = from;
+    for (const part of below.split(sep)) if (part) dir = dirname(dir);
+    if (same(dir, resolve(root))) return root;
+    return same(realpathSync.native(dir), realRoot) ? dir : root;
+  } catch {
+    return root;
+  }
 }
 
 export function shortSha(repo: string, ref: string): string {

@@ -1,7 +1,7 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30, HOLDOUT31, HOLDOUT32, HOLDOUT33, HOLDOUT34, HOLDOUT35, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30, HOLDOUT31, HOLDOUT32, HOLDOUT33, HOLDOUT34, HOLDOUT35, HOLDOUT36, HOLDOUT37, allRows, score } from './cases/run.ts';
 import type { EvVariant } from './cases/holdout33.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
@@ -45,14 +45,18 @@ test('the latest unseen batches never call wrong code verified when keywords are
 test('evidence line: a block that only sets the state is not the check for it', () => {
   for (const kw of [true, false]) {
     assert.deepEqual(wrong(allRows(kw, HOLDOUT33)), []);
-    assert.deepEqual(wrong(allRows(kw, HOLDOUT34)), ['ev2-lock-method / 잠금 검사 있음: 기대 확인됨, 결과 미확인', 'ev2-door / 잠금 검사 없음: 기대 미확인, 결과 확인됨']);
-    assert.deepEqual(wrong(allRows(kw, HOLDOUT35)), ['ev3-enum / 취소 검사 없음: 기대 미확인, 결과 확인됨', 'ev3-helper / 도우미를 부르지 않음: 기대 미확인, 결과 확인됨']);
+    // 0.21.0 에서 한계로 남았던 넷(메서드로 잠금 · 오류 글에만 · 열거형 · 부르지 않는 도우미)은 0.22.0 에서 고쳤다
+    assert.deepEqual(wrong(allRows(kw, HOLDOUT34)), []);
+    assert.deepEqual(wrong(allRows(kw, HOLDOUT35)), []);
+    // 0.22.0: 남은 한계를 고치기 전에 쓴 묶음(고치면서 봄)은 모두 맞고, 고친 뒤 처음 쓴 묶음은 배열에 넣어 부르는 도우미만 남는다
+    assert.deepEqual(wrong(allRows(kw, HOLDOUT36)), []);
+    assert.deepEqual(wrong(allRows(kw, HOLDOUT37)), ['ev5-invite-list / 배열로 부르기: 기대 확인됨, 결과 미확인']);
   }
-  // 「확인됨」이 맞는 코드에서 근거 줄이 진짜 검사다 (메서드로 잠그는 사례는 한계)
-  for (const set of [HOLDOUT33, HOLDOUT34, HOLDOUT35]) {
+  // 「확인됨」이 맞는 코드에서 근거 줄이 진짜 검사다
+  for (const set of [HOLDOUT33, HOLDOUT34, HOLDOUT35, HOLDOUT36, HOLDOUT37]) {
     for (const c of set) {
       for (const v of c.variants as EvVariant[]) {
-        if (!v.ev || c.id === 'ev2-lock-method') continue;
+        if (!v.ev || c.id === 'ev5-invite-list') continue;
         for (const kw of [true, false]) {
           const s = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { [c.file ?? 'src/feature.ts']: v.code }, tests: [{ name: c.test, status: 'pass', message: '' }] });
           const r = evaluate([s], parseRequirements(kw ? `- R1: ${c.req} | keywords: ${c.keywords}` : `- R1: ${c.req}`), '.', 'main');
