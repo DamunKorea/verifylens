@@ -167,6 +167,8 @@ export type Evidence = {
   unchecked?: Text;
   /** 「하루에 N번」인데 세는 줄에 기간이 보이지 않음 (전부 센다) */
   noWindow?: boolean;
+  /** 「A banned user cannot …」의 banned 처럼 코드가 이름으로 가진 상태를 아무 조건도 읽지 않음 (그 낱말) */
+  stateUnread?: string;
 };
 
 export type TestStatus = '통과' | '실패' | '미실행';

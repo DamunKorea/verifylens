@@ -329,15 +329,19 @@ export function summaryLine(report: Report, s: ReqSummary): string {
     if (open.length) return open.join(' · ');
     // 검사가 있어도 판단을 막은 까닭(확인하는 조건 못 찾음 · 기간 없음 · 검사 없이 받는 곳)이 있으면 그것을 말한다.
     // (예전에는 여기서 늘 「연결된 검사가 없어」라고 해, 근거 줄의 「검사 통과」와 어긋났다 — JetBrains 세션이 찾음)
-    const why = undecidedReasons(report, s).filter((k) => k !== 'no-test' && k !== 'stale');
+    const reasons = undecidedReasons(report, s);
+    // 이어진 검사는 있는데 결과가 없음(건너뜀 · 체험 페이지) — 「연결된 검사 없음」과 다르다
+    const notRun = reasons.includes('not-run');
+    const why = reasons.filter((k) => k !== 'no-test' && k !== 'not-run' && k !== 'stale');
     if (why.length) {
       const what = why.map((k) => undecidedLabel(k)).join(' · ');
       const passed = report.sets.every((x) => x.perReq[id].testStatus === '통과');
       const untested = report.sets.some((x) => x.perReq[id].testStatus === '미실행');
       if (passed) return L(`검사는 통과했지만 ${what}`, `the test passes, but ${what}`);
-      return untested ? L(`${what} · 연결된 검사 없음`, `${what} · no linked test`) : what;
+      return untested ? L(`${what} · ${notRun ? '검사를 돌리지 않음' : '연결된 검사 없음'}`, `${what} · ${notRun ? 'test not run' : 'no linked test'}`) : what;
     }
     if (report.testsStale) return L('테스트 결과가 코드보다 오래되어 쓰지 않음 — 테스트를 다시 실행해야 함', 'test results are older than the code and were not used — run the tests again');
+    if (notRun) return L('이어진 검사를 돌리지 않아 동작을 확인하지 못함', 'the linked test was not run, so the behavior is not confirmed');
     return L('연결된 검사가 없어 동작을 확인하지 못함', 'no linked test, so the behavior is not confirmed');
   }
   return L('근거를 찾았고 검사가 통과', 'evidence found and the tests pass');

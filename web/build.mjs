@@ -1,7 +1,7 @@
 // 설치 없이 해 보는 페이지를 web/dist 에 만든다. esbuild 는 vscode/ 에 설치된 것을 쓴다.
 //   node web/build.mjs
 // 엔진에 들어 있는 git · 파일 시스템 코드는 이 페이지에서 부르지 않으므로, Node 모듈은 빈 껍데기로 바꿔 묶는다.
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,6 +56,7 @@ const result = await esbuild.build({
   plugins: [nodeStub],
   logLevel: 'warning',
   metafile: true,
+  define: { __VL_VERSION__: JSON.stringify(JSON.parse(readFileSync(join(root, 'vscode', 'package.json'), 'utf8')).version) },
 });
 
 copyFileSync(join(here, 'index.html'), join(out, 'index.html'));

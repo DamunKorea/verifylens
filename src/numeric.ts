@@ -541,7 +541,7 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
  * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
  * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
  */
-export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'stale';
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'state-unread' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'not-run' | 'stale';
 const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   wording: {
     label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
@@ -574,6 +574,13 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
       en: 'Check that an if statement enforces the requirement. Only the function name matched. If there is one, add “| keywords: words in the code”.',
     },
   },
+  'state-unread': {
+    label: { ko: '그 상태를 읽는 조건 없음', en: 'nothing reads that state' },
+    action: {
+      ko: '코드에는 요구사항이 말하는 상태의 이름(칸 · 상수 · 열거형 값)이 있는데, 그것을 읽는 조건이 없다. 정하기만 하는 곳(user.ban() · 오류 글)은 막는 코드가 아니다. 막는 if 문을 넣거나, 다른 이름으로 본다면 「| keywords: 코드에 나오는 영어 단어」를 붙인다.',
+      en: 'The code has a name for the state in the requirement (a field, constant or enum value), but no condition reads it. Places that only set it (user.ban(), an error message) do not block anything. Add the check, or add “| keywords: words in the code” if it is checked under another name.',
+    },
+  },
   'no-evidence': {
     label: { ko: '근거 없음', en: 'no evidence' },
     action: { ko: '구현이 있는지 확인한다. 있으면 「| keywords: 코드에 나오는 영어 단어」를 요구사항에 붙인다.', en: 'Check that it is implemented. If it is, add “| keywords: words in the code” to the requirement.' },
@@ -593,6 +600,13 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   'no-test': {
     label: { ko: '검사 없음', en: 'no test' },
     action: { ko: '이 요구사항을 확인하는 테스트를 돌린다. 테스트 이름에 요구사항의 낱말과 숫자를 넣으면 이어진다.', en: 'Run a test for this requirement. A test name with the requirement’s words and number gets linked.' },
+  },
+  'not-run': {
+    label: { ko: '검사를 돌리지 않음', en: 'test not run' },
+    action: {
+      ko: '이어진 테스트는 있지만 결과가 없다(건너뜀, 또는 체험 페이지라 돌리지 않음). 그 테스트를 돌려 결과를 넣는다. 체험 페이지에서는 돌려서 통과한 테스트를 3번 칸에서 「통과」로 바꾼다.',
+      en: 'A linked test exists but has no result (skipped, or not run on the browser page). Run it and use the result. On the browser page, set the tests that passed for you to “passed” under 3.',
+    },
   },
   stale: {
     label: { ko: '검사 오래됨', en: 'tests out of date' },

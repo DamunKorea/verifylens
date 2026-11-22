@@ -32,7 +32,9 @@ export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = ge
       ? `${ko ? '통과' : 'passes'}${linked[0] ? ` · ${linked[0].name}` : ''}`
       : rr.testStatus === '실패'
         ? `${ko ? '실패' : 'fails'}${firstFail ? ` · ${firstFail.name}` : ''}`
-        : ko ? '연결된 검사 없음' : 'no linked test';
+        : linked[0]
+          ? `${ko ? '돌리지 않음' : 'not run'} · ${linked[0].name}`
+          : ko ? '연결된 검사 없음' : 'no linked test';
   let testTone: ChainTone = rr.testStatus === '통과' ? 'ok' : rr.testStatus === '실패' ? 'diff' : 'miss';
   // 이 요구사항의 검사를 이번 변경에서 바꾸거나 지웠으면 「검사」 칸에 적고 어긋남(다름 색)으로 칠한다 — 통과가 그 변경 덕일 수 있다.
   // (실패한 검사는 그대로 실패 색. changed 는 「통과했지만 바뀐 검사」만 표시한다)

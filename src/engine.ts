@@ -302,13 +302,13 @@ const STATE_WHO = /\b(?:who|that|which)\s+(?:is|are|has been|have been|was|were)
  * 막는 요구사항이 말하는 상태 낱말: 「A banned user cannot post comments」의 banned, 「Users who are suspended cannot …」의 suspended.
  * in- · un- 꼴(inactive)은 뿌리(active)도 함께 돌려준다: 코드는 흔히 !user.active 로 본다. 영어 문장만 읽는다.
  */
-function stateStems(req: Requirement): string[] {
+function stateOf(req: Requirement): { word: string; stems: string[] } | null {
   const m = req.text.match(STATE_LEAD) ?? req.text.match(STATE_WHO);
-  if (!m) return [];
+  if (!m) return null;
   const w = m[1].toLowerCase();
-  if (NOT_STATE.has(stem(w))) return [];
+  if (NOT_STATE.has(stem(w))) return null;
   const base = w.match(/^(?:in|un|non|dis)([a-z]{4,})$/)?.[1];
-  return base ? [stem(w), stem(base)] : [stem(w)];
+  return { word: w, stems: base ? [stem(w), stem(base)] : [stem(w)] };
 }
 const subjectOf = (req: Requirement) => new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t) && !WEAK_NAME.has(t) && !TIME_WORDS.has(t)));
 /** 이름(함수 · 파일)에 든 요구사항 낱말. 함수 이름에 든 낱말을 파일 이름에만 든 낱말보다 두 배로 친다 */
@@ -529,7 +529,8 @@ function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] 
   // (오류 글에만 있는 상태 낱말 if (!canEdit) throw new Error('NO_PERMISSION_OR_ARCHIVED') · 메서드로 정하는 user.ban() · 상수 driver.status = SUSPENDED 가
   // 검사 없이 「확인됨」이 되던 것 — 근거 줄 고친 뒤 새 묶음에서 찾음, 11/22)
   let stateUnread = false;
-  const state = stateStems(req);
+  const stateWord = stateOf(req);
+  const state = stateWord?.stems ?? [];
   if (!judged.length && (req.guardCue || req.needsCheck) && state.length && state.some((t) => names.has(t))) {
     const reads = (u: Unit) => u.kind === 'condition' && !!u.condTokens?.some((t) => state.includes(t));
     if (!reads(unit)) {
@@ -665,6 +666,7 @@ function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] 
   const status = found && !unchecked && !noWindow ? '발견' : '일부 발견';
   const ev: Evidence = { unit, score: s.score, status, why: s.why };
   if (noWindow) ev.noWindow = true;
+  if (stateUnread && stateWord) ev.stateUnread = stateWord.word;
   if (unchecked) {
     const at = `${unchecked.file.split('/').pop()}:${unchecked.line}`;
     ev.unchecked = { ko: `${unchecked.name} 을(를) 검사 없이 받는 곳이 있음 (${at})`, en: `${unchecked.name} is accepted without a check at ${at}` };

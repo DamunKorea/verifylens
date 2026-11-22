@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.23.0
+
+The first run on the browser page says more, and a wrong verdict can be reported in two clicks. All of it comes from reading back every reaction we got in Korea and on X: everyone asked how far to trust the verdicts, and nobody has run VerifyLens on their own code yet. No new rule is added, and no verdict changes.
+
+- **A test that was not run is not "no test".** The browser page cannot run tests, so a public pull request used to come back almost all Not verified with "no test", even when its tests were right there. Now:
+  - The tests in the pull request are listed under 3 as "not run". Set the ones that passed for you to "passed".
+  - A requirement whose linked test was not run says "test not run", and the card lists the test with ○. "No test" now means that no test is linked at all.
+  - The same reason shows in the editor, the pull request summary and the command line when a linked test was skipped.
+- **"Wrong verdict? Report it"** under every result on the browser page. It copies the requirement, the verdict, the evidence line and a few lines around it, then opens a GitHub issue form. Nothing leaves the page until you post the issue yourself, and the code is not put in the address.
+- **A clearer reason for the 0.22.0 state rule.** When the code names the state but no condition reads it, the reason is now "nothing reads that state". It used to say "no deciding check", with advice that only the function name had matched.
+- The browser page's JetBrains link points at the JetBrains guide, which always names the latest preview. Before, it pointed at 0.4.1.
+
 ## 0.22.0
 
 The evidence-line limits left in 0.21.0 are fixed, and so is a path problem for projects opened through a mapped drive or a link. We found all of it ourselves: the engine limits on cases we wrote after 0.21.0, and the path problem on our JetBrains build. None of it comes from a user report.

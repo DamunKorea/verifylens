@@ -1,0 +1,33 @@
+name: Wrong verdict / 틀린 판정
+description: VerifyLens said Verified, Different or Not verified, and it was wrong. / 판정이 틀렸을 때.
+title: "[Wrong verdict] "
+labels: ["wrong-verdict"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The browser page copied a report to your clipboard: the requirement, the verdict, the evidence line and a few lines around it. Paste it below. Remove anything private before posting.
+        체험 페이지가 요구사항 · 판정 · 근거 줄과 그 둘레 몇 줄을 클립보드에 복사했습니다. 아래에 붙여 넣고, 올리기 전에 비공개 내용은 지워 주세요.
+  - type: textarea
+    id: report
+    attributes:
+      label: What VerifyLens said / VerifyLens 의 판정
+      description: Paste the copied report, or describe the requirement, the verdict and the code. / 복사한 글을 붙여 넣거나, 요구사항 · 판정 · 코드를 적어 주세요.
+    validations:
+      required: true
+  - type: dropdown
+    id: should
+    attributes:
+      label: What should it have said? / 어떤 판정이 맞나요?
+      options:
+        - Verified / 확인됨
+        - Different / 다름
+        - Not verified / 미확인
+        - Not sure / 모르겠음
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why? / 왜 그런가요?
+      description: For example "the check is in another file", "this line only logs". / 예: 「검사는 다른 파일에 있다」, 「이 줄은 기록만 한다」.

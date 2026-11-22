@@ -39,3 +39,46 @@ test('plain lines become numbered requirements, and odd file names still get ana
 test('no requirement, no rows', () => {
   assert.equal(runCheck({ requirements: '\n# only a comment\n', fileName: 'a.ts', code: 'export const a = 1;', tests: [], lang: 'en' }).rows.length, 0);
 });
+
+// 0.23.0: PR 의 테스트는 이 페이지에서 돌리지 않는다. 「테스트 없음」이 아니라 「돌리지 않음」으로 보여야 한다 (국내외 반응 정리 11/22: PR 을 넣으면 거의 다 미확인)
+const BAN = (guard: string) => `export class User {
+  banned = false;
+  ban() { this.banned = true; }
+}
+
+export function postComment(user: User, text: string, save: (text: string) => void) {
+${guard}  if (/buy now/i.test(text)) {
+    user.ban();
+    throw new Error('SPAM');
+  }
+  save(text);
+}
+`;
+const GUARD = "  if (user.banned) throw new Error('USER_BANNED');\n";
+
+test('a linked test that was not run says so, apart from no test at all', () => {
+  for (const lang of ['en', 'ko'] as const) {
+    const base = { requirements: 'A banned user cannot post comments', fileName: 'src/comments.ts', code: BAN(GUARD), lang };
+    const notRun = runCheck({ ...base, tests: [{ name: 'a banned user cannot post comments', status: 'notrun' }] }).rows[0];
+    assert.equal(notRun.overall, '미확인');
+    assert.equal(notRun.reason, lang === 'en' ? 'test not run' : '검사를 돌리지 않음');
+    assert.deepEqual(notRun.tests, [lang === 'en' ? '○ a banned user cannot post comments (not run)' : '○ a banned user cannot post comments (안 돌림)']);
+    assert.equal(notRun.line, 7, 'the evidence line is still the check');
+    assert.doesNotMatch(notRun.summary, /no linked test|연결된 검사 없음/);
+    assert.match(notRun.summary, lang === 'en' ? /not run/ : /돌리지 않/);
+    assert.match(notRun.chain.find((s) => s.kind === 'test')!.text, lang === 'en' ? /^not run · / : /^돌리지 않음 · /);
+    const none = runCheck({ ...base, tests: [] }).rows[0];
+    assert.equal(none.reason, lang === 'en' ? 'no test' : '검사 없음');
+    // 돌려서 통과했다고 바꾸면 확인됨
+    assert.equal(runCheck({ ...base, tests: [{ name: 'a banned user cannot post comments', status: 'pass' }] }).rows[0].overall, '확인됨');
+  }
+});
+
+test('a state that nothing reads gets its own reason', () => {
+  for (const lang of ['en', 'ko'] as const) {
+    const r = runCheck({ requirements: 'A banned user cannot post comments', fileName: 'src/comments.ts', code: BAN(''), tests: [{ name: 'a banned user cannot post comments', status: 'pass' }], lang }).rows[0];
+    assert.equal(r.overall, '미확인');
+    assert.equal(r.reason, lang === 'en' ? 'nothing reads that state' : '그 상태를 읽는 조건 없음');
+    assert.match(r.todo[0].action, lang === 'en' ? /no condition reads it/ : /읽는 조건이 없다/);
+  }
+});

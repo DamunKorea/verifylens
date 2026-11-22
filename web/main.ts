@@ -5,15 +5,21 @@ import { codeFileName, runCheck, type TryResult, type TryRow, type TryTest } fro
 import { EXAMPLES, type Example } from './examples.ts';
 import { loadPr, MAX_CODE_FILES, PrError, type LoadedPr, type SkipWhy } from './pr.ts';
 import { setLang } from '../src/i18n.ts';
+import { testBlocks } from '../src/testedits.ts';
 
 type Lang = 'en' | 'ko';
 
 const LINKS = {
   vscode: 'https://marketplace.visualstudio.com/items?itemName=damun.verifylens',
   openvsx: 'https://open-vsx.org/extension/damun/verifylens',
-  jetbrains: 'https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.4.1',
+  // 판마다 바뀌는 Release 주소 대신, 최신 zip 을 안내하는 JetBrains 안내 글로 보낸다 (전에는 0.4.1 에 머물러 있었다)
+  jetbrains: 'https://github.com/DamunKorea/verifylens/tree/main/jetbrains#readme',
   github: 'https://github.com/DamunKorea/verifylens',
+  issue: 'https://github.com/DamunKorea/verifylens/issues/new',
 };
+/** 빌드할 때 vscode/package.json 의 판 번호가 들어간다 (web/build.mjs) */
+declare const __VL_VERSION__: string;
+const VERSION = typeof __VL_VERSION__ === 'string' ? __VL_VERSION__ : 'dev';
 
 // 고정 문구만 담는다. 사용자가 넣은 글은 이 표를 거치지 않고 textContent 로만 그린다.
 const T: Record<string, { en: string; ko: string }> = {
@@ -45,8 +51,8 @@ const T: Record<string, { en: string; ko: string }> = {
     ko: 'PR 이나 PR 이 닫는 이슈에서 요구사항 목록을 찾지 못했습니다. 「1. 요구사항」에 직접 적어 주세요.',
   },
   prTests: {
-    en: 'Tests are not run on this page. Add the tests you ran under 3, or use the extension or the GitHub Action to read real test results.',
-    ko: '이 페이지에서는 테스트를 돌리지 않습니다. 돌린 테스트를 3번 칸에 적거나, 확장 · GitHub Action 으로 실제 테스트 결과를 읽으세요.',
+    en: 'Tests are not run on this page. The tests in this PR are listed under 3 as “not run”: set the ones that passed for you to “passed”, or use the extension or the GitHub Action to read real test results.',
+    ko: '이 페이지에서는 테스트를 돌리지 않습니다. 이 PR 의 테스트를 3번 칸에 「안 돌림」으로 넣었습니다. 돌려서 통과한 것은 「통과」로 바꾸거나, 확장 · GitHub Action 으로 실제 테스트 결과를 읽으세요.',
   },
   prShare: { en: 'Link to this check', ko: '이 확인의 링크' },
   prFiles: { en: 'Files with evidence: ', ko: '근거가 있는 파일: ' },
@@ -68,6 +74,20 @@ const T: Record<string, { en: string; ko: string }> = {
   testName: { en: 'test name', ko: '테스트 이름' },
   pass: { en: 'passed', ko: '통과' },
   fail: { en: 'failed', ko: '실패' },
+  notrun: { en: 'not run', ko: '안 돌림' },
+  report: { en: 'Wrong verdict? Report it', ko: '판정이 틀렸나요? 알리기' },
+  reportTip: {
+    en: 'Copies the requirement, the verdict and the evidence line, and opens a GitHub issue form. Nothing is sent until you post it yourself.',
+    ko: '요구사항 · 판정 · 근거 줄을 복사하고 GitHub 이슈 양식을 엽니다. 직접 올리기 전에는 아무것도 보내지 않습니다.',
+  },
+  reportCopied: {
+    en: 'Copied. Paste it into the GitHub issue that just opened, and remove anything private before posting.',
+    ko: '복사했습니다. 방금 열린 GitHub 이슈에 붙여 넣고, 올리기 전에 비공개 내용은 지워 주세요.',
+  },
+  reportManual: {
+    en: 'Copy this into the GitHub issue that just opened, and remove anything private before posting:',
+    ko: '아래 글을 방금 열린 GitHub 이슈에 붙여 넣고, 올리기 전에 비공개 내용은 지워 주세요:',
+  },
   remove: { en: 'Remove this test', ko: '이 테스트 지우기' },
   result: { en: 'Result', ko: '결과' },
   loading: { en: 'Loading the analysis engine…', ko: '분석 엔진을 불러오는 중…' },
@@ -215,8 +235,8 @@ function renderTests() {
       edited();
     });
     const status = el('select');
-    status.setAttribute('aria-label', `${T.pass[lang]} / ${T.fail[lang]}`);
-    for (const v of ['pass', 'fail'] as const) {
+    status.setAttribute('aria-label', `${T.pass[lang]} / ${T.fail[lang]} / ${T.notrun[lang]}`);
+    for (const v of ['pass', 'fail', 'notrun'] as const) {
       const o = el('option', undefined, T[v][lang]);
       o.value = v;
       o.selected = t.status === v;
@@ -453,6 +473,7 @@ function run(compare = false) {
         }
         card.append(todo);
       }
+      card.append(reportRow(r));
       card.addEventListener('click', event => {
         if (r.line && !(event.target as Element).closest('button, a')) jump(r.line, r.file);
       });
@@ -611,6 +632,83 @@ function renderPrInfo() {
   prInfoEl.replaceChildren(head, files, from, warn);
 }
 
+/** 틀린 판정을 알리는 글: 요구사항 · 판정 · 근거 줄 둘레 · 이어진 테스트. 사용자가 이슈에 붙여 넣는다 (페이지는 아무것도 보내지 않는다) */
+function reportText(r: TryRow): string {
+  const file = r.file ?? renderedFile;
+  const source = pr ? (pr.url ?? '') : '';
+  const text = (pr ? prFiles[file] ?? '' : codeEl.value).replace(/\r\n/g, '\n').split('\n');
+  const out = [
+    `VerifyLens ${VERSION} · browser page${source ? ` · ${source}` : ''}`,
+    '',
+    `- Requirement: ${r.id} ${r.text}`,
+    `- Verdict: ${r.verdict}${r.reason ? ` · ${r.reason}` : ''}`,
+    `- Evidence: ${r.line ? `${file}:${r.line}` : 'none'}`,
+    `- Linked tests: ${r.tests.length ? r.tests.join(', ') : 'none'}`,
+  ];
+  if (r.line) {
+    const from = Math.max(1, r.line - 3);
+    const to = Math.min(text.length, r.line + 3);
+    const fence = text.slice(from - 1, to).some((l) => l.includes('```')) ? '~~~' : '```';
+    out.push('', fence + 'ts', ...text.slice(from - 1, to).map((l, i) => `${String(from + i).padStart(3)}${from + i === r.line ? ' >' : '  '} ${l}`), fence);
+  }
+  return out.join('\n') + '\n';
+}
+
+function reportRow(r: TryRow): HTMLElement {
+  const row = el('div', 'report');
+  const btn = el('button', 'report-btn', T.report[lang]);
+  btn.type = 'button';
+  btn.title = T.reportTip[lang];
+  btn.addEventListener('click', async () => {
+    const body = reportText(r);
+    const url = `${LINKS.issue}?template=wrong_verdict.yml&title=${encodeURIComponent(`[Wrong verdict] ${r.id} · ${r.verdict}`)}`;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(body);
+      copied = true;
+    } catch {
+      /* 클립보드를 쓸 수 없으면 글을 보여 준다 */
+    }
+    window.open(url, '_blank', 'noopener');
+    row.querySelector('.report-msg')?.remove();
+    const msg = el('div', 'report-msg');
+    msg.append(el('p', undefined, copied ? T.reportCopied[lang] : T.reportManual[lang]));
+    if (!copied) {
+      const area = el('textarea');
+      area.readOnly = true;
+      area.value = body;
+      area.rows = Math.min(14, body.split('\n').length + 1);
+      msg.append(area);
+    }
+    row.append(msg);
+  });
+  row.append(btn);
+  return row;
+}
+
+/** PR 의 테스트 파일에 있는 테스트 이름 (건너뛰는 것은 뺀다). 이 페이지는 돌리지 않으므로 「안 돌림」으로 둔다 */
+const MAX_PR_TESTS = 200;
+const TEST_PATH = /(\.test\.|\.spec\.|__tests__\/|(^|\/)tests?\/)/;
+function prTests(files: Record<string, string>): TryTest[] {
+  const out: TryTest[] = [];
+  const seen = new Set<string>();
+  for (const [file, text] of Object.entries(files)) {
+    if (!TEST_PATH.test(file)) continue;
+    let blocks: ReturnType<typeof testBlocks>;
+    try {
+      blocks = testBlocks(file, text);
+    } catch {
+      continue;
+    }
+    for (const b of blocks) {
+      if (b.skipped || seen.has(b.full) || out.length >= MAX_PR_TESTS) continue;
+      seen.add(b.full);
+      out.push({ name: b.full, status: 'notrun' });
+    }
+  }
+  return out;
+}
+
 let prSeq = 0;
 async function submitPr(address: string) {
   const seq = ++prSeq;
@@ -644,7 +742,7 @@ async function submitPr(address: string) {
   current = null;
   pr = got;
   prFiles = { ...got.files };
-  tests = [];
+  tests = prTests(got.files);
   testsFrom = null;
   testsNoteEl.hidden = true;
   const header = lang === 'ko'

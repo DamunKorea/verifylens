@@ -7,7 +7,8 @@ import { undecidedAction, undecidedLabel } from '../src/numeric.ts';
 import type { Overall } from '../src/types.ts';
 import { allLenses, attemptDots, attemptLines, chainSteps, setLang, treeModel, verifiedLine, wOverall, type ChainStep, type Lang } from '../vscode/src/model.ts';
 
-export type TryTest = { name: string; status: 'pass' | 'fail' };
+/** notrun: PR 에 있는 테스트지만 이 페이지에서는 돌리지 않음 (엔진에는 건너뛴 검사로 넘긴다) */
+export type TryTest = { name: string; status: 'pass' | 'fail' | 'notrun' };
 export type TryInput = {
   requirements: string;
   fileName: string;
@@ -78,7 +79,7 @@ export function runCheck(input: TryInput): TryResult {
   const requirementLines = normalizeRequirements(input.requirements);
   const reqs = parseRequirements(requirementLines.join('\n'));
   const files = input.files ?? { [codeFileName(input.fileName)]: input.code };
-  const tests = input.tests.filter((t) => t.name.trim()).map((t) => ({ name: t.name.trim(), status: t.status, message: '' }));
+  const tests = input.tests.filter((t) => t.name.trim()).map((t) => ({ name: t.name.trim(), status: t.status === 'notrun' ? ('skip' as const) : t.status, message: '' }));
   const set = analyzeFiles({ key: 'A', ref: 'try', sha: 'try', files, tests, baseFiles: input.baseFiles, changed: input.changed });
   const report = evaluate([set], reqs, '.', 'try');
   const rows = treeModel(report).map((r): TryRow => {
@@ -97,7 +98,7 @@ export function runCheck(input: TryInput): TryResult {
       where: child?.label ?? '',
       detail: child?.detail ?? '',
       strip: attemptLines(report, r.id, input.lang),
-      tests: rr.tests.map((t) => `${t.status === 'pass' ? '✓' : '✗'} ${t.name}`),
+      tests: rr.tests.map((t) => (t.status === 'skip' ? `○ ${t.name} (${input.lang === 'ko' ? '안 돌림' : 'not run'})` : `${t.status === 'pass' ? '✓' : '✗'} ${t.name}`)),
       todo: undecidedReasons(report, s).map((k) => ({ label: undecidedLabel(k, input.lang), action: undecidedAction(k, input.lang) })),
       chain: chainSteps(report, r.id, input.lang),
       dots: (() => {

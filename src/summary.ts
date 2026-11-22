@@ -19,7 +19,7 @@ export function counts(report: Report) {
  * tests = 미확인이지만 검사가 없거나 오래된 것뿐, ok = 확인됨.
  */
 export type Attention = 'fix' | 'look' | 'tests' | 'ok';
-const TEST_ONLY: UndecidedKind[] = ['no-test', 'stale'];
+const TEST_ONLY: UndecidedKind[] = ['no-test', 'not-run', 'stale'];
 export function attention(report: Report, s: ReqSummary): Attention {
   if (s.overall === '다름' || s.overall === '실패') return 'fix';
   if (s.overall === '확인됨') return 'ok';
@@ -35,6 +35,7 @@ export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[]
     if (rr.evidence.status === '미발견') out.add('no-evidence');
     if (rr.evidence.noWindow) out.add('no-window');
     if (rr.evidence.unchecked) out.add('unchecked-input');
+    else if (rr.evidence.stateUnread) out.add('state-unread');
     else if (rr.evidence.status === '일부 발견' && !rr.evidence.boundaries?.length) out.add('no-check');
     for (const b of rr.evidence.boundaries ?? []) if (b.ok === null) out.add(b.why && b.why !== 'inverted' ? b.why : 'missing');
     if (rr.evidence.caveat) out.add('extra-condition');
@@ -42,8 +43,11 @@ export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[]
   // 근거가 아예 없으면 「코드에 숫자 없음」은 같은 말이다
   if (out.has('no-evidence')) out.delete('missing');
   const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === '미실행');
-  if (!out.size) out.add(report.testsStale ? 'stale' : 'no-test');
-  else if (untested) out.add('no-test');
+  // 이어진 검사는 있는데 결과가 없으면(건너뜀 · 체험 페이지는 돌리지 않음) 「검사 없음」이 아니라 「돌리지 않음」이다
+  const notRun = untested && report.sets.every((x) => x.perReq[s.req.id].testStatus !== '미실행' || x.perReq[s.req.id].tests.length > 0);
+  const testKind: UndecidedKind = notRun ? 'not-run' : 'no-test';
+  if (!out.size) out.add(report.testsStale ? 'stale' : testKind);
+  else if (untested) out.add(testKind);
   return [...out];
 }
 

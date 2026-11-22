@@ -1493,6 +1493,13 @@ var init_numeric = __esm({
           en: "Check that an if statement enforces the requirement. Only the function name matched. If there is one, add \u201C| keywords: words in the code\u201D."
         }
       },
+      "state-unread": {
+        label: { ko: "\uADF8 \uC0C1\uD0DC\uB97C \uC77D\uB294 \uC870\uAC74 \uC5C6\uC74C", en: "nothing reads that state" },
+        action: {
+          ko: "\uCF54\uB4DC\uC5D0\uB294 \uC694\uAD6C\uC0AC\uD56D\uC774 \uB9D0\uD558\uB294 \uC0C1\uD0DC\uC758 \uC774\uB984(\uCE78 \xB7 \uC0C1\uC218 \xB7 \uC5F4\uAC70\uD615 \uAC12)\uC774 \uC788\uB294\uB370, \uADF8\uAC83\uC744 \uC77D\uB294 \uC870\uAC74\uC774 \uC5C6\uB2E4. \uC815\uD558\uAE30\uB9CC \uD558\uB294 \uACF3(user.ban() \xB7 \uC624\uB958 \uAE00)\uC740 \uB9C9\uB294 \uCF54\uB4DC\uAC00 \uC544\uB2C8\uB2E4. \uB9C9\uB294 if \uBB38\uC744 \uB123\uAC70\uB098, \uB2E4\uB978 \uC774\uB984\uC73C\uB85C \uBCF8\uB2E4\uBA74 \u300C| keywords: \uCF54\uB4DC\uC5D0 \uB098\uC624\uB294 \uC601\uC5B4 \uB2E8\uC5B4\u300D\uB97C \uBD99\uC778\uB2E4.",
+          en: "The code has a name for the state in the requirement (a field, constant or enum value), but no condition reads it. Places that only set it (user.ban(), an error message) do not block anything. Add the check, or add \u201C| keywords: words in the code\u201D if it is checked under another name."
+        }
+      },
       "no-evidence": {
         label: { ko: "\uADFC\uAC70 \uC5C6\uC74C", en: "no evidence" },
         action: { ko: "\uAD6C\uD604\uC774 \uC788\uB294\uC9C0 \uD655\uC778\uD55C\uB2E4. \uC788\uC73C\uBA74 \u300C| keywords: \uCF54\uB4DC\uC5D0 \uB098\uC624\uB294 \uC601\uC5B4 \uB2E8\uC5B4\u300D\uB97C \uC694\uAD6C\uC0AC\uD56D\uC5D0 \uBD99\uC778\uB2E4.", en: "Check that it is implemented. If it is, add \u201C| keywords: words in the code\u201D to the requirement." }
@@ -1512,6 +1519,13 @@ var init_numeric = __esm({
       "no-test": {
         label: { ko: "\uAC80\uC0AC \uC5C6\uC74C", en: "no test" },
         action: { ko: "\uC774 \uC694\uAD6C\uC0AC\uD56D\uC744 \uD655\uC778\uD558\uB294 \uD14C\uC2A4\uD2B8\uB97C \uB3CC\uB9B0\uB2E4. \uD14C\uC2A4\uD2B8 \uC774\uB984\uC5D0 \uC694\uAD6C\uC0AC\uD56D\uC758 \uB0B1\uB9D0\uACFC \uC22B\uC790\uB97C \uB123\uC73C\uBA74 \uC774\uC5B4\uC9C4\uB2E4.", en: "Run a test for this requirement. A test name with the requirement\u2019s words and number gets linked." }
+      },
+      "not-run": {
+        label: { ko: "\uAC80\uC0AC\uB97C \uB3CC\uB9AC\uC9C0 \uC54A\uC74C", en: "test not run" },
+        action: {
+          ko: "\uC774\uC5B4\uC9C4 \uD14C\uC2A4\uD2B8\uB294 \uC788\uC9C0\uB9CC \uACB0\uACFC\uAC00 \uC5C6\uB2E4(\uAC74\uB108\uB700, \uB610\uB294 \uCCB4\uD5D8 \uD398\uC774\uC9C0\uB77C \uB3CC\uB9AC\uC9C0 \uC54A\uC74C). \uADF8 \uD14C\uC2A4\uD2B8\uB97C \uB3CC\uB824 \uACB0\uACFC\uB97C \uB123\uB294\uB2E4. \uCCB4\uD5D8 \uD398\uC774\uC9C0\uC5D0\uC11C\uB294 \uB3CC\uB824\uC11C \uD1B5\uACFC\uD55C \uD14C\uC2A4\uD2B8\uB97C 3\uBC88 \uCE78\uC5D0\uC11C \u300C\uD1B5\uACFC\u300D\uB85C \uBC14\uAFBC\uB2E4.",
+          en: "A linked test exists but has no result (skipped, or not run on the browser page). Run it and use the result. On the browser page, set the tests that passed for you to \u201Cpassed\u201D under 3."
+        }
       },
       stale: {
         label: { ko: "\uAC80\uC0AC \uC624\uB798\uB428", en: "tests out of date" },
@@ -2344,13 +2358,13 @@ function stateMismatch(req, text) {
   const litWords = lits.flatMap((l) => tokenize(l)).map((w) => IRREGULAR[w] ?? w);
   return !litWords.some((w) => words2.some((r) => near2(w, r) || near2(IRREGULAR[r] ?? r, w)));
 }
-function stateStems(req) {
+function stateOf(req) {
   const m = req.text.match(STATE_LEAD) ?? req.text.match(STATE_WHO);
-  if (!m) return [];
+  if (!m) return null;
   const w = m[1].toLowerCase();
-  if (NOT_STATE.has(stem(w))) return [];
+  if (NOT_STATE.has(stem(w))) return null;
   const base2 = w.match(/^(?:in|un|non|dis)([a-z]{4,})$/)?.[1];
-  return base2 ? [stem(w), stem(base2)] : [stem(w)];
+  return { word: w, stems: base2 ? [stem(w), stem(base2)] : [stem(w)] };
 }
 function nameScore(subject, u) {
   const fn = new Set(tokenize(u.fn ?? "").filter((t) => subject.has(t)));
@@ -2496,7 +2510,8 @@ function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Se
     if (inner) unit = inner.u;
   }
   let stateUnread = false;
-  const state = stateStems(req);
+  const stateWord = stateOf(req);
+  const state = stateWord?.stems ?? [];
   if (!judged.length && (req.guardCue || req.needsCheck) && state.length && state.some((t) => names.has(t))) {
     const reads = (u) => u.kind === "condition" && !!u.condTokens?.some((t) => state.includes(t));
     if (!reads(unit)) {
@@ -2581,6 +2596,7 @@ function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Se
   const status = found && !unchecked && !noWindow ? "\uBC1C\uACAC" : "\uC77C\uBD80 \uBC1C\uACAC";
   const ev = { unit, score: s.score, status, why: s.why };
   if (noWindow) ev.noWindow = true;
+  if (stateUnread && stateWord) ev.stateUnread = stateWord.word;
   if (unchecked) {
     const at = `${unchecked.file.split("/").pop()}:${unchecked.line}`;
     ev.unchecked = { ko: `${unchecked.name} \uC744(\uB97C) \uAC80\uC0AC \uC5C6\uC774 \uBC1B\uB294 \uACF3\uC774 \uC788\uC74C (${at})`, en: `${unchecked.name} is accepted without a check at ${at}` };
@@ -3074,14 +3090,17 @@ function undecidedReasons(report, s) {
     if (rr.evidence.status === "\uBBF8\uBC1C\uACAC") out.add("no-evidence");
     if (rr.evidence.noWindow) out.add("no-window");
     if (rr.evidence.unchecked) out.add("unchecked-input");
+    else if (rr.evidence.stateUnread) out.add("state-unread");
     else if (rr.evidence.status === "\uC77C\uBD80 \uBC1C\uACAC" && !rr.evidence.boundaries?.length) out.add("no-check");
     for (const b of rr.evidence.boundaries ?? []) if (b.ok === null) out.add(b.why && b.why !== "inverted" ? b.why : "missing");
     if (rr.evidence.caveat) out.add("extra-condition");
   }
   if (out.has("no-evidence")) out.delete("missing");
   const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === "\uBBF8\uC2E4\uD589");
-  if (!out.size) out.add(report.testsStale ? "stale" : "no-test");
-  else if (untested) out.add("no-test");
+  const notRun = untested && report.sets.every((x) => x.perReq[s.req.id].testStatus !== "\uBBF8\uC2E4\uD589" || x.perReq[s.req.id].tests.length > 0);
+  const testKind = notRun ? "not-run" : "no-test";
+  if (!out.size) out.add(report.testsStale ? "stale" : testKind);
+  else if (untested) out.add(testKind);
   return [...out];
 }
 function nextAction(s, report) {
@@ -3167,7 +3186,7 @@ var init_summary = __esm({
       const u = s.perReq[id].evidence.unit;
       return u ? L(`${u.file} ${u.startLine}\uD589`, `${u.file} line ${u.startLine}`) : L("\uCC3E\uC9C0 \uBABB\uD568", "not found");
     };
-    TEST_ONLY = ["no-test", "stale"];
+    TEST_ONLY = ["no-test", "not-run", "stale"];
   }
 });
 
@@ -3185,7 +3204,7 @@ function chainSteps(report, reqId, lang = getLang(), setIndex = 0) {
   const codeTone = !u ? "miss" : ev.status === "\uBC1C\uACAC" ? "ok" : "miss";
   const linked = rr.tests;
   const firstFail = linked.find((t) => t.status === "fail");
-  let testText = rr.testStatus === "\uD1B5\uACFC" ? `${ko ? "\uD1B5\uACFC" : "passes"}${linked[0] ? ` \xB7 ${linked[0].name}` : ""}` : rr.testStatus === "\uC2E4\uD328" ? `${ko ? "\uC2E4\uD328" : "fails"}${firstFail ? ` \xB7 ${firstFail.name}` : ""}` : ko ? "\uC5F0\uACB0\uB41C \uAC80\uC0AC \uC5C6\uC74C" : "no linked test";
+  let testText = rr.testStatus === "\uD1B5\uACFC" ? `${ko ? "\uD1B5\uACFC" : "passes"}${linked[0] ? ` \xB7 ${linked[0].name}` : ""}` : rr.testStatus === "\uC2E4\uD328" ? `${ko ? "\uC2E4\uD328" : "fails"}${firstFail ? ` \xB7 ${firstFail.name}` : ""}` : linked[0] ? `${ko ? "\uB3CC\uB9AC\uC9C0 \uC54A\uC74C" : "not run"} \xB7 ${linked[0].name}` : ko ? "\uC5F0\uACB0\uB41C \uAC80\uC0AC \uC5C6\uC74C" : "no linked test";
   let testTone = rr.testStatus === "\uD1B5\uACFC" ? "ok" : rr.testStatus === "\uC2E4\uD328" ? "diff" : "miss";
   const edited = (rr.edits ?? []).filter(suspicious);
   let changed = false;
@@ -3337,7 +3356,9 @@ function attemptComparison(required, at, label, test, lang, runStatus) {
   const ko = lang === "ko";
   const stat = (caption, n, tone2) => `<span class="vl-stat vl-${tone2}"><small>${esc(caption)}</small>${ko ? `<b>${n}</b><span>\uBC88\uC9F8</span>` : `<span>Attempt</span><b>${n}</b>`}</span>`;
   const actual = runStatus && { \uD1B5\uACFC: "ok", \uC2E4\uD328: "diff", \uBBF8\uC2E4\uD589: "miss" }[runStatus];
-  const status = test && { ok: ko ? "\uAC80\uC0AC \uD1B5\uACFC" : "Test passed", diff: ko ? "\uAC80\uC0AC \uC2E4\uD328" : "Test failed", miss: ko ? "\uAC80\uC0AC \uBBF8\uC2E4\uD589" : "No linked test", plain: "" }[actual ?? test.tone];
+  const notRun = !!test && /^(?:not run|돌리지 않음) · /.test(test.text);
+  const miss = notRun ? ko ? "\uAC80\uC0AC \uC548 \uB3CC\uB9BC" : "Test not run" : ko ? "\uAC80\uC0AC \uBBF8\uC2E4\uD589" : "No linked test";
+  const status = test && { ok: ko ? "\uAC80\uC0AC \uD1B5\uACFC" : "Test passed", diff: ko ? "\uAC80\uC0AC \uC2E4\uD328" : "Test failed", miss, plain: "" }[actual ?? test.tone];
   const tone = test ? stepTone(test) : "miss";
   return `<span class="vl-compare">${stat(ko ? "\uC694\uAD6C\uC0AC\uD56D" : "Required", required, "plain")}<span class="vl-link" aria-hidden="true">\u2192</span>${stat(label, at, at === required ? "ok" : "diff")}${status ? `<strong class="vl-test vl-${tone}">${symbols[tone]}${status}</strong>` : ""}</span>`;
 }
@@ -4658,15 +4679,18 @@ function summaryLine(report, s) {
       return [...(e.boundaries ?? []).filter((b) => b.ok === null).map((b) => tag + boundaryLine(b)), ...e.caveat ? [tag + pick(e.caveat)] : []];
     });
     if (open.length) return open.join(" \xB7 ");
-    const why = undecidedReasons(report, s).filter((k) => k !== "no-test" && k !== "stale");
+    const reasons = undecidedReasons(report, s);
+    const notRun = reasons.includes("not-run");
+    const why = reasons.filter((k) => k !== "no-test" && k !== "not-run" && k !== "stale");
     if (why.length) {
       const what = why.map((k) => undecidedLabel(k)).join(" \xB7 ");
       const passed = report.sets.every((x) => x.perReq[id].testStatus === "\uD1B5\uACFC");
       const untested = report.sets.some((x) => x.perReq[id].testStatus === "\uBBF8\uC2E4\uD589");
       if (passed) return L(`\uAC80\uC0AC\uB294 \uD1B5\uACFC\uD588\uC9C0\uB9CC ${what}`, `the test passes, but ${what}`);
-      return untested ? L(`${what} \xB7 \uC5F0\uACB0\uB41C \uAC80\uC0AC \uC5C6\uC74C`, `${what} \xB7 no linked test`) : what;
+      return untested ? L(`${what} \xB7 ${notRun ? "\uAC80\uC0AC\uB97C \uB3CC\uB9AC\uC9C0 \uC54A\uC74C" : "\uC5F0\uACB0\uB41C \uAC80\uC0AC \uC5C6\uC74C"}`, `${what} \xB7 ${notRun ? "test not run" : "no linked test"}`) : what;
     }
     if (report.testsStale) return L("\uD14C\uC2A4\uD2B8 \uACB0\uACFC\uAC00 \uCF54\uB4DC\uBCF4\uB2E4 \uC624\uB798\uB418\uC5B4 \uC4F0\uC9C0 \uC54A\uC74C \u2014 \uD14C\uC2A4\uD2B8\uB97C \uB2E4\uC2DC \uC2E4\uD589\uD574\uC57C \uD568", "test results are older than the code and were not used \u2014 run the tests again");
+    if (notRun) return L("\uC774\uC5B4\uC9C4 \uAC80\uC0AC\uB97C \uB3CC\uB9AC\uC9C0 \uC54A\uC544 \uB3D9\uC791\uC744 \uD655\uC778\uD558\uC9C0 \uBABB\uD568", "the linked test was not run, so the behavior is not confirmed");
     return L("\uC5F0\uACB0\uB41C \uAC80\uC0AC\uAC00 \uC5C6\uC5B4 \uB3D9\uC791\uC744 \uD655\uC778\uD558\uC9C0 \uBABB\uD568", "no linked test, so the behavior is not confirmed");
   }
   return L("\uADFC\uAC70\uB97C \uCC3E\uC558\uACE0 \uAC80\uC0AC\uAC00 \uD1B5\uACFC", "evidence found and the tests pass");
