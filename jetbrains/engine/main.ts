@@ -3,9 +3,9 @@
 // 여기서는 그 결과를 표준 출력에 JSON 한 덩어리로 낼 뿐이다. 그래서 두 에디터의 판정이 같다.
 // 네트워크를 쓰지 않는다. 읽는 것은 로컬 git 과 작업 폴더의 파일뿐이다.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import * as M from '../../vscode/src/model.ts';
 import { counts } from '../../src/summary.ts';
 import { stepTone } from '../../src/evidenceView.ts';
@@ -94,6 +94,28 @@ function reqPath(repo: string, opt?: string): string {
   return isAbsolute(rel) ? rel : join(repo, rel);
 }
 
+/**
+ * git 은 저장소 뿌리를 실제 경로로 돌려준다 (`git rev-parse --show-toplevel`).
+ * 폴더를 subst 로 만든 드라이브(V:\…)나 이은 폴더(junction) · 심볼릭 링크로 열었으면 그 경로가 IDE 가 아는 경로와 달라서,
+ * IDE 가 연 파일에 표시(줄 끝 설명 · 아이콘)를 붙이지 못하고 저장할 때 다시 확인하지도 못한다.
+ * 그래서 저장소 뿌리를 부른 쪽이 준 경로 표기로 다시 적는다. 맞출 수 없으면 git 이 준 경로를 그대로 쓴다.
+ */
+function inCallerSpelling(start: string, root: string): string {
+  const same = (a: string, b: string) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+  try {
+    const realRoot = realpathSync.native(root);
+    const realStart = realpathSync.native(start);
+    // 연 폴더가 저장소 뿌리보다 몇 단계 아래인지 실제 경로로 세고, 부른 쪽 경로에서 그만큼 올라간다.
+    const below = relative(realRoot, realStart);
+    if (below.startsWith('..') || isAbsolute(below)) return root;
+    let dir = start;
+    for (const part of below.split(sep)) if (part) dir = dirname(dir);
+    return same(realpathSync.native(dir), realRoot) ? dir : root;
+  } catch {
+    return root;
+  }
+}
+
 function findRepo(dir: string | undefined): string | Fail {
   if (!dir) return fail('usage', L('--repo 폴더가 필요합니다.', '--repo <folder> is required.'));
   const start = resolve(dir);
@@ -106,7 +128,7 @@ function findRepo(dir: string | undefined): string | Fail {
   }
   // gitRoot 는 git 이 없을 때도 null 을 돌려주므로, git 자체가 있는지 따로 본다.
   if (!root) return hasGit() ? fail('no-repo', L('열린 폴더에서 git 저장소를 찾지 못했습니다. git 저장소 폴더를 연 뒤 다시 실행하세요.', 'No git repository was found in the open folder. Open a repository folder and run this again.')) : gitFail({ code: 'ENOENT' });
-  return resolve(root);
+  return inCallerSpelling(start, resolve(root));
 }
 
 function hasGit(): boolean {

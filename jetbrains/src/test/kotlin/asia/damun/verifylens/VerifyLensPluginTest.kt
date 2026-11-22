@@ -49,6 +49,8 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         when {
             // 이 시험은 검사를 고쳐서 통과시킨 저장소가 따로 필요하다
             name == "testChangedTestIsShownNextToTheVerdict" -> buildEditedTestRepo(dir)
+            // 이 시험은 프로젝트를 이은 폴더로 연다
+            name == "testProjectOpenedThroughALinkedFolderShowsMarkers" -> buildLinkedRepo(dir, practice)
             practice != null -> copyTree(Path.of(practice), dir)
             else -> buildSampleRepo(dir)
         }
@@ -465,6 +467,48 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertFalse(vf.isWritable)
     }
 
+    /**
+     * 프로젝트를 이은 폴더(junction · 심볼릭 링크)나 subst 로 만든 드라이브로 열어도, IDE 가 연 그 경로의 파일에 표시가 붙는다.
+     * git 은 저장소 뿌리를 실제 경로로 돌려주므로, 엔진이 그 경로를 IDE 가 연 경로 표기로 다시 적어야 한다.
+     * (0.14.0 까지는 도구 창 결과만 나오고 편집기의 줄 끝 설명 · 아이콘이 나오지 않았다)
+     */
+    fun testProjectOpenedThroughALinkedFolderShowsMarkers() {
+        val service = VerifyLensService.getInstance(project)
+        val r = press("VerifyLens.CheckChanges")
+        val real = repo.toRealPath()
+        println("[VerifyLens 시험] 이은 폴더 | 연 경로 $repo | 실제 경로 $real | 엔진이 말한 저장소 ${r.repo}")
+        assertFalse("시험 준비가 잘못됐다: 연 경로와 실제 경로가 같다", real == repo)
+        assertEquals(listOf("R1" to "확인됨", "R2" to "다름", "R3" to "미확인"), r.rows.map { it.id to it.overall })
+
+        // 엔진이 말하는 저장소는 IDE 가 연 경로다 (실제 경로가 아니다)
+        assertEquals(repo.toString().lowercase(), Path.of(r.repo).toString().lowercase())
+        assertTrue(Path.of(r.requirements!!).startsWith(Path.of(r.repo)))
+
+        // IDE 가 연 경로의 파일에 표시가 붙는다
+        val auth = file("src/auth.ts")
+        assertEquals(listOf(8 to "R1", 12 to "R3", 21 to "R2"), service.markers.lensesIn(auth).map { it.first to it.second.reqId }.sortedBy { it.first })
+        val note = VerifyLensLinePainter().getLineExtensions(project, auth, 20)!!.single().text.trim()
+        println("[VerifyLens 시험] 이은 폴더 21번째 줄 끝 | $note")
+        assertEquals("← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과", note)
+
+        // 줄을 누르면 연 경로의 그 파일이 열린다
+        service.open("A", "src/auth.ts", 21)
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor!!
+        assertEquals(auth, FileDocumentManager.getInstance().getFile(editor.document))
+        assertEquals(20, editor.caretModel.logicalPosition.line)
+
+        // 연 경로의 파일을 고쳐 저장하면 스스로 다시 확인한다 (예전 테스트 결과는 믿지 않는다)
+        val doc = FileDocumentManager.getInstance().getDocument(auth)!!
+        TimeUnit.MILLISECONDS.sleep(1600)
+        WriteCommandAction.runWriteCommandAction(project) {
+            doc.setText(doc.text.replace("user.failures > 5", "user.failures >= 5"))
+        }
+        FileDocumentManager.getInstance().saveDocument(doc)
+        PlatformTestUtil.waitWithEventsDispatching("이은 폴더에서 저장 뒤 다시 확인되지 않았습니다", { row(service, "R2")?.overall != "다름" }, 60)
+        assertEquals("미확인", row(service, "R2")!!.overall)
+        assertEquals("검사 오래됨", row(service, "R2")!!.reason)
+    }
+
     /** 샘플(로그인 잠금)에는 바뀐 검사가 없다: 새로 생긴 검사는 「바뀐 검사」가 아니다. */
     fun testSampleHasNoChangedTests() {
         assertTrue(press("VerifyLens.CheckChanges").changedTests.isEmpty())
@@ -584,6 +628,22 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         "});",
         "",
     ).joinToString("\n")
+
+    /**
+     * 실제 폴더(…/real)에 저장소를 만들고, 프로젝트는 그 폴더를 가리키는 이은 폴더(…/repo)로 연다.
+     * Windows 에서는 권한이 필요 없는 junction 을, 다른 곳에서는 심볼릭 링크를 쓴다.
+     */
+    private fun buildLinkedRepo(link: Path, practice: String?) {
+        val real = link.resolveSibling("real")
+        if (practice != null) copyTree(Path.of(practice), real) else buildSampleRepo(real)
+        if (System.getProperty("os.name").lowercase().contains("win")) {
+            val p = ProcessBuilder("cmd", "/c", "mklink", "/J", link.toString(), real.toString()).redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            check(p.waitFor() == 0) { "mklink /J 실패: $out" }
+        } else {
+            Files.createSymbolicLink(link, real)
+        }
+    }
 
     /** samples/login-lockout 으로 main ← feature/lockout-b 저장소를 만들고, 미리 만든 테스트 결과를 넣는다. */
     private fun buildSampleRepo(dir: Path) {
