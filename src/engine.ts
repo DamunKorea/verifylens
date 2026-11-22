@@ -148,13 +148,24 @@ const fitsUnit = (c: Constraint, p: NumPart) =>
 /** 요구사항의 숫자 조건 어느 것과도 단위가 맞지 않는 길이 비교(글자 수 ↔ 횟수 · 개수)는 숫자 근거로 치지 않는다 */
 const numberPart = (req: Requirement, p: NumPart) => (!p.strLen && !p.listLen) || !req.constraints.length || req.constraints.some((c) => fitsUnit(c, p));
 
+/** if 블록 안 문장에만 있는 낱말의 무게 (조건식 낱말은 1) */
+const BODY_WEIGHT = 0.5;
+
 function scoreUnit(req: Requirement, u: Unit): { score: number; why: string[]; num: boolean } {
   const why: string[] = [];
   let num = false;
   const set = new Set(req.tokens);
   const shared = [...new Set(u.tokens.filter((t) => set.has(t)))];
+  // if 블록은 조건식(괄호 안)의 낱말을 온전히, 블록 안 문장에만 있는 낱말은 반만 센다.
+  // 블록 안의 `locked = true` · `BAD_LOGIN` 이 진짜 검사 줄 `if (account.locked) throw` 보다 높은 점수를 받던 것 (데모 PR 에서 찾음, 11/22)
+  const inCond = u.condTokens ? new Set(u.condTokens) : null;
+  // 블록 안에서 정하기만 하는 낱말(invite.expired = true 의 expired)은 세지 않는다: 그 상태를 정하는 블록이지 보는 블록이 아니다
+  const setOnly = new Set((u.setTokens ?? []).filter((t) => !inCond?.has(t)));
+  const weight = (t: string) => (!inCond || inCond.has(t) ? 1 : setOnly.has(t) ? 0 : BODY_WEIGHT);
   // 자동 연결(키워드 없음)은 같은 뜻의 낱말을 한 개념으로 센다. 한 개념의 동의어가 여러 번 겹쳐도 한 번이다.
-  const hits = req.auto ? req.concepts.filter((c) => c.some((t) => u.tokens.includes(t))).length : shared.length;
+  const hits = req.auto
+    ? req.concepts.reduce((n, c) => n + Math.max(0, ...c.filter((t) => u.tokens.includes(t)).map(weight)), 0)
+    : shared.reduce((n, t) => n + weight(t), 0);
   let s = u.kind === 'function' ? Math.min(hits, 1.5) : hits;
   if (shared.length) why.push(L(`겹치는 단어: ${shared.join(', ')}`, `shared words: ${shared.join(', ')}`));
   const parts = (u.cond?.parts ?? []).filter((p) => numberPart(req, p));
@@ -577,7 +588,20 @@ function findEvidence(req: Requirement, units: Unit[], fields: SchemaField[] = [
   const dupWords = new Set([...(req.concepts.find((g) => g.includes(UNIQUE)) ?? []), ...DUP_GUARD]);
   const notDupGuard =
     isUniqueReq(req) && !dupInner && unit.kind === 'condition' && !dupSignal(unit.text, dupWords) && !/\.(?:some|includes|has|find|findFirst|findUnique|indexOf|exists?|count)\s*\(/.test(unit.text);
-  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
+  // 막거나 확인해야 하는 요구사항인데, 근거 if 가 요구사항의 상태를 조건식에서 보지 않고 블록 안에서 정하기만 하면 그 상태를 확인하는 조건이 아니다.
+  // (「잠긴 계정은 로그인할 수 없다」 ↔ `if (!matches(password, account.passwordHash)) { … account.locked = true; throw … }`:
+  // 잠금은 블록 안에서 정할 뿐 조건식은 보지 않는다. 0.20.0 은 이런 코드를 잠금 검사 없이도 「확인됨」이라고 했다 — 데모 PR 에서 찾음)
+  // 낱말 꼬리(-ed · -e · -d · -s)는 떼고 견준다: 요구사항은 용어집을 거쳐 「used」가 「use」가 되지만 코드의 coupon.used 는 그대로다
+  const loose = (t: string) => t.replace(/(?:ed|e|d|s)$/, '');
+  const reqWords = new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t)).map(loose));
+  const condLoose = new Set((unit.condTokens ?? []).map(loose));
+  const notThisCheck =
+    !judged.length && (req.guardCue || req.needsCheck) && !dupInner && unit.kind === 'condition' && unit.guard &&
+    (unit.setTokens ?? []).some((t) => reqWords.has(loose(t)) && !condLoose.has(loose(t)));
+  // 막는 요구사항인데 근거가 막지 않는 문장 하나(`account.failures = 0;` 같은 대입)이면 그 요구사항을 확인하는 코드가 아니다
+  // (근거 줄을 고치던 중 「메서드로 잠금」 사례에서 찾음: if 블록 점수가 줄자 이 대입문이 「잠긴 계정은 로그인할 수 없다」의 근거가 됐다)
+  const plainStatement = req.guardCue && !judged.length && !dupInner && unit.kind === 'condition' && !unit.guard && !unit.condTokens && !unit.cond?.parts?.some((p) => p.source === 'compare');
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
   // 「잘못된 이메일은 거부」인데 바뀐 스키마가 그 칸을 검사 없이 받으면(email: z.string()) 다른 곳의 검사로 확인됐다고 하지 않는다 (X 에서 받은 버그)
   const words = new Set(req.tokens);
   const unchecked =

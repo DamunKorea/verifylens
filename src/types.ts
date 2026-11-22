@@ -69,6 +69,10 @@ export type Unit = {
   guard: boolean;
   changed: boolean;
   cond?: CondInfo;
+  /** if · 삼항식만: 조건식(괄호 안)의 낱말. 블록 안 문장의 낱말은 tokens 에만 있다 */
+  condTokens?: string[];
+  /** if 만: 블록 안에서 값을 정하는 곳(account.locked = true 의 account.locked)의 낱말 */
+  setTokens?: string[];
   /** 함수 줄만: 몸통에서 부르는 함수 이름 */
   calls?: string[];
   /** 함수 줄만: 몸통에서 쓰는 이름(변수 · 상수) */

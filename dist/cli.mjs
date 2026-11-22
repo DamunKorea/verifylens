@@ -603,7 +603,7 @@ function analyzeFile(file, content, changed) {
     });
     if (body) flows.push(buildFlow(name, fn));
   };
-  const addCond = (n, cur2, text, sl, el, guard, cond) => {
+  const addCond = (n, cur2, text, sl, el, guard, cond, condExpr, thenPart) => {
     units2.push({
       id: `${file}#c${seq++}`,
       kind: "condition",
@@ -615,8 +615,22 @@ function analyzeFile(file, content, changed) {
       tokens: [...new Set(tokenize(text))],
       guard,
       changed: isChanged(sl, el),
-      cond
+      cond,
+      ...condExpr ? { condTokens: [...new Set(tokenize(condExpr.getText(sf)))] } : {},
+      ...thenPart ? { setTokens: assignedWords(thenPart) } : {}
     });
+  };
+  const assignedWords = (body) => {
+    const words2 = [];
+    const visit = (x) => {
+      if (ts.isBinaryExpression(x) && x.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && x.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+        words2.push(x.left.getText(sf));
+        if (ts.isStringLiteralLike(x.right)) words2.push(x.right.text);
+      } else if ((ts.isPostfixUnaryExpression(x) || ts.isPrefixUnaryExpression(x)) && (x.operator === ts.SyntaxKind.PlusPlusToken || x.operator === ts.SyntaxKind.MinusMinusToken)) words2.push(x.operand.getText(sf));
+      ts.forEachChild(x, visit);
+    };
+    visit(body);
+    return [...new Set(tokenize(words2.join(" ")))];
   };
   const enclosing = (n) => {
     let p = n;
@@ -712,7 +726,7 @@ function analyzeFile(file, content, changed) {
         const fb = fixedKind(ret);
         if (fb) info2.fixedBranch = fb;
       }
-      addCond(n, cur2, text, sl, el, guard, info2);
+      addCond(n, cur2, text, sl, el, guard, info2, cond, ts.isIfStatement(n) ? n.thenStatement : void 0);
     } else if (ts.isPropertyAssignment(n) && /^['"`]?(?:fixed|flat|amount)['"`]?$/i.test(n.name.getText(sf)) && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))) {
       const f = n.initializer;
       const body = f.body;
@@ -2235,7 +2249,10 @@ function scoreUnit(req, u) {
   let num2 = false;
   const set = new Set(req.tokens);
   const shared = [...new Set(u.tokens.filter((t) => set.has(t)))];
-  const hits = req.auto ? req.concepts.filter((c) => c.some((t) => u.tokens.includes(t))).length : shared.length;
+  const inCond = u.condTokens ? new Set(u.condTokens) : null;
+  const setOnly = new Set((u.setTokens ?? []).filter((t) => !inCond?.has(t)));
+  const weight = (t) => !inCond || inCond.has(t) ? 1 : setOnly.has(t) ? 0 : BODY_WEIGHT;
+  const hits = req.auto ? req.concepts.reduce((n, c) => n + Math.max(0, ...c.filter((t) => u.tokens.includes(t)).map(weight)), 0) : shared.reduce((n, t) => n + weight(t), 0);
   let s = u.kind === "function" ? Math.min(hits, 1.5) : hits;
   if (shared.length) why.push(L(`\uACB9\uCE58\uB294 \uB2E8\uC5B4: ${shared.join(", ")}`, `shared words: ${shared.join(", ")}`));
   const parts = (u.cond?.parts ?? []).filter((p) => numberPart(req, p));
@@ -2482,7 +2499,12 @@ function findEvidence(req, units2, fields = []) {
   const otherState = !judged.length && unit.kind === "condition" && stateMismatch(req, unit.text);
   const dupWords = /* @__PURE__ */ new Set([...req.concepts.find((g) => g.includes(UNIQUE)) ?? [], ...DUP_GUARD]);
   const notDupGuard = isUniqueReq(req) && !dupInner && unit.kind === "condition" && !dupSignal(unit.text, dupWords) && !/\.(?:some|includes|has|find|findFirst|findUnique|indexOf|exists?|count)\s*\(/.test(unit.text);
-  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
+  const loose = (t) => t.replace(/(?:ed|e|d|s)$/, "");
+  const reqWords = new Set([...req.tokens, ...req.concepts.flat()].filter((t) => !GENERIC.has(t) && !FILLER.has(t)).map(loose));
+  const condLoose = new Set((unit.condTokens ?? []).map(loose));
+  const notThisCheck = !judged.length && (req.guardCue || req.needsCheck) && !dupInner && unit.kind === "condition" && unit.guard && (unit.setTokens ?? []).some((t) => reqWords.has(loose(t)) && !condLoose.has(loose(t)));
+  const plainStatement = req.guardCue && !judged.length && !dupInner && unit.kind === "condition" && !unit.guard && !unit.condTokens && !unit.cond?.parts?.some((p) => p.source === "compare");
+  const found = !onlyName && !thin && !notDuplicateCheck && !foreign && !otherState && !notDupGuard && !notThisCheck && !plainStatement && (judged.some((j) => j.u) || s.score >= 2 || dupInner);
   const words2 = new Set(req.tokens);
   const unchecked = found && !judged.length && (req.guardCue || req.needsCheck) ? fields.find((f) => !f.checked && tokenize(f.name).some((t) => words2.has(t)) && !(f.file === unit.file && f.line >= unit.startLine && f.line <= unit.endLine)) : void 0;
   const perPeriod = PER_PERIOD.test(req.text) && !req.constraints.some((c) => c.window) && req.constraints.some((c) => (c.rel === "lte" || c.rel === "lt") && (c.unit === "cnt" || c.unit === "qty" || c.unit === null));
@@ -2629,7 +2651,7 @@ function summarize(req, sets) {
   else overall = "\uBBF8\uD655\uC778";
   return { req, relation, overall, notes };
 }
-var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName;
+var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName;
 var init_engine = __esm({
   "src/engine.ts"() {
     init_analyze();
@@ -2652,6 +2674,7 @@ var init_engine = __esm({
     PERIOD_UNITS = ["sec", "min", "hour", "day", "week", "month"];
     fitsUnit = (c, p) => !(p.strLen && COUNTED.includes(c.unit)) && !(p.listLen && c.unit === "char") && !((p.listLen || p.preAdd || COUNT_LEFT.test(p.left)) && PERIOD_UNITS.includes(c.unit));
     numberPart = (req, p) => !p.strLen && !p.listLen || !req.constraints.length || req.constraints.some((c) => fitsUnit(c, p));
+    BODY_WEIGHT = 0.5;
     SAME_THING = {
       money: /total|price|amount|fee|cost|sum|subtotal|balance|pay|coupon|voucher|discount|credit/i,
       age: /age/i,

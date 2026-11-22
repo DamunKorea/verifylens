@@ -1,7 +1,8 @@
 // 여러 업무 영역의 사례 묶음. 틀린 코드를 「확인됨」이라고 하거나, 맞는 코드를 「다름」이라고 하면 실패한다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30, HOLDOUT31, HOLDOUT32, allRows, score } from './cases/run.ts';
+import { CASES, HOLDOUT, HOLDOUT2, HOLDOUT3, HOLDOUT4, HOLDOUT5, HOLDOUT6, HOLDOUT7, HOLDOUT8, HOLDOUT9, HOLDOUT10, HOLDOUT11, HOLDOUT12, HOLDOUT13, HOLDOUT14, HOLDOUT15, HOLDOUT16, HOLDOUT17, HOLDOUT18, HOLDOUT19, HOLDOUT20, HOLDOUT21, HOLDOUT22, HOLDOUT23, HOLDOUT24, HOLDOUT25, HOLDOUT26, HOLDOUT27, HOLDOUT28, HOLDOUT29, HOLDOUT30, HOLDOUT31, HOLDOUT32, HOLDOUT33, HOLDOUT34, HOLDOUT35, allRows, score } from './cases/run.ts';
+import type { EvVariant } from './cases/holdout33.ts';
 import { numbersIn, parseConstraints, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { analyzeFile } from '../../src/analyze.ts';
 import { stem } from '../../src/tokens.ts';
@@ -36,6 +37,29 @@ test('the latest unseen batches never call wrong code verified when keywords are
     const s = score(allRows(true, cases));
     assert.equal(s.falseVerified, 0);
     assert.equal(s.falseAlarm, 0);
+  }
+});
+
+// 근거 줄(11/22, 데모 PR 에서 찾음): 막는 요구사항의 진짜 검사 줄 옆에, 블록 안에서 그 상태를 정하기만 하는 if 블록이 있는 코드.
+// 서른네 번째 묶음은 고치면서 본 것이라 모두 맞아야 한다. 고친 뒤 처음 쓴 두 묶음은 남은 것이 알려진 한계 목록과 같아야 한다 (docs/known-mistakes.md).
+test('evidence line: a block that only sets the state is not the check for it', () => {
+  for (const kw of [true, false]) {
+    assert.deepEqual(wrong(allRows(kw, HOLDOUT33)), []);
+    assert.deepEqual(wrong(allRows(kw, HOLDOUT34)), ['ev2-lock-method / 잠금 검사 있음: 기대 확인됨, 결과 미확인', 'ev2-door / 잠금 검사 없음: 기대 미확인, 결과 확인됨']);
+    assert.deepEqual(wrong(allRows(kw, HOLDOUT35)), ['ev3-enum / 취소 검사 없음: 기대 미확인, 결과 확인됨', 'ev3-helper / 도우미를 부르지 않음: 기대 미확인, 결과 확인됨']);
+  }
+  // 「확인됨」이 맞는 코드에서 근거 줄이 진짜 검사다 (메서드로 잠그는 사례는 한계)
+  for (const set of [HOLDOUT33, HOLDOUT34, HOLDOUT35]) {
+    for (const c of set) {
+      for (const v of c.variants as EvVariant[]) {
+        if (!v.ev || c.id === 'ev2-lock-method') continue;
+        for (const kw of [true, false]) {
+          const s = analyzeFiles({ key: 'A', ref: 't', sha: 't', files: { [c.file ?? 'src/feature.ts']: v.code }, tests: [{ name: c.test, status: 'pass', message: '' }] });
+          const r = evaluate([s], parseRequirements(kw ? `- R1: ${c.req} | keywords: ${c.keywords}` : `- R1: ${c.req}`), '.', 'main');
+          assert.ok(r.sets[0].perReq.R1.evidence.unit?.text.includes(v.ev), `${c.id} (${kw ? 'keywords' : 'auto'}): ${r.sets[0].perReq.R1.evidence.unit?.text}`);
+        }
+      }
+    }
   }
 });
 

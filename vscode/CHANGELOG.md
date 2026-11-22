@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.21.0
+
+A block that only sets a state is no longer taken as the check for it, and requirements import more cleanly from pull requests. We found all of this ourselves. The engine fix came from our own demo pull request, and the import fixes came from trying a real public pull request on the browser page. None of it comes from a user report.
+
+- **A block that sets a state is not the check for it.** Take "A locked account cannot log in". Before, a block like `if (!matches(password, account.passwordHash)) { … account.locked = true; throw … }` counted as evidence for it, because the block mentions "locked" and throws. Code with no `if (account.locked)` check anywhere was then Verified, which is the worst mistake we can make. When the check was there, the evidence line often pointed at this block instead. Now:
+  - Words in the condition count fully, and words that are only inside the block count half.
+  - Words the block only sets (`= true`, `= 'closed'`) do not count at all.
+  - A block that sets the requirement's state without checking it is not the check for it.
+  - For a rejection rule, a plain assignment such as `account.failures = 0;` is not evidence either.
+- **Importing requirements from a pull request** (the extension's "Import requirements", and the browser page):
+  - Process sections of PR templates (Task Checklist, Related Issue, Testing) and lines such as "I have created a task" are skipped.
+  - Prose under a requirement heading such as "Expected behavior" is read even without "must".
+  - Ticket prefixes such as "BACK-801 - " are taken off titles.
+- **Also since 0.20.0, already on the browser page and the command line:**
+  - The browser page can check a public GitHub pull request by its address.
+  - `npx -y github:DamunKorea/verifylens ci --worktree` runs the check without installing anything.
+  - The command line speaks the computer's language when `--lang` is not given (it was always Korean).
+- **How far to trust it.** We counted how often each version called code with the check missing Verified. Keywords made no difference.
+
+  | Cases | 0.20.0 | 0.21.0 |
+  |---|---|---|
+  | 6 written before the fix | 6 times | 0 |
+  | 7 written after a first fix | 6 times | first run 2, after a second fix 1 |
+  | 6 written after the second fix | 6 times | **first run 2** |
+
+  On the last batch, the expected verdict went from 6 to 10 of 12. The verdicts on all earlier cases are the same as 0.20.0, with and without keywords.
+- **Still not read:**
+  - A state set another way than `=`: through a method (`account.lock()`) or an enum value (`SubState.Cancelled`).
+  - A rejection whose state word is only in its error message (`throw new Error('DOOR_LOCKED_NO_KEY')`).
+  - A check in a helper function that nothing calls.
+
 ## 0.20.0
 
 Korean keywords, and two display fixes. All three were found by us. Our JetBrains build found the two display fixes while testing; we found the keyword gap while writing changed-test cases. None are user reports.

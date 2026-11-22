@@ -538,7 +538,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
     if (body) flows.push(buildFlow(name, fn as FnNode & { body: ts.Block }));
   };
 
-  const addCond = (n: ts.Node, cur: { name: string } | undefined, text: string, sl: number, el: number, guard: boolean, cond: CondInfo) => {
+  const addCond = (n: ts.Node, cur: { name: string } | undefined, text: string, sl: number, el: number, guard: boolean, cond: CondInfo, condExpr?: ts.Expression, thenPart?: ts.Node) => {
     units.push({
       id: `${file}#c${seq++}`,
       kind: 'condition',
@@ -551,7 +551,28 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
       guard,
       changed: isChanged(sl, el),
       cond,
+      ...(condExpr ? { condTokens: [...new Set(tokenize(condExpr.getText(sf)))] } : {}),
+      ...(thenPart ? { setTokens: assignedWords(thenPart) } : {}),
     });
+  };
+  /**
+   * 블록 안에서 값을 정하는 곳의 낱말 (account.locked = true · user.suspended = true · count += 1 · n++).
+   * 조건식은 보지 않는데 블록이 그 상태를 정하면, 그 블록은 그 상태를 확인하는 조건이 아니다
+   * (데모 PR 에서 찾음: 비밀번호 확인 블록 안의 `locked = true` 때문에 그 블록이 「잠긴 계정은 로그인할 수 없다」의 근거가 됐다).
+   */
+  const assignedWords = (body: ts.Node): string[] => {
+    const words: string[] = [];
+    const visit = (x: ts.Node) => {
+      if (ts.isBinaryExpression(x) && x.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && x.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+        words.push(x.left.getText(sf));
+        // 상태를 글자로 정하는 곳(ticket.status = 'closed')은 그 글자도 정한 상태다
+        if (ts.isStringLiteralLike(x.right)) words.push(x.right.text);
+      }
+      else if ((ts.isPostfixUnaryExpression(x) || ts.isPrefixUnaryExpression(x)) && (x.operator === ts.SyntaxKind.PlusPlusToken || x.operator === ts.SyntaxKind.MinusMinusToken)) words.push(x.operand.getText(sf));
+      ts.forEachChild(x, visit);
+    };
+    visit(body);
+    return [...new Set(tokenize(words.join(' ')))];
   };
   /** 비교가 들어 있는 문장 (변수 선언 · return · 객체의 한 칸 …) */
   const enclosing = (n: ts.Node): ts.Node => {
@@ -660,7 +681,7 @@ export function analyzeFile(file: string, content: string, changed: Set<number> 
         const fb = fixedKind(ret);
         if (fb) info.fixedBranch = fb;
       }
-      addCond(n, cur, text, sl, el, guard, info);
+      addCond(n, cur, text, sl, el, guard, info, cond, ts.isIfStatement(n) ? n.thenStatement : undefined);
     } else if (ts.isPropertyAssignment(n) && /^['"`]?(?:fixed|flat|amount)['"`]?$/i.test(n.name.getText(sf)) && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))) {
       // { fixed: (total, v) => total - v, rate: … } 처럼 객체에 담은 계산식도 같은 갈래로 본다
       const f = n.initializer;
