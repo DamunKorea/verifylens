@@ -67,9 +67,9 @@ Last checked: 2026-11-22
 
 | Channel | Version | Status |
 |---|---|---|
-| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.22.0) | 0.22.0 | Available |
-| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.22.0 | Available |
-| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.22.0 | Available |
+| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.23.0) | 0.23.0 | Available |
+| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.23.0 | Available |
+| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.23.0 | Available |
 | Cursor extension search | 0.21.0 | Update pending (copies from Open VSX) |
 | [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.16.0) | 0.16.0 | Available as a zip |
 | JetBrains Marketplace | 0.4.1 | In review |
@@ -144,7 +144,7 @@ jobs:
           fetch-depth: 0          # the base branch is needed for the comparison
       # Optional: run your tests with a JUnit report, for example
       # - run: npx vitest run --reporter=junit --outputFile=junit.xml
-      - uses: DamunKorea/verifylens@v0.22.0
+      - uses: DamunKorea/verifylens@v0.23.0
         with:
           requirements: .verifylens/requirements.md
           junit: junit.xml        # leave out if you have no report
