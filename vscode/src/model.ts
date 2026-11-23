@@ -320,6 +320,8 @@ export function summaryLine(report: Report, s: ReqSummary): string {
   }
   if (s.overall === '실패') return L('연결된 검사가 실패', 'a linked test fails');
   if (s.overall === '미확인') {
+    // 절차 줄 · 타입 요구사항은 찾지 않은 것이지 못 찾은 것이 아니다 (JetBrains 세션이 찾음, 0.27.0)
+    if (s.req.unreadable) return undecidedLabel(s.req.unreadable === 'process' ? 'not-behavior' : 'type-level');
     if (report.sets.some((x) => x.perReq[id].evidence.status === '미발견')) return L('구현 근거를 찾지 못함', 'no implementation evidence found');
     const open = report.sets.flatMap((x) => {
       const e = x.perReq[id].evidence;
@@ -410,6 +412,7 @@ export type Lens = {
   title: string;
 };
 
+const TEST_KINDS = new Set(['no-test', 'not-run', 'no-results', 'stale']);
 export function allLenses(report: Report): Lens[] {
   const out: Lens[] = [];
   for (const set of report.sets) {
@@ -418,11 +421,13 @@ export function allLenses(report: Report): Lens[] {
       const u = rr.evidence.unit;
       if (!u) continue;
       const bt = boundaryText(set, s.req.id);
-      const notes = [bt, testWord(rr, report.testsStale)].filter(Boolean);
+      // 검사는 통과했는데 「미확인」이면 그 까닭을 줄 끝에도 적는다 (「통과인데 왜 미확인?」 — JetBrains 세션이 찾음, 0.27.0)
+      const why = s.overall === '미확인' && rr.testStatus === '통과' ? undecidedReasons(report, s).filter((k) => !TEST_KINDS.has(k)).map((k) => undecidedLabel(k)) : [];
+      const notes = [bt, testWord(rr, report.testsStale), ...why].filter(Boolean);
       const other = report.sets.find((x) => x.key !== set.key);
       if (other && s.relation.kind === '불일치') notes.push(L(`${other.key}와 조건 다름`, `condition differs from ${other.key}`));
       const bad = rr.testStatus === '실패' || rr.evidence.boundary?.ok === false;
-      const long = [`VerifyLens ${s.req.id} · ${wOverall(s.overall)}`, bt, testWord(rr, report.testsStale), other && s.relation.kind === '불일치' ? L('A·B 조건 다름', 'A and B use different conditions') : ''].filter(Boolean);
+      const long = [`VerifyLens ${s.req.id} · ${wOverall(s.overall)}`, bt, testWord(rr, report.testsStale), ...why, other && s.relation.kind === '불일치' ? L('A·B 조건 다름', 'A and B use different conditions') : ''].filter(Boolean);
       out.push({
         setKey: set.key,
         file: u.file,
@@ -896,7 +901,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
       const u = rr.evidence.unit;
       const b = rr.evidence.boundary;
       const pre = two ? `${set.key} ` : '';
-      let e = u ? `\`${cell(`${u.file}:${u.startLine}`)}\`${u.cond?.expr ? ` \`${cell(u.cond.expr)}\`` : u.kind === 'function' ? ` ${t.whole}` : ''}` : t.noEvidence;
+      let e = u ? `\`${cell(`${u.file}:${u.startLine}`)}\`${u.cond?.expr ? ` \`${cell(u.cond.expr)}\`` : u.kind === 'function' ? ` ${t.whole}` : ''}` : s.req.unreadable ? undecidedLabel(s.req.unreadable === 'process' ? 'not-behavior' : 'type-level', lang) : t.noEvidence;
       if (b && b.attempts !== null) e += ` → ${t.attempt(b.attempts, b.required, b.ok)}`;
       else if (b) e += ` → ${cell(boundaryLine(b, lang))}`;
       ev.push(pre + e);
@@ -905,7 +910,7 @@ export function prSummary(r: Run, judgments: Record<string, Judgment> = {}, opts
       if (passButOff(rr)) passOff.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${t.passOffLine}`);
       for (const x of rr.evidence.boundaries ?? []) if (x.ok === null) notes.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${boundaryLine(x, lang)}`);
       if (rr.evidence.caveat) notes.push(`- ${id}${two ? ` · ${set.key}` : ''}: ${pick(rr.evidence.caveat, lang)}`);
-      if (!u) noImpl = true;
+      if (!u && !s.req.unreadable) noImpl = true;
       for (const tc of rr.tests) {
         if (tc.status !== 'fail') continue;
         const why = tc.message.split('\n').map((x) => x.trim()).filter(Boolean).join(' ').slice(0, 160);
@@ -1014,6 +1019,8 @@ export function fetchIssue(run: GhRun, ref: string): SourceText[] {
 export const treeCount = (md: string) => parseRequirements(md).length;
 
 /** 여러 글에서 요구사항 후보를 모은다. 같은 문장은 한 번만. */
+/** 버그 신고 양식의 칸 이름 (재현 · 기대 동작 · 실제 동작) */
+const BUG_REPORT = /steps?\s+to\s+reproduce|what\s+steps\s+can\s+reproduce|\breproduction\b|\bactual\s+behaviou?r|what\s+do\s+you\s+see\s+instead|describe\s+the\s+bug|bug\s+report|재현\s*(?:방법|절차)|실제\s*동작/i;
 export function requirementsFrom(texts: SourceText[]): { requirements: string[]; sources: string[] } {
   const seen = new Set<string>();
   const requirements: string[] = [];
@@ -1021,6 +1028,10 @@ export function requirementsFrom(texts: SourceText[]): { requirements: string[];
   for (const t of texts) {
     let found = extractRequirements(t.body).filter((x) => !seen.has(x.toLowerCase()));
     let label = t.label;
+    // 버그 신고 이슈의 제목은 버그를 말한다(「ValidationError.all throws TypeError with Zod validators」). 요구사항으로 쓰지 않는다
+    // (실제 PR 시험: 버그 제목이 그대로 「확인됨」이 됐다). PR 제목은 고친 내용이므로 그대로 쓴다
+    const bugReport = !/^PR\b/.test(t.label) && BUG_REPORT.test(t.body);
+    if (!found.length && bugReport) continue;
     if (!found.length) {
       // 본문이 줄글뿐이면 제목 한 줄이라도 요구사항 후보로 쓴다 ("fix:" 같은 머리말과 "(#123)" 꼬리는 뗀다).
       // 「BACK-801 - 」 · 「[SCRUM-5]」 같은 작업 번호 머리말도 뗀다 (공개 PR 에서 찾음, 11/22)

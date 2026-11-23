@@ -33,7 +33,9 @@ export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = ge
   const b = ev.boundary;
   const code = u
     ? `${u.file}:${u.startLine}${u.cond?.expr ? ` ${u.cond.expr}` : u.kind === 'function' ? (ko ? ' (함수 전체)' : ' (whole function)') : ''}`
-    : ko ? '근거를 찾지 못함' : 'no evidence found';
+    : s.req.unreadable
+      ? ko ? '코드에서 찾지 않음 (판정하지 않는 줄)' : 'not looked for (a line that is not judged)'
+      : ko ? '근거를 찾지 못함' : 'no evidence found';
   const codeTone: ChainTone = !u ? 'miss' : ev.status === '발견' ? 'ok' : 'miss';
   const linked = rr.tests;
   const firstFail = linked.find((t) => t.status === 'fail');

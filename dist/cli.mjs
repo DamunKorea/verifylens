@@ -1559,6 +1559,13 @@ var init_numeric = __esm({
           en: "Steps such as adding or running tests or formatting are not judged. Remove the line, or rewrite it as something the code must do."
         }
       },
+      "outside-change": {
+        label: { ko: "\uADFC\uAC70 \uC904\uC774 \uC774\uBC88 \uBCC0\uACBD \uBC16", en: "evidence line is outside this change" },
+        action: {
+          ko: "\uC774\uBC88 \uBCC0\uACBD\uC774 \uC774 \uC694\uAD6C\uC0AC\uD56D\uC744 \uB2E4\uB8E8\uB294\uC9C0 \uD655\uC778\uD55C\uB2E4. \uC774\uBBF8 \uC788\uB358 \uCF54\uB4DC\uAC00 \uC694\uAD6C\uC0AC\uD56D\uC744 \uC9C0\uD0A8\uB2E4\uBA74 \uADFC\uAC70 \uC904\uC744 \uC5F4\uC5B4 \uC9C1\uC811 \uD310\uB2E8\uD55C\uB2E4.",
+          en: "Check that this change covers the requirement. If existing code already does it, open the evidence line and judge it yourself."
+        }
+      },
       "own-test": {
         label: { ko: "\uC774\uBC88 \uBCC0\uACBD\uC758 \uC0C8 \uAC80\uC0AC\uB85C\uB9CC \uC774\uC5B4\uC9D0", en: "linked only by this change\u2019s new tests" },
         action: {
@@ -2532,7 +2539,10 @@ function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Se
   const dead = new Set(allUnits.filter((u) => u.kind === "function" && u.uncalled).map((u) => `${u.file}#${u.fn}`));
   const units2 = dead.size ? allUnits.filter((u) => !dead.has(`${u.file}#${u.fn}`)) : allUnits;
   let best = null;
-  for (const u of units2) {
+  const settingOnly = (u) => u.kind === "condition" && !!u.cond?.parts?.length && u.cond.parts.every((p) => p.source === "config");
+  const loopHead = (u) => u.kind === "condition" && /^\s*(?:for|while|do)\b/.test(u.text);
+  const pickable = req.numbers.length || req.constraints.length ? units2 : units2.filter((u) => !settingOnly(u) && !loopHead(u));
+  for (const u of pickable) {
     const { score, why, num: num2 } = scoreUnit(req, u);
     if (!best || score > best.score || score === best.score && moreSpecific(u, num2, best)) best = { u, score, why, num: num2 };
   }
@@ -2785,12 +2795,14 @@ function testStatus(ts3) {
 function evaluate(sets, reqs, repo, base2) {
   for (const s of sets) {
     const names = new Set(s.analyses.flatMap((a) => a.names ?? []));
+    const changedCode = !!s.prScope && s.units.some((u) => u.changed) && s.units.some((u) => !u.changed);
     for (const r of reqs) {
       const evidence = r.unreadable ? { unit: null, score: 0, status: "\uBBF8\uBC1C\uACAC", why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
       const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence);
       const own = byName.length || r.unreadable ? [] : ownTests(r, s, evidence);
       const mapped = byName.length ? byName : own;
-      const rr = { evidence, tests: mapped, testStatus: testStatus(mapped), ...s.tests.length ? {} : { noResults: true }, ...own.length ? { ownTests: true } : {} };
+      const outside = !!evidence.unit && !evidence.unit.changed && changedCode;
+      const rr = { evidence, tests: mapped, testStatus: testStatus(mapped), ...s.tests.length ? {} : { noResults: true }, ...own.length ? { ownTests: true } : {}, ...outside ? { outsideChange: true } : {} };
       const edits = r.unreadable ? [] : (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
       if (edits.length) rr.edits = edits;
       s.perReq[r.id] = rr;
@@ -2834,6 +2846,7 @@ function summarize(req, sets) {
   else overall = "\uBBF8\uD655\uC778";
   const ownOnly = evs.some((e) => e.ownTests && !(e.evidence.boundaries?.length && e.evidence.boundaries.every((b) => b.ok === true)));
   if (ownOnly) overall = relation.kind === "\uBD88\uC77C\uCE58" || boundaryBad ? "\uB2E4\uB984" : "\uBBF8\uD655\uC778";
+  if (overall === "\uD655\uC778\uB428" && evs.some((e) => e.outsideChange)) overall = "\uBBF8\uD655\uC778";
   return { req, relation, overall, notes };
 }
 var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, ACTION_REQ, ACTION_VERBS, NOT_STATE, STATE_LEAD, STATE_WHO, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName, stemOf, dirOf, joinPath;
@@ -2957,7 +2970,7 @@ function oldBehavior(t) {
   return lead(ALREADY.exec(t)) || lead(PAST.exec(t));
 }
 function notRequirement(t) {
-  return PROCESS_LINE.test(t) || CITE.test(t) || oldBehavior(t);
+  return PROCESS_LINE.test(t) || CITE.test(t) || TEST_REPORT.test(t) || OBSERVED.test(t) || LOCATION.test(t) || oldBehavior(t);
 }
 function parseRequirements(md) {
   const reqs = [];
@@ -2989,6 +3002,7 @@ function extractRequirements(md, max = 12) {
   const sentences = [];
   let section = false;
   let process2 = false;
+  let bot = null;
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith(">") || /^notes?\s*:/i.test(line)) continue;
@@ -2998,12 +3012,20 @@ function extractRequirements(md, max = 12) {
       section = SECTION.test(title);
       const markedHead = !line.endsWith(":") || /^(#|\*\*)/.test(line);
       process2 = !section && (PROCESS_SECTION.test(title) || markedHead && BACKGROUND_SECTION.test(title));
+      bot = null;
       continue;
     }
     if (process2) continue;
     const item = line.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/);
     if (item) {
       const t = clean(item[1]);
+      const indent = raw.length - raw.trimStart().length;
+      if (BOT_LABEL.test(t.replace(/:$/, ""))) {
+        bot = { indent, skip: BOT_SKIP.test(t.replace(/:$/, "")) };
+        continue;
+      }
+      if (bot && indent <= bot.indent) bot = null;
+      if (bot?.skip) continue;
       if (AUTHOR_ITEM.test(t) || notRequirement(t) || /[:：]$/.test(t) && t.split(/\s+/).length <= 8) continue;
       (section ? inSection : bullets).push(t);
     } else if (section || MODAL.test(line)) {
@@ -3035,7 +3057,7 @@ function draftRequirements(cands, source = "", start = 1) {
 function extractFromPrBody(md) {
   return draftRequirements(extractRequirements(md));
 }
-var ONLY_CUE, GUARD_CUE, MISSING_CUE, HTTP_STATUS, CHECK_CUE, PROCESS_LINE, TYPE_LEVEL, CITE, DIRECTIVE, PAST, ALREADY, BEFORE_PAST, BEFORE_GET, SECTION, MODAL, PROCESS_SECTION, BACKGROUND_SECTION, AUTHOR_ITEM;
+var ONLY_CUE, GUARD_CUE, MISSING_CUE, HTTP_STATUS, CHECK_CUE, PROCESS_LINE, TYPE_LEVEL, CITE, DIRECTIVE, PAST, ALREADY, BEFORE_PAST, BEFORE_GET, TEST_REPORT, OBSERVED, LOCATION, BOT_LABEL, BOT_SKIP, SECTION, MODAL, PROCESS_SECTION, BACKGROUND_SECTION, AUTHOR_ITEM;
 var init_requirements = __esm({
   "src/requirements.ts"() {
     init_tokens();
@@ -3055,6 +3077,11 @@ var init_requirements = __esm({
     ALREADY = /\balready\s+(?:does|do|did|is|are|has|have|returns?|handles?|works?|exists?|supports?)\b/i;
     BEFORE_PAST = /\b(?:is|are|be|been|being|does|do|can|cannot|that|which|who|when|if|unless|so|after|before|once|until|while)\b/i;
     BEFORE_GET = /\bgets?\b/;
+    TEST_REPORT = /\b\d[\d,]*\s+(?:\w+\s+){0,2}(?:passed|passing|skipped)\b|\b\d[\d,]*\s+failures?\s+on\s+(?:main|master)\b|:\s*(?:all\s+)?pass(?:ed|es)?\.?$|^(?:add(?:ed|s)?|improve[sd]?|increase[sd]?|expand(?:ed|s)?)\s+(?:\w+\s+)?(?:test\s+)?coverage\b/i;
+    OBSERVED = /[✓✗✔✘❌]\s*$/;
+    LOCATION = /^(?:\S+\s+){0,6}\(?`?[\w./-]+\.(?:[cm]?[jt]sx?):\d+(?:[-–]\d+)?`?\)?$/;
+    BOT_LABEL = /^(?:bug\s*fix(?:es)?|fixes|new\s+features?|features?|enhancements?|improvements?|documentation|docs|tests?|testing|chores?|refactor(?:ing|s)?|performance|perf|style|ci|build|dependencies|deps|breaking\s+changes?|other\s+changes|miscellaneous|misc)$/i;
+    BOT_SKIP = /^(?:documentation|docs|tests?|testing|chores?|refactor(?:ing|s)?|style|ci|build|dependencies|deps|miscellaneous|misc)$/i;
     SECTION = /(acceptance\s*criteria|requirements?|definition\s*of\s*done|expected\s*behaviou?r|요구\s*사항|인수\s*조건|완료\s*조건|수용\s*기준|기대\s*동작|해야\s*할\s*일|체크\s*리스트)/i;
     MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|된다|must|should|shall|when |if |needs? to|able to|cannot|can't)/i;
     PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review|\bauthor\s+should\b|should\s+do\s+the\s+following|\bif\s+applicable\b/i;
@@ -3240,6 +3267,7 @@ function undecidedReasons(report, s) {
   }
   if (out.has("no-evidence")) out.delete("missing");
   if (report.sets.some((x) => x.perReq[s.req.id].ownTests)) out.add("own-test");
+  if (report.sets.some((x) => x.perReq[s.req.id].outsideChange)) out.add("outside-change");
   const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === "\uBBF8\uC2E4\uD589");
   const notRun = untested && report.sets.every((x) => x.perReq[s.req.id].testStatus !== "\uBBF8\uC2E4\uD589" || x.perReq[s.req.id].tests.length > 0);
   const noResults = report.sets.every((x) => x.tests.length === 0);
@@ -3338,6 +3366,8 @@ var init_summary = __esm({
 // src/readout.ts
 function sentencePieces(req, lang) {
   const ko = lang === "ko";
+  if (req.unreadable === "process") return [ko ? "\uC808\uCC28 \uC904 \u2014 \uD310\uC815\uD558\uC9C0 \uC54A\uC74C" : "process step \u2014 not judged"];
+  if (req.unreadable === "type") return [ko ? "\uD0C0\uC785 \uC694\uAD6C\uC0AC\uD56D \u2014 \uC77D\uC9C0 \uC54A\uC74C" : "type-level \u2014 not read"];
   const out = [];
   for (const c of req.constraints) {
     const t = pick(constraintText(c), lang);
@@ -3399,7 +3429,7 @@ function chainSteps(report, reqId, lang = getLang(), setIndex = 0) {
   const ev = rr.evidence;
   const u = ev.unit;
   const b = ev.boundary;
-  const code = u ? `${u.file}:${u.startLine}${u.cond?.expr ? ` ${u.cond.expr}` : u.kind === "function" ? ko ? " (\uD568\uC218 \uC804\uCCB4)" : " (whole function)" : ""}` : ko ? "\uADFC\uAC70\uB97C \uCC3E\uC9C0 \uBABB\uD568" : "no evidence found";
+  const code = u ? `${u.file}:${u.startLine}${u.cond?.expr ? ` ${u.cond.expr}` : u.kind === "function" ? ko ? " (\uD568\uC218 \uC804\uCCB4)" : " (whole function)" : ""}` : s.req.unreadable ? ko ? "\uCF54\uB4DC\uC5D0\uC11C \uCC3E\uC9C0 \uC54A\uC74C (\uD310\uC815\uD558\uC9C0 \uC54A\uB294 \uC904)" : "not looked for (a line that is not judged)" : ko ? "\uADFC\uAC70\uB97C \uCC3E\uC9C0 \uBABB\uD568" : "no evidence found";
   const codeTone = !u ? "miss" : ev.status === "\uBC1C\uACAC" ? "ok" : "miss";
   const linked = rr.tests;
   const firstFail = linked.find((t) => t.status === "fail");
@@ -4877,6 +4907,7 @@ function summaryLine(report, s) {
   }
   if (s.overall === "\uC2E4\uD328") return L("\uC5F0\uACB0\uB41C \uAC80\uC0AC\uAC00 \uC2E4\uD328", "a linked test fails");
   if (s.overall === "\uBBF8\uD655\uC778") {
+    if (s.req.unreadable) return undecidedLabel(s.req.unreadable === "process" ? "not-behavior" : "type-level");
     if (report.sets.some((x) => x.perReq[id].evidence.status === "\uBBF8\uBC1C\uACAC")) return L("\uAD6C\uD604 \uADFC\uAC70\uB97C \uCC3E\uC9C0 \uBABB\uD568", "no implementation evidence found");
     const open = report.sets.flatMap((x) => {
       const e = x.perReq[id].evidence;
@@ -4910,11 +4941,12 @@ function allLenses(report) {
       const u = rr.evidence.unit;
       if (!u) continue;
       const bt = boundaryText(set, s.req.id);
-      const notes = [bt, testWord(rr, report.testsStale)].filter(Boolean);
+      const why = s.overall === "\uBBF8\uD655\uC778" && rr.testStatus === "\uD1B5\uACFC" ? undecidedReasons(report, s).filter((k) => !TEST_KINDS.has(k)).map((k) => undecidedLabel(k)) : [];
+      const notes = [bt, testWord(rr, report.testsStale), ...why].filter(Boolean);
       const other = report.sets.find((x) => x.key !== set.key);
       if (other && s.relation.kind === "\uBD88\uC77C\uCE58") notes.push(L(`${other.key}\uC640 \uC870\uAC74 \uB2E4\uB984`, `condition differs from ${other.key}`));
       const bad = rr.testStatus === "\uC2E4\uD328" || rr.evidence.boundary?.ok === false;
-      const long = [`VerifyLens ${s.req.id} \xB7 ${wOverall(s.overall)}`, bt, testWord(rr, report.testsStale), other && s.relation.kind === "\uBD88\uC77C\uCE58" ? L("A\xB7B \uC870\uAC74 \uB2E4\uB984", "A and B use different conditions") : ""].filter(Boolean);
+      const long = [`VerifyLens ${s.req.id} \xB7 ${wOverall(s.overall)}`, bt, testWord(rr, report.testsStale), ...why, other && s.relation.kind === "\uBD88\uC77C\uCE58" ? L("A\xB7B \uC870\uAC74 \uB2E4\uB984", "A and B use different conditions") : ""].filter(Boolean);
       out.push({
         setKey: set.key,
         file: u.file,
@@ -4972,7 +5004,7 @@ function prSummary(r, judgments = {}, opts = {}) {
       const u = rr.evidence.unit;
       const b = rr.evidence.boundary;
       const pre = two ? `${set.key} ` : "";
-      let e = u ? `\`${cell(`${u.file}:${u.startLine}`)}\`${u.cond?.expr ? ` \`${cell(u.cond.expr)}\`` : u.kind === "function" ? ` ${t.whole}` : ""}` : t.noEvidence;
+      let e = u ? `\`${cell(`${u.file}:${u.startLine}`)}\`${u.cond?.expr ? ` \`${cell(u.cond.expr)}\`` : u.kind === "function" ? ` ${t.whole}` : ""}` : s.req.unreadable ? undecidedLabel(s.req.unreadable === "process" ? "not-behavior" : "type-level", lang) : t.noEvidence;
       if (b && b.attempts !== null) e += ` \u2192 ${t.attempt(b.attempts, b.required, b.ok)}`;
       else if (b) e += ` \u2192 ${cell(boundaryLine(b, lang))}`;
       ev.push(pre + e);
@@ -4981,7 +5013,7 @@ function prSummary(r, judgments = {}, opts = {}) {
       if (passButOff(rr)) passOff.push(`- ${id}${two ? ` \xB7 ${set.key}` : ""}: ${t.passOffLine}`);
       for (const x of rr.evidence.boundaries ?? []) if (x.ok === null) notes.push(`- ${id}${two ? ` \xB7 ${set.key}` : ""}: ${boundaryLine(x, lang)}`);
       if (rr.evidence.caveat) notes.push(`- ${id}${two ? ` \xB7 ${set.key}` : ""}: ${pick(rr.evidence.caveat, lang)}`);
-      if (!u) noImpl = true;
+      if (!u && !s.req.unreadable) noImpl = true;
       for (const tc of rr.tests) {
         if (tc.status !== "fail") continue;
         const why = tc.message.split("\n").map((x) => x.trim()).filter(Boolean).join(" ").slice(0, 160);
@@ -5039,7 +5071,7 @@ function prSummary(r, judgments = {}, opts = {}) {
   out.push("", `<sub>${t.notOpinion}<br>${autoIds.length ? t.autoLink(autoIds.join(", ")) + "<br>" : ""}${t.footer(opts.version ?? "")}</sub>`, "");
   return out.join("\n");
 }
-var isWide, wideCount, passButOff, testWord, TXT, cell, isJudged;
+var isWide, wideCount, passButOff, testWord, TEST_KINDS, TXT, cell, isJudged;
 var init_model = __esm({
   "vscode/src/model.ts"() {
     "use strict";
@@ -5062,6 +5094,7 @@ var init_model = __esm({
     wideCount = (s) => [...s].filter(isWide).length;
     passButOff = (rr) => rr.testStatus === "\uD1B5\uACFC" && rr.evidence.boundary?.ok === false;
     testWord = (rr, stale) => passButOff(rr) ? L("\uAC80\uC0AC\uB294 \uD1B5\uACFC", "but the test passes") : testPhraseFor(rr, stale);
+    TEST_KINDS = /* @__PURE__ */ new Set(["no-test", "not-run", "no-results", "stale"]);
     TXT = {
       ko: {
         title: "VerifyLens \uAC80\uC99D \uC694\uC57D",

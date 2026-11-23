@@ -134,7 +134,7 @@ export function analyzeFiles(o: {
     testEdits.push(...diffTestFiles(changed, others));
     added.push(...addedTests(changed));
   }
-  return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], testEdits, ...(added.length ? { addedTests: added } : {}), perReq: {} };
+  return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], testEdits, ...(added.length ? { addedTests: added } : {}), ...(o.changed ? { prScope: true } : {}), perReq: {} };
 }
 
 /** 숫자가 요구사항의 값과 같은가 (단위 환산 포함) */
@@ -488,7 +488,13 @@ function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] 
   const dead = new Set(allUnits.filter((u) => u.kind === 'function' && u.uncalled).map((u) => `${u.file}#${u.fn}`));
   const units = dead.size ? allUnits.filter((u) => !dead.has(`${u.file}#${u.fn}`)) : allUnits;
   let best: { u: Unit; score: number; why: string[]; num: boolean } | null = null;
-  for (const u of units) {
+  // 설정값 줄(timeout: options.timeout ?? 10_000)은 숫자를 말하는 요구사항의 근거다. 그 줄은 문장 전체의 낱말을 가지므로
+  // 숫자 없는 요구사항(「Add an init hook」)에는 엉뚱하게 이어졌다 (실제 PR 시험 ky, 0.26.0 다음)
+  const settingOnly = (u: Unit) => u.kind === 'condition' && !!u.cond?.parts?.length && u.cond.parts.every((p) => p.source === 'config');
+  // 반복문의 조건(for … i < hooks.transform.length)도 숫자 없는 요구사항을 판단하는 줄이 아니다: 그 단위는 반복문 몸통 전체의 낱말을 가진다 (실제 PR 시험 Elysia)
+  const loopHead = (u: Unit) => u.kind === 'condition' && /^\s*(?:for|while|do)\b/.test(u.text);
+  const pickable = req.numbers.length || req.constraints.length ? units : units.filter((u) => !settingOnly(u) && !loopHead(u));
+  for (const u of pickable) {
     const { score, why, num } = scoreUnit(req, u);
     if (!best || score > best.score || (score === best.score && moreSpecific(u, num, best))) best = { u, score, why, num };
   }
@@ -893,13 +899,19 @@ function testStatus(ts: TestCase[]): TestStatus {
 export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, base: string): Report {
   for (const s of sets) {
     const names = new Set(s.analyses.flatMap((a) => a.names ?? []));
+    // PR 글에서 요구사항을 가져와 그 PR 의 바뀐 줄로 보는 경우만 (체험 페이지의 PR 주소). 요구사항 파일은 기능 전체를 말하므로
+    // 이번 변경이 손대지 않은 규칙도 「확인됨」일 수 있다 (VS Code · CI)
+    const changedCode = !!s.prScope && s.units.some((u) => u.changed) && s.units.some((u) => !u.changed);
     for (const r of reqs) {
       // 절차 줄 · 타입 요구사항은 코드 줄과 검사를 잇지 않는다 (이어 두면 「확인됨」이 될 수 있다 — 실제 PR 시험에서 「Add tests …」가 그랬다)
       const evidence: Evidence = r.unreadable ? { unit: null, score: 0, status: '미발견', why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
       const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence);
       const own = byName.length || r.unreadable ? [] : ownTests(r, s, evidence);
       const mapped = byName.length ? byName : own;
-      const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped), ...(s.tests.length ? {} : { noResults: true }), ...(own.length ? { ownTests: true } : {}) };
+      // 바뀐 코드가 있으면(바뀐 단위와 그대로인 단위가 함께 있음) 근거는 이번 변경 안에 있어야 「확인됨」이다.
+      // 실제 PR 네 저장소에서 근거 줄이 바뀐 곳과 먼 「확인됨」 12개 가운데 11개가 틀린 줄이었다 (0.26.0 다음)
+      const outside = !!evidence.unit && !evidence.unit.changed && changedCode;
+      const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped), ...(s.tests.length ? {} : { noResults: true }), ...(own.length ? { ownTests: true } : {}), ...(outside ? { outsideChange: true } : {}) };
       // 이번 변경에서 바뀐 검사 가운데 이 요구사항의 것: 실행 결과와 같은 이름 규칙으로 잇는다 (지운 검사는 실행 결과에 없다)
       const edits = r.unreadable ? [] : (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
       if (edits.length) rr.edits = edits;
@@ -948,5 +960,7 @@ function summarize(req: Requirement, sets: ResultSet[]): ReqSummary {
   // (실제 공개 PR 시험 h3: 근거 줄이 엉뚱한데 새 검사가 이어져 「확인됨」이 된 것이 넷 늘었다. 새 검사는 보이되 「미확인」으로 둔다)
   const ownOnly = evs.some((e) => e.ownTests && !(e.evidence.boundaries?.length && e.evidence.boundaries.every((b) => b.ok === true)));
   if (ownOnly) overall = relation.kind === '불일치' || boundaryBad ? '다름' : '미확인';
+  // 근거 줄이 이번 변경 밖이면 「확인됨」이라 하지 않는다 (「다름」 · 「실패」는 그대로 알린다)
+  if (overall === '확인됨' && evs.some((e) => e.outsideChange)) overall = '미확인';
   return { req, relation, overall, notes };
 }

@@ -16,6 +16,9 @@ const MAX_WORDS = 5;
  */
 export function sentencePieces(req: Requirement, lang: 'ko' | 'en'): string[] {
   const ko = lang === 'ko';
+  // 판정하지 않는 줄은 찾는 낱말을 보이지 않는다 (찾아봤다가 못 찾은 것처럼 읽혔다 — JetBrains 세션이 찾음, 0.27.0)
+  if (req.unreadable === 'process') return [ko ? '절차 줄 — 판정하지 않음' : 'process step — not judged'];
+  if (req.unreadable === 'type') return [ko ? '타입 요구사항 — 읽지 않음' : 'type-level — not read'];
   const out: string[] = [];
   for (const c of req.constraints) {
     const t = pick(constraintText(c), lang);

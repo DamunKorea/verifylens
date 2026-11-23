@@ -356,6 +356,12 @@ test('import from GitHub: linked issues first, then the PR, with readable errors
     { label: '복사한 글', url: '', title: '', body: '회의록입니다.' },
   ]);
   assert.deepEqual(prose, { requirements: ['Lock the account after 5 failed logins'], sources: ['이슈 #9 제목'] });
+  // 버그 신고 이슈의 제목은 버그를 말하므로 요구사항으로 쓰지 않는다. PR 제목은 쓴다 (실제 PR 시험)
+  const bug = M.requirementsFrom([
+    { label: '이슈 #10', url: '', title: 'Coupon check throws TypeError with blank codes', body: '### Steps to reproduce\nRun it.\n\n### Actual behavior\nIt throws.' },
+    { label: 'PR #11', url: '', title: 'fix(coupon): reject blank codes', body: 'Background only.' },
+  ]);
+  assert.deepEqual(bug, { requirements: ['reject blank codes'], sources: ['PR #11 제목'] });
 
   assert.match(M.ghError(Object.assign(new Error('x'), { code: 'ENOENT' })), /gh\)를 찾지 못했습니다/);
   assert.match(M.ghError({ stderr: 'no pull requests found for branch "feature/x"' }), /PR을 찾지 못했습니다/);

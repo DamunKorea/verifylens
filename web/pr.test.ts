@@ -194,3 +194,40 @@ test('readable failures: not found, rate limit, no code, bad address', async () 
   };
   assert.equal(await kind(loadPr('o/r#9', offline)), 'network');
 });
+
+// 0.26.0 시험에서 남은 것: 리뷰 봇 요약의 갈래 이름 · 문서 · 테스트 갈래 아래 줄과 테스트 결과 줄 (우리 말로 적음)
+test('review-bot summaries and test reports are not requirements', () => {
+  const pr = [
+    '## Summary by a review bot',
+    '',
+    '* **Bug Fixes**',
+    '  * Blank coupon codes are now rejected with a 422 response.',
+    '* **Documentation**',
+    '  * Clarified how coupon codes are validated.',
+    '* **Tests**',
+    '  * Added coverage for blank and short codes.',
+    '',
+    '### Verification',
+    '',
+    '- Coupon tests: 75 passed',
+    '- `pnpm build`: passed',
+    '- Full test run: 3,055 passed, 51 skipped',
+    '- New cases: 36 failures on main before the fix',
+    '- Lock the account after 5 failed attempts',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(pr), ['Blank coupon codes are now rejected with a 422 response', 'Lock the account after 5 failed attempts']);
+});
+
+// 관찰 결과 · 코드 위치 메모는 요구사항이 아니다 (실제 PR 시험 Elysia)
+test('observed results and code locations are not requirements', () => {
+  const issue = [
+    '### What is the expected behavior?',
+    '',
+    '- The Set-Cookie header should be sent even when the handler throws',
+    '- Response status: 500 ✓',
+    '- Set-Cookie header: missing ✗',
+    '- Error handler (`src/handle.ts:728-734`)',
+    '- ✅ Setting a different value sends set-cookie',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(issue), ['The Set-Cookie header should be sent even when the handler throws', '✅ Setting a different value sends set-cookie']);
+});

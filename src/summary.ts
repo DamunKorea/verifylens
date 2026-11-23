@@ -44,6 +44,7 @@ export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[]
   // 근거가 아예 없으면 「코드에 숫자 없음」은 같은 말이다
   if (out.has('no-evidence')) out.delete('missing');
   if (report.sets.some((x) => x.perReq[s.req.id].ownTests)) out.add('own-test');
+  if (report.sets.some((x) => x.perReq[s.req.id].outsideChange)) out.add('outside-change');
   const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === '미실행');
   // 이어진 검사는 있는데 결과가 없으면(건너뜀 · 체험 페이지는 돌리지 않음) 「검사 없음」이 아니라 「돌리지 않음」이다
   const notRun = untested && report.sets.every((x) => x.perReq[s.req.id].testStatus !== '미실행' || x.perReq[s.req.id].tests.length > 0);

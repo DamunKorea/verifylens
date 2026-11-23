@@ -544,7 +544,7 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
  * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
  * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
  */
-export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'state-unread' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'not-run' | 'no-results' | 'stale' | 'not-behavior' | 'type-level' | 'own-test';
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'state-unread' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'not-run' | 'no-results' | 'stale' | 'not-behavior' | 'type-level' | 'own-test' | 'outside-change';
 const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   wording: {
     label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
@@ -628,6 +628,13 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
     action: {
       ko: '「테스트 추가 · 실행 · 서식 맞추기」 같은 할 일은 판정하지 않는다. 요구사항 목록에서 빼거나, 코드가 해야 할 동작으로 고쳐 적는다.',
       en: 'Steps such as adding or running tests or formatting are not judged. Remove the line, or rewrite it as something the code must do.',
+    },
+  },
+  'outside-change': {
+    label: { ko: '근거 줄이 이번 변경 밖', en: 'evidence line is outside this change' },
+    action: {
+      ko: '이번 변경이 이 요구사항을 다루는지 확인한다. 이미 있던 코드가 요구사항을 지킨다면 근거 줄을 열어 직접 판단한다.',
+      en: 'Check that this change covers the requirement. If existing code already does it, open the evidence line and judge it yourself.',
     },
   },
   'own-test': {

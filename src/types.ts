@@ -207,6 +207,8 @@ export type ReqResult = {
   noResults?: boolean;
   /** 이름이 아니라 「이번 변경이 새로 더한 검사」(근거 파일과 짝인 검사 파일)로 이어졌다. 숫자가 맞게 판정된 때가 아니면 「확인됨」이라 하지 않는다 */
   ownTests?: boolean;
+  /** 바뀐 코드가 있는데 근거 줄은 이번 변경이 손대지 않은 곳이다. 「확인됨」이라 하지 않는다 */
+  outsideChange?: boolean;
 };
 
 export type ResultSet = {
@@ -225,6 +227,8 @@ export type ResultSet = {
   testEdits?: TestEdit[];
   /** 이번 변경에서 새로 더한 검사 (이름으로 이어지는 검사가 없을 때, 근거 파일과 짝인 검사 파일의 것을 잇는다) */
   addedTests?: AddedTest[];
+  /** PR 의 바뀐 줄을 받아 그 PR 글의 요구사항을 본다 (체험 페이지의 PR 주소). 근거가 바뀐 곳 밖이면 「확인됨」이라 하지 않는다 */
+  prScope?: boolean;
   perReq: Record<string, ReqResult>;
 };
 

@@ -147,3 +147,40 @@ test('a change’s own new tests link to its requirement when the names differ',
   assert.deepEqual(blank.tests, ['✓ throws for a code of spaces']);
   assert.deepEqual(blank.todo.map((t) => t.label), ['linked only by this change’s new tests']);
 });
+
+// 설정값 줄(timeout: options.timeout ?? 10_000)은 문장 전체의 낱말을 가져, 숫자 없는 요구사항의 근거로 엉뚱하게 뽑혔다 (실제 PR 시험 ky)
+test('a settings line is not the evidence for a requirement without a number', () => {
+  const code = 'export function createClient(options: { timeout?: number; hooks?: { init?: Array<() => void> } }) {\n  const settings = { ...options, hooks: { init: options.hooks?.init ?? [] }, timeout: options.timeout ?? 10_000 };\n  for (const hook of settings.hooks.init) hook();\n  return settings;\n}\n';
+  const row = runCheck({ requirements: '- R1: Run the init hooks when a client is created', fileName: 'client.ts', code, tests: [{ name: 'runs init hooks when a client is created', status: 'pass' }], lang: 'en' }).rows[0];
+  assert.notEqual(row.line, 2);
+  // 숫자를 말하는 요구사항에는 그대로 근거다
+  const timed = runCheck({ requirements: '- R1: Requests time out after 10 seconds', fileName: 'client.ts', code, tests: [], lang: 'en' }).rows[0];
+  assert.equal(timed.line, 2);
+});
+
+// PR 주소로 볼 때(바뀐 줄을 앎): 근거 줄이 이번 변경 밖이면 「확인됨」이라 하지 않는다 (실제 PR 네 저장소: 그런 확인됨 12개 가운데 11개가 틀린 줄)
+test('with a pull request, evidence outside the change is not Verified', () => {
+  const code = 'export function login(user: { locked: boolean }) {\n  if (user.locked) throw new Error("LOCKED");\n  return true;\n}\n\nexport function logout(user: { id: string }) {\n  if (!user.id) throw new Error("NO_USER");\n  return true;\n}\n';
+  const run = (changed?: Record<string, number[] | null>) =>
+    runCheck({ requirements: '- R1: A locked account cannot log in', fileName: '', code: '', tests: [{ name: 'a locked account cannot log in', status: 'pass' }], lang: 'en', files: { 'src/auth.ts': code }, changed }).rows[0];
+  // 바뀐 줄을 모르면(직접 붙여 넣은 코드) 그대로
+  assert.equal(run().overall, '확인됨');
+  // 근거 줄(2)이 바뀐 줄이면 그대로
+  assert.equal(run({ 'src/auth.ts': [2] }).overall, '확인됨');
+  // 이번 변경은 logout 만 바꿈 → 근거 줄이 변경 밖
+  const outside = run({ 'src/auth.ts': [7] });
+  assert.equal(outside.overall, '미확인');
+  assert.deepEqual(outside.todo.map((t) => t.label), ['evidence line is outside this change']);
+});
+
+// 화면 글 (JetBrains 세션이 0.26.0 엔진에서 찾음): 판정하지 않는 줄은 찾지 않았다고 말하고, 통과인데 미확인이면 줄 끝에 까닭을 적는다
+test('lines that are not judged say so, and a passing test that stays Not verified says why on the code line', () => {
+  const add = 'export function addCoupon(code: string): void {\n  if (code.trim() === "") throw new Error("blank");\n  saved.push(code);\n}\nconst saved: string[] = [];\n';
+  const proc = runCheck({ requirements: '- R1: Add tests for blank coupon codes', fileName: 'coupon.ts', code: add, tests: [], lang: 'en' }).rows[0];
+  assert.equal(proc.summary, 'not a code behavior (a process step)');
+  assert.deepEqual(proc.chain[0].pieces, ['process step — not judged']);
+  assert.equal(proc.chain.find((s) => s.kind === 'code')?.text, 'not looked for (a line that is not judged)');
+  const spec = "import { addCoupon } from './coupon';\nit('throws for a code of spaces', () => { expect(() => addCoupon('  ')).toThrow(); });\n";
+  const own = runCheck({ requirements: '- R1: Blank coupon codes are refused', fileName: '', code: '', tests: [{ name: 'throws for a code of spaces', status: 'pass' }], lang: 'en', files: { 'src/coupon.ts': add, 'src/coupon.test.ts': spec }, baseFiles: {} });
+  assert.match(own.notes.find((n) => n.reqId === 'R1')!.note, /tests pass · linked only by this change’s new tests/);
+});

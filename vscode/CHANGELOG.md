@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.27.0
+
+Fewer wrong Verified verdicts when you check a pull request on the browser page. In 0.26.0, about half of the Verified verdicts on real pull requests stood on the wrong line. Looking at them, almost all of the wrong ones had an evidence line far from anything the pull request changed. Verdicts on all our earlier cases did not change.
+
+- **With a pull request, the evidence must be in the change.** When the browser page checks a pull request address, it knows which lines the pull request changed. If the evidence line is outside them, the requirement is not called Verified. Its reason is "evidence line is outside this change", so you know to look yourself. Different and Failed are still reported.
+  - This applies only to pull request addresses. A requirements file describes the whole feature, so in VS Code, JetBrains and CI a rule that the change did not touch can still be Verified.
+- **A settings line or a loop header is not the evidence for a requirement without a number.** A line such as `timeout: options.timeout ?? 10_000` carries every word of its statement, so "Add an init hook" landed on it. A `for` loop header carried every word of the loop body. Both are still used for requirements that have a number.
+- **Fewer lines that are not requirements.** These are now left out when requirements are taken from a pull request or an issue:
+  - the category names of review-bot summaries ("Bug Fixes", "New Features"), and the lines under their Documentation, Tests and Chores categories;
+  - test result lines ("75 passed", "`pnpm build`: passed", "36 failures on main");
+  - observed results that end in a mark ("Response status: 500 ✓") and code location notes ("Error handler (`src/handle.ts:728-734`)");
+  - the title of an issue that is a bug report: it names the bug, not what the code must do.
+- **Clearer words for lines that are not judged, and for a passing test that stays Not verified.** Found by our JetBrains build.
+  - A process line or a type-level requirement no longer reads "no evidence found" or "looks for: …", as if VerifyLens had looked. It says "not looked for" and gives the reason.
+  - When a test passes but the requirement stays Not verified, the note on the code line now gives the reason too, for example "tests pass · linked only by this change's new tests".
+
+Our own reading of each Verified line (tests counted as passing because CI passed before merge; not a benchmark):
+
+| | 0.26.0 | 0.27.0 |
+|---|---|---|
+| New: two repositories, 16 pull requests, first run | right 2, wrong 4 | right 2, wrong 3 |
+| Seen while fixing: four repositories, 64 pull requests | right 15, wrong 22 | right 17, wrong 9 |
+
+The first run on one of the four, with an earlier draft of this version, went from 9 wrong to 10, which is how the change rule was found. On the new repositories the change is small: the wrong Verified verdicts left have the right line but a sentence that describes the bug, such as an issue title "… ignores abortOnUnmount" or a sentence cut off at a comma.
+
 ## 0.26.0
 
 A first test on real pull requests, and what it changed. We ran 17 merged pull requests of a public TypeScript repository and read every line VerifyLens took as a requirement. Half were not requirements, and three of those were Verified. This version fixes that, and an older bug that let lines in test files become evidence. Then we measured on two public repositories we had not looked at. Verdicts on all our earlier cases did not change.

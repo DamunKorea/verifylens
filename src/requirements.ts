@@ -46,10 +46,19 @@ function oldBehavior(t: string): boolean {
   // 「The bodyless control already does so」 · 「The legacy router already returns 404」: 지금 이미 그렇다는 설명
   return lead(ALREADY.exec(t)) || lead(PAST.exec(t));
 }
-/** 요구사항이 아닌 줄인가 (절차 · 까닭 · 인용 · 고치기 전 버그 설명). 요구사항 뽑기에서 뺀다 */
+/** 테스트를 돌린 결과 · 테스트를 더했다는 말: 「75 passed」 · 「`pnpm build`: passed」 · 「36 failures on main」 · 「Added coverage for …」 */
+const TEST_REPORT = /\b\d[\d,]*\s+(?:\w+\s+){0,2}(?:passed|passing|skipped)\b|\b\d[\d,]*\s+failures?\s+on\s+(?:main|master)\b|:\s*(?:all\s+)?pass(?:ed|es)?\.?$|^(?:add(?:ed|s)?|improve[sd]?|increase[sd]?|expand(?:ed|s)?)\s+(?:\w+\s+)?(?:test\s+)?coverage\b/i;
+/** 요구사항이 아닌 줄인가 (절차 · 까닭 · 인용 · 고치기 전 버그 설명 · 테스트 결과). 요구사항 뽑기에서 뺀다 */
 export function notRequirement(t: string): boolean {
-  return PROCESS_LINE.test(t) || CITE.test(t) || oldBehavior(t);
+  return PROCESS_LINE.test(t) || CITE.test(t) || TEST_REPORT.test(t) || OBSERVED.test(t) || LOCATION.test(t) || oldBehavior(t);
 }
+/** 관찰한 결과 줄: 「Response status: 500 ✓」 · 「Set-Cookie header: missing ✗」 (끝에 표시가 붙음. 앞에 붙은 「✅ …」는 검사 목록이라 둔다) */
+const OBSERVED = /[✓✗✔✘❌]\s*$/;
+/** 코드 위치 메모: 「Dynamic error handler (`src/dynamic-handle.ts:728-734`)」 — 짧은 이름 + 파일:줄 */
+const LOCATION = /^(?:\S+\s+){0,6}\(?`?[\w./-]+\.(?:[cm]?[jt]sx?):\d+(?:[-–]\d+)?`?\)?$/;
+// 리뷰 봇 요약(「Summary by CodeRabbit」)의 갈래 이름. 갈래 이름 줄은 요구사항이 아니고, 문서 · 테스트 · 잡일 갈래 아래 줄도 아니다
+const BOT_LABEL = /^(?:bug\s*fix(?:es)?|fixes|new\s+features?|features?|enhancements?|improvements?|documentation|docs|tests?|testing|chores?|refactor(?:ing|s)?|performance|perf|style|ci|build|dependencies|deps|breaking\s+changes?|other\s+changes|miscellaneous|misc)$/i;
+const BOT_SKIP = /^(?:documentation|docs|tests?|testing|chores?|refactor(?:ing|s)?|style|ci|build|dependencies|deps|miscellaneous|misc)$/i;
 
 export function parseRequirements(md: string): Requirement[] {
   const reqs: Requirement[] = [];
@@ -107,6 +116,8 @@ export function extractRequirements(md: string, max = 12): string[] {
   const sentences: string[] = [];
   let section = false;
   let process = false;
+  /** 리뷰 봇 요약의 갈래 이름 줄 (그 아래 들여 쓴 줄이 그 갈래다) */
+  let bot: { indent: number; skip: boolean } | null = null;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('>') || /^notes?\s*:/i.test(line)) continue;
@@ -118,12 +129,21 @@ export function extractRequirements(md: string, max = 12): string[] {
       // 이슈 양식의 재현 · 환경 칸은 제목(# · **)일 때만 본다. 「Reproduced on current main, Node 24:」 같은 글 속 쌍점 줄은 칸이 아니다 (h3 이슈에서 찾음)
       const markedHead = !line.endsWith(':') || /^(#|\*\*)/.test(line);
       process = !section && (PROCESS_SECTION.test(title) || (markedHead && BACKGROUND_SECTION.test(title)));
+      bot = null;
       continue;
     }
     if (process) continue;
     const item = line.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/);
     if (item) {
       const t = clean(item[1]);
+      // 리뷰 봇 요약: 「* **Bug Fixes**」 아래에 들여 쓴 줄이 온다. 문서 · 테스트 갈래 아래 줄은 건너뛴다
+      const indent = raw.length - raw.trimStart().length;
+      if (BOT_LABEL.test(t.replace(/:$/, ''))) {
+        bot = { indent, skip: BOT_SKIP.test(t.replace(/:$/, '')) };
+        continue;
+      }
+      if (bot && indent <= bot.indent) bot = null;
+      if (bot?.skip) continue;
       // 「Enhanced feature detection in `constants.ts`:」처럼 쌍점으로 끝나는 짧은 목록 줄은 아래 목록의 작은 제목이다 (긴 줄은 요구사항일 수 있다)
       if (AUTHOR_ITEM.test(t) || notRequirement(t) || (/[:：]$/.test(t) && t.split(/\s+/).length <= 8)) continue;
       (section ? inSection : bullets).push(t);
