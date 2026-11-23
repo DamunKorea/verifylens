@@ -540,6 +540,13 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("linked only by this change’s new tests", r.rows[1].reason)
         assertEquals("not a code behavior (a process step)", r.rows[2].reason)
         assertEquals("type-level requirement, not readable", r.rows[3].reason)
+        // 판정하지 않는 줄은 한 줄 요약도 그 까닭을 말한다 (0.27.0 엔진: 「근거를 찾지 못함」이라 하지 않는다)
+        assertEquals("not a code behavior (a process step)", r.rows[2].summary)
+        assertEquals("type-level requirement, not readable", r.rows[3].summary)
+        // 검사는 통과인데 미확인이면 코드 줄 끝 글에 까닭이 붙는다
+        val note = VerifyLensLinePainter().getLineExtensions(project, file("src/coupon.ts"), 6)!!.single().text.trim()
+        println("[VerifyLens 시험] 새 이유 7번째 줄 끝 | $note")
+        assertEquals("← R2 · Not verified · tests pass · linked only by this change’s new tests", note)
         // 절차 줄 · 타입 요구사항에는 근거 줄을 잇지 않는다
         assertTrue(r.rows[2].children.all { it.file == null })
         assertTrue(r.rows[3].children.all { it.file == null })
@@ -569,6 +576,9 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         val c3 = panel.chainTexts()
         c3.forEach { println("[VerifyLens 시험] 새 이유 근거 사슬 R3 | $it") }
         assertTrue(c3.toString(), c3.contains("? verdict: Not verified · not a code behavior (a process step)"))
+        // 찾지 않은 줄이다: 「찾아봤지만 없음」처럼 읽히지 않게 코드 칸과 칩이 그렇게 말한다
+        assertTrue(c3.toString(), c3.contains("? code: not looked for (a line that is not judged)"))
+        assertEquals(listOf("read as: process step — not judged"), panel.chainPieces())
         shot(panel, 420, 620, "tool-window-process-line-en")
         assertNoKorean(panel.allTexts(), "tool window with the new reasons")
     }
