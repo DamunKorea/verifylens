@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.25.0
+
+The result now shows what VerifyLens read from each requirement sentence. "How do you turn a written requirement into a check without an LLM?" was the question we got most on X: three people asked it separately. The answer is now in the picture. No verdict changes.
+
+- **"Read as" under every requirement.** The requirement step of the evidence chain lists what was read from the sentence, as small tags:
+  - the numbers and their direction: "after 5 times", "at most 100", "at least 90 days", "within 15 minutes";
+  - an HTTP status: "HTTP 404";
+  - the kind of rule: "must block", "only once", "only rule", "needs a check";
+  - the state the rule is about: "state: banned";
+  - the words it looks for in the code: your keywords, or the sentence's words in the form you wrote them. Glossary words are shown in full ("unique", not "uniqu").
+
+  The browser page and the extension's report show the tags. For example, "Lock the account after 5 consecutive failures" reads as "after 5 times" and looks for lock, account, consecutive and failures. That is why `user.failures > 5` is the line it compares.
+- The picture at the top of the README shows the tags.
+
 ## 0.24.0
 
 Correct code is called Not verified less often. On a kind of rule VerifyLens had not seen, about half of correct code used to stay Not verified. Someone on X said that is the number they would watch. We wrote new cases of rules that pull requests often carry, and fixed what kept correct code unverified. All of these are our own cases; none is a user report.

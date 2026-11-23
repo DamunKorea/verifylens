@@ -8,9 +8,9 @@
 
 The AI says "Done, all requirements implemented", and **every test passes.** The requirement can still be unmet.
 
-![A Different card from the browser page: the requirement says attempt 5, the code acts on attempt 6, and the test passes. The chain shows requirement, code line src/auth.ts:10 user.failures > 5, the passing test, and "attempt 6 (required 5), 1 late"; two rows of dots show where each acts.](docs/chain-card.png)
+![A Different card from the browser page: the requirement says attempt 5, the code acts on attempt 6, and the test passes. The chain shows the requirement with what was read from it ("after 5 times", "looks for: lock, account, consecutive, failures"), the code line src/auth.ts:10 user.failures > 5, the passing test, and "attempt 6 (required 5), 1 late"; two rows of dots show where each acts.](docs/chain-card.png)
 
-<sub>A card from the [browser page](https://damunkorea.github.io/verifylens/), as the engine drew it. Requirement → code line → tests → when it acts: only the last step disagrees, and the test still passes.</sub>
+<sub>A card from the [browser page](https://damunkorea.github.io/verifylens/), as the engine drew it. Requirement (and what was read from it, with no LLM) → code line → tests → when it acts: only the last step disagrees, and the test still passes.</sub>
 
 ```text
 Requirement    Lock the account after 5 consecutive failures

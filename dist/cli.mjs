@@ -1950,7 +1950,7 @@ function conceptsFor(text) {
   }
   return out;
 }
-var GLOSSARY, WEAK;
+var GLOSSARY, DISPLAY, displayWord, WEAK;
 var init_glossary = __esm({
   "src/glossary.ts"() {
     init_tokens();
@@ -2141,6 +2141,9 @@ var init_glossary = __esm({
       [/프로젝트/, "project"],
       [/백업/, "backup"]
     ];
+    DISPLAY = /* @__PURE__ */ new Map();
+    for (const [, en] of GLOSSARY) for (const w of en.split(/\s+/)) if (w && !DISPLAY.has(stem(w))) DISPLAY.set(stem(w), w);
+    displayWord = (t) => DISPLAY.get(t) ?? t;
     WEAK = new Set([
       "should",
       "must",
@@ -3211,6 +3214,54 @@ var init_summary = __esm({
   }
 });
 
+// src/readout.ts
+function sentencePieces(req, lang) {
+  const ko = lang === "ko";
+  const out = [];
+  for (const c of req.constraints) {
+    const t = pick(constraintText(c), lang);
+    if (c.window) out.push(ko ? `${t} \uC548\uC5D0\uC11C` : `within ${t}`);
+    else if (c.rel === "eq") out.push(ko ? `\uC815\uD655\uD788 ${t}` : `exactly ${t}`);
+    else if (c.rel === "after" && (!c.unit || c.unit === "cnt")) out.push(ko ? `${c.value}\uBC88 \uB4A4` : `after ${c.value} times`);
+    else out.push(t);
+  }
+  const statuses = req.concepts.flat().filter((t) => /^[1-5]\d\d$/.test(t));
+  for (const s of new Set(statuses)) out.push(`HTTP ${s}`);
+  if (req.guardCue) out.push(ko ? "\uB9C9\uC544\uC57C \uD568" : "must block");
+  else if (isUniqueReq(req)) out.push(ko ? "\uD55C \uBC88\uB9CC" : "only once");
+  else if (req.only) out.push(ko ? "\uADF8\uAC83\uB9CC \uD5C8\uC6A9" : "only rule");
+  else if (req.needsCheck) out.push(ko ? "\uD655\uC778 \uC870\uAC74 \uD544\uC694" : "needs a check");
+  const state = stateOf(req);
+  if (state) out.push(ko ? `\uC0C1\uD0DC: ${state.word}` : `state: ${state.word}`);
+  const words2 = lookedFor(req);
+  if (words2.length) out.push(`${ko ? "\uCC3E\uB294 \uB0B1\uB9D0" : "looks for"}: ${words2.join(" \xB7 ")}`);
+  return out;
+}
+function lookedFor(req) {
+  if (!req.auto) return req.keywords.slice(0, MAX_WORDS);
+  const written = req.text.match(/[A-Za-z][A-Za-z0-9]*/g) ?? [];
+  const out = [];
+  for (const g of req.concepts) {
+    const head = g[0];
+    if (/^\d/.test(head) || g.every((t) => GENERIC.has(t) || FILLER.has(t) || NOT_A_WORD.has(t))) continue;
+    const shown = written.find((w) => tokenize(w).includes(head))?.toLowerCase() ?? displayWord(head);
+    if (!out.includes(shown)) out.push(shown);
+    if (out.length >= MAX_WORDS) break;
+  }
+  return out;
+}
+var NOT_A_WORD, MAX_WORDS;
+var init_readout = __esm({
+  "src/readout.ts"() {
+    init_numeric();
+    init_engine();
+    init_tokens();
+    init_glossary();
+    NOT_A_WORD = new Set(["cannot", "can", "not", "never", "must", "should", "shall", "may", "will"].map(stem));
+    MAX_WORDS = 5;
+  }
+});
+
 // src/evidenceSteps.ts
 function chainSteps(report, reqId, lang = getLang(), setIndex = 0) {
   const s = report.summaries.find((x) => x.req.id === reqId);
@@ -3247,7 +3298,7 @@ function chainSteps(report, reqId, lang = getLang(), setIndex = 0) {
     act = { kind: "act", title: ko ? "\uD310\uC815" : "verdict", text: `${word}${reason ? ` \xB7 ${reason}` : ""}`, tone: s.overall === "\uD655\uC778\uB428" ? "ok" : s.overall === "\uBBF8\uD655\uC778" ? "miss" : "diff" };
   }
   return [
-    { kind: "req", title: ko ? "\uC694\uAD6C\uC0AC\uD56D" : "requirement", text: s.req.text, tone: "plain" },
+    { kind: "req", title: ko ? "\uC694\uAD6C\uC0AC\uD56D" : "requirement", text: s.req.text, tone: "plain", pieces: sentencePieces(s.req, lang) },
     { kind: "code", title: ko ? "\uCF54\uB4DC" : "code", text: code, tone: codeTone },
     { kind: "test", title: ko ? "\uAC80\uC0AC" : "tests", text: testText, tone: testTone, ...changed ? { changed: true } : {} },
     act
@@ -3267,6 +3318,7 @@ var init_evidenceSteps = __esm({
     init_numeric();
     init_summary();
     init_testedits();
+    init_readout();
   }
 });
 
@@ -3370,7 +3422,9 @@ function stepTone(step, overall) {
 function evidenceChain(steps2, overall) {
   return '<span class="vl-chain">' + steps2.map((step) => {
     const tone = stepTone(step, overall);
-    return `<span class="vl-step vl-${tone}" data-step="${step.kind}"><strong>${symbols[tone]}${esc(step.title)}</strong><span${step.kind === "code" ? ' class="vl-code"' : ""}>${esc(step.text)}</span></span>`;
+    const ko = /[가-힣]/.test(step.title);
+    const pieces = step.pieces?.length ? `<span class="vl-pieces"><small>${ko ? "\uC77D\uC740 \uAC83" : "read as"}</small>${step.pieces.map((p) => `<span class="vl-piece">${esc(p)}</span>`).join("")}</span>` : "";
+    return `<span class="vl-step vl-${tone}" data-step="${step.kind}"><strong>${symbols[tone]}${esc(step.title)}</strong><span${step.kind === "code" ? ' class="vl-code"' : ""}>${esc(step.text)}${pieces}</span></span>`;
   }).join('<span class="vl-arrow" aria-hidden="true">\u2192</span>') + "</span>";
 }
 function attemptComparison(required, at, label, test, lang, runStatus) {
@@ -3418,6 +3472,8 @@ ${Object.keys(light).map((k) => `.vl-${k}{--ink:var(--vl-${k});--tint:var(--vl-$
 .vl-step strong,.vl-note{color:var(--ink);font-size:12px}.vl-step.vl-diff,.vl-step.vl-fail{box-shadow:inset 3px 0 var(--ink)}
 .vl-step.vl-miss{border-style:dashed;border-color:var(--ink)}.vl-code{font-family:ui-monospace,Consolas,monospace;font-variant-ligatures:none}
 .vl-arrow{align-self:center;color:var(--vl-miss)}
+.vl-pieces{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:7px}.vl-pieces small{width:100%;color:var(--vl-miss);font-size:11px;font-weight:700}
+.vl-piece{display:inline-block;padding:1px 7px;border:1px solid color-mix(in srgb,var(--ink) 30%,transparent);border-radius:10px;background:color-mix(in srgb,var(--ink) 7%,transparent);font-size:11.5px;line-height:1.45;font-family:inherit}
 
 .vl-compare{display:flex;align-items:center;gap:clamp(10px,2vw,28px);padding:14px 0 12px;margin-top:8px;border-top:1px solid var(--vl-miss-bg);font-variant-numeric:tabular-nums}
 .vl-stat{display:grid;grid-template-columns:auto auto;align-items:baseline;gap:1px 4px;color:var(--ink)}

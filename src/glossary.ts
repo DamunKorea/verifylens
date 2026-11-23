@@ -193,6 +193,11 @@ const GLOSSARY: [RegExp, string][] = [
   [/백업/, 'backup'],
 ];
 
+/** 용어집의 낱말을 어간이 아니라 원래 꼴로 보인다 (화면의 「찾는 낱말」: uniqu → unique, notic → notice) */
+const DISPLAY = new Map<string, string>();
+for (const [, en] of GLOSSARY) for (const w of en.split(/\s+/)) if (w && !DISPLAY.has(stem(w))) DISPLAY.set(stem(w), w);
+export const displayWord = (t: string) => DISPLAY.get(t) ?? t;
+
 /** 영어 요구사항에서 뜻이 약해 연결에 쓰지 않는 말. 범위를 나타내는 말은 숫자 조건에서 따로 읽는다. */
 const WEAK = new Set([
   'should', 'must', 'shall', 'can', 'could', 'may', 'will', 'would', 'be', 'able', 'when', 'then', 'that', 'it', 'are', 'was', 'were', 'has',

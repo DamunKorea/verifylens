@@ -3,6 +3,7 @@ import { getLang } from './i18n.ts';
 import { boundaryShort, boundaryLine, undecidedLabel } from './numeric.ts';
 import { undecidedReasons } from './summary.ts';
 import { editText, suspicious } from './testedits.ts';
+import { sentencePieces } from './readout.ts';
 
 // ---------------------------------------------------------------- 근거 사슬 (보는 곳마다 같은 그림)
 /**
@@ -10,7 +11,16 @@ import { editText, suspicious } from './testedits.ts';
  * 「미확인」은 비어 있는 칸(miss)이 어디인지가 곧 까닭이다. 대표 11/21: 「얼마나 잘 시각화해서 이해를 빨리 돕느냐」.
  */
 export type ChainTone = 'ok' | 'diff' | 'miss' | 'plain';
-export type ChainStep = { kind: 'req' | 'code' | 'test' | 'act'; title: string; text: string; tone: ChainTone; /** 검사 칸: 통과했지만 이번 변경에서 바뀐 검사 (실패 색이 아니라 다름 색) */ changed?: boolean };
+export type ChainStep = {
+  kind: 'req' | 'code' | 'test' | 'act';
+  title: string;
+  text: string;
+  tone: ChainTone;
+  /** 검사 칸: 통과했지만 이번 변경에서 바뀐 검사 (실패 색이 아니라 다름 색) */
+  changed?: boolean;
+  /** 요구사항 칸: 문장에서 읽은 조각 (숫자 조건 · 규칙 종류 · 상태 · 찾는 낱말 — readout.ts) */
+  pieces?: string[];
+};
 
 export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = getLang(), setIndex = 0): ChainStep[] {
   const s = report.summaries.find((x) => x.req.id === reqId);
@@ -59,7 +69,7 @@ export function chainSteps(report: Report, reqId: string, lang: 'ko' | 'en' = ge
     act = { kind: 'act', title: ko ? '판정' : 'verdict', text: `${word}${reason ? ` · ${reason}` : ''}`, tone: s.overall === '확인됨' ? 'ok' : s.overall === '미확인' ? 'miss' : 'diff' };
   }
   return [
-    { kind: 'req', title: ko ? '요구사항' : 'requirement', text: s.req.text, tone: 'plain' },
+    { kind: 'req', title: ko ? '요구사항' : 'requirement', text: s.req.text, tone: 'plain', pieces: sentencePieces(s.req, lang) },
     { kind: 'code', title: ko ? '코드' : 'code', text: code, tone: codeTone },
     { kind: 'test', title: ko ? '검사' : 'tests', text: testText, tone: testTone, ...(changed ? { changed: true } : {}) },
     act,

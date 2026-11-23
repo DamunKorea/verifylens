@@ -218,11 +218,11 @@ const SOURCE_RANK: Record<NumPart['source'], number> = { compare: 200, loop: 200
 type Found = { u: Unit; p: NumPart; score: number };
 
 /** 어느 코드에나 나오는 말. 이 낱말만 겹쳐서는 같은 대상을 말한다고 볼 수 없다 (part.length 와 「비밀번호 길이」). */
-const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'item', 'data', 'rate', 'ratio', 'percent'].map(stem));
+export const GENERIC = new Set(['length', 'len', 'size', 'count', 'max', 'min', 'limit', 'value', 'number', 'num', 'id', 'item', 'data', 'rate', 'ratio', 'percent'].map(stem));
 /** 무엇의 양인지는 말하지 않는 낱말 (배송비 · 반품비의 「비」). 설정값 이름에는 이것 말고 대상 낱말이 있어야 한다. */
 const MEASURE = new Set(['fee', 'price', 'cost', 'amount', 'total', 'sum', 'charge', 'tax'].map(stem));
 /** 영어 요구사항의 관계 낱말 (once per person 의 once · per) */
-const FILLER = new Set(['once', 'per', 'each', 'every', 'only', 'time', 'twice'].map(stem));
+export const FILLER = new Set(['once', 'per', 'each', 'every', 'only', 'time', 'twice'].map(stem));
 /** 「한 번만 · 하나만 · 중복」이 들어간 요구사항의 개념 (unique exists duplicate taken) */
 const UNIQUE = stem('unique');
 /** 숫자 없이 말한 세는 기간: 「per day」 · 「daily」 · 「하루에」 · 「시간당」 */
@@ -238,7 +238,7 @@ const FIXED_REQ = /정액|\bfixed\b|\bflat\b/i;
 const FIXED_MONEY = /할인|쿠폰|금액|discount|coupon|voucher|amount|\boff\b/i;
 /** 중복 막기 요구사항(한 번만 · 하나만)의 검사는 이름에도 두 번 · 중복을 말해야 한다. 한 번만 누르는 검사는 근거가 아니다 (X 에서 받은 버그) */
 const TWICE_TEST = /twice|second|again|duplicat|already|only (?:one|once)|more than once|\bused\b|reus|re-us|redeemed|consumed|retr(?:y|ied|ies|ying)|resen[dt]|repeat|same key|두\s*번|중복|이미|다시|반복|한\s*번만|하나만|사용한|사용된|재사용/i;
-const isUniqueReq = (req: Requirement) => !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE));
+export const isUniqueReq = (req: Requirement) => !req.constraints.length && req.concepts.some((g) => g.includes(UNIQUE));
 /** 「이미 있으면」을 보는 조건의 낱말: if (existing) · if (prev) return prev · if (seen.has(id)) */
 const DUP_GUARD = new Set(['uniqu', 'exist', 'duplicat', 'taken', 'prev', 'previou', 'already', 'seen', 'done', 'processed', 'found', 'used', 'consumed', 'redeemed', 'claimed'].map(stem));
 /**
@@ -307,7 +307,7 @@ const STATE_WHO = /\b(?:who|that|which)\s+(?:is|are|has been|have been|was|were)
  * 막는 요구사항이 말하는 상태 낱말: 「A banned user cannot post comments」의 banned, 「Users who are suspended cannot …」의 suspended.
  * in- · un- 꼴(inactive)은 뿌리(active)도 함께 돌려준다: 코드는 흔히 !user.active 로 본다. 영어 문장만 읽는다.
  */
-function stateOf(req: Requirement): { word: string; stems: string[] } | null {
+export function stateOf(req: Requirement): { word: string; stems: string[] } | null {
   const m = req.text.match(STATE_LEAD) ?? req.text.match(STATE_WHO);
   if (!m) return null;
   const w = m[1].toLowerCase();

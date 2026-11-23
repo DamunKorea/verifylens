@@ -15,7 +15,12 @@ export function stepTone(step: ChainStep, overall?: Overall) {
 export function evidenceChain(steps: ChainStep[], overall: Overall): string {
   return '<span class="vl-chain">' + steps.map(step => {
     const tone = stepTone(step, overall);
-    return `<span class="vl-step vl-${tone}" data-step="${step.kind}"><strong>${symbols[tone]}${esc(step.title)}</strong><span${step.kind === 'code' ? ' class="vl-code"' : ''}>${esc(step.text)}</span></span>`;
+    // 요구사항 칸: 문장에서 읽은 조각을 칩으로 (「LLM 없이 문장을 어떻게 검사로 바꾸나」에 그림으로 답한다)
+    const ko = /[가-힣]/.test(step.title);
+    const pieces = step.pieces?.length
+      ? `<span class="vl-pieces"><small>${ko ? '읽은 것' : 'read as'}</small>${step.pieces.map((p) => `<span class="vl-piece">${esc(p)}</span>`).join('')}</span>`
+      : '';
+    return `<span class="vl-step vl-${tone}" data-step="${step.kind}"><strong>${symbols[tone]}${esc(step.title)}</strong><span${step.kind === 'code' ? ' class="vl-code"' : ''}>${esc(step.text)}${pieces}</span></span>`;
   }).join('<span class="vl-arrow" aria-hidden="true">→</span>') + '</span>';
 }
 
@@ -64,6 +69,8 @@ ${Object.keys(light).map(k => `.vl-${k}{--ink:var(--vl-${k});--tint:var(--vl-${k
 .vl-step strong,.vl-note{color:var(--ink);font-size:12px}.vl-step.vl-diff,.vl-step.vl-fail{box-shadow:inset 3px 0 var(--ink)}
 .vl-step.vl-miss{border-style:dashed;border-color:var(--ink)}.vl-code{font-family:ui-monospace,Consolas,monospace;font-variant-ligatures:none}
 .vl-arrow{align-self:center;color:var(--vl-miss)}
+.vl-pieces{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:7px}.vl-pieces small{width:100%;color:var(--vl-miss);font-size:11px;font-weight:700}
+.vl-piece{display:inline-block;padding:1px 7px;border:1px solid color-mix(in srgb,var(--ink) 30%,transparent);border-radius:10px;background:color-mix(in srgb,var(--ink) 7%,transparent);font-size:11.5px;line-height:1.45;font-family:inherit}
 
 .vl-compare{display:flex;align-items:center;gap:clamp(10px,2vw,28px);padding:14px 0 12px;margin-top:8px;border-top:1px solid var(--vl-miss-bg);font-variant-numeric:tabular-nums}
 .vl-stat{display:grid;grid-template-columns:auto auto;align-items:baseline;gap:1px 4px;color:var(--ink)}

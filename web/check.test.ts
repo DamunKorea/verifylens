@@ -82,3 +82,24 @@ test('a state that nothing reads gets its own reason', () => {
     assert.match(r.todo[0].action, lang === 'en' ? /no condition reads it/ : /읽는 조건이 없다/);
   }
 });
+
+// 0.25.0: 문장에서 읽은 조각을 근거 사슬의 요구사항 칸에 보인다 (X 에서 세 사람이 「LLM 없이 문장을 어떻게 검사로?」라고 물음)
+import { sentencePieces } from '../src/readout.ts';
+import { parseRequirements } from '../src/requirements.ts';
+
+test('the requirement step shows what was read from the sentence', () => {
+  const read = (line: string, lang: 'en' | 'ko') => sentencePieces(parseRequirements(`- R1: ${line}`)[0], lang);
+  assert.deepEqual(read('Lock the account after 5 consecutive failed logins', 'en'), ['after 5 times', 'looks for: lock · account · consecutive · failed · logins']);
+  assert.deepEqual(read('A banned user cannot post comments', 'en'), ['must block', 'state: banned', 'looks for: banned · post · comments']);
+  assert.deepEqual(read('Return 404 when the project does not exist', 'en'), ['HTTP 404', 'needs a check', 'looks for: project · exist']);
+  assert.deepEqual(read('A coupon can be used only once', 'ko'), ['한 번만', '찾는 낱말: unique · coupon · use']);
+  assert.deepEqual(read('관리자만 공지를 올릴 수 있다', 'ko'), ['그것만 허용', '찾는 낱말: admin · notice']);
+  // 키워드를 적으면 키워드 그대로
+  assert.deepEqual(read('A locked account cannot log in | keywords: locked, login', 'en'), ['must block', 'state: locked', 'looks for: locked · login']);
+  // 결과 카드의 근거 사슬에도 붙는다
+  const ex = EXAMPLES.find((e) => e.id === 'login')!;
+  const r = runCheck({ requirements: ex.requirements.en, fileName: ex.fileName, code: ex.code, tests: ex.tests.en, lang: 'en' });
+  const step = r.rows.find((x) => x.overall === '확인됨')!.chain[0];
+  assert.equal(step.kind, 'req');
+  assert.ok(step.pieces?.includes('must block'), JSON.stringify(step.pieces));
+});
