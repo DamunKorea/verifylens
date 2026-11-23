@@ -49,6 +49,8 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         when {
             // 이 시험은 검사를 고쳐서 통과시킨 저장소가 따로 필요하다
             name == "testChangedTestIsShownNextToTheVerdict" -> buildEditedTestRepo(dir)
+            // 이 시험은 절차 줄 · 타입 요구사항 · 이름이 다른 새 검사가 있는 저장소가 필요하다
+            name == "testProcessLinesTypeRulesAndOwnTestsStayNotVerified" -> buildCouponRepo(dir)
             // 이 시험은 프로젝트를 이은 폴더로 연다
             name == "testProjectOpenedThroughALinkedFolderShowsMarkers" -> buildLinkedRepo(dir, practice)
             practice != null -> copyTree(Path.of(practice), dir)
@@ -526,6 +528,51 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
     }
 
     /** 샘플(로그인 잠금)에는 바뀐 검사가 없다: 새로 생긴 검사는 「바뀐 검사」가 아니다. */
+    /**
+     * 0.26.0 엔진의 새 「미확인」 이유 셋: 절차 줄(「Add tests …」)과 타입 요구사항은 판정하지 않고,
+     * 이름이 문장과 다른 새 검사는 이어서 보여 주되 숫자가 맞게 판정된 때가 아니면 「확인됨」이라 하지 않는다.
+     */
+    fun testProcessLinesTypeRulesAndOwnTestsStayNotVerified() {
+        System.setProperty("verifylens.lang", "en")
+        val r = press("VerifyLens.CheckChanges")
+        r.rows.forEach { println("[VerifyLens 시험] 새 이유 | ${it.id} ${it.overall} · ${it.reason} | ${it.summary}") }
+        assertEquals(listOf("R1" to "확인됨", "R2" to "미확인", "R3" to "미확인", "R4" to "미확인"), r.rows.map { it.id to it.overall })
+        assertEquals("linked only by this change’s new tests", r.rows[1].reason)
+        assertEquals("not a code behavior (a process step)", r.rows[2].reason)
+        assertEquals("type-level requirement, not readable", r.rows[3].reason)
+        // 절차 줄 · 타입 요구사항에는 근거 줄을 잇지 않는다
+        assertTrue(r.rows[2].children.all { it.file == null })
+        assertTrue(r.rows[3].children.all { it.file == null })
+        // 검사 폴더(맨 위 test/)의 줄은 근거가 되지 않는다
+        assertTrue(r.rows.flatMap { it.children }.none { it.file?.startsWith("test/") == true })
+
+        val panel = VerifyLensPanel(project)
+        Disposer.register(testRootDisposable, panel)
+        val rows = panel.rowTexts()
+        rows.forEach { println("[VerifyLens 시험] 새 이유 도구 창 | $it") }
+        assertTrue(rows.toString(), rows.contains("R2  Not verified · linked only by this change’s new tests   Expired coupons are rejected."))
+        assertTrue(rows.toString(), rows.contains("R3  Not verified · not a code behavior (a process step)   Add tests for the coupon limit."))
+        assertTrue(rows.toString(), rows.contains("R4  Not verified · type-level requirement, not readable   A type error when the amount is a string."))
+
+        // R2 의 근거 사슬: 코드 줄과 새 검사는 이어졌지만 판정은 미확인
+        panel.selectRequirement("R2")
+        val c2 = panel.chainTexts()
+        c2.forEach { println("[VerifyLens 시험] 새 이유 근거 사슬 R2 | $it") }
+        assertEquals("R2 · Not verified · Evidence chain", c2[0])
+        assertTrue(c2.toString(), c2.contains("✓ code: src/coupon.ts:7 coupon.expiresAt < now"))
+        assertTrue(c2.toString(), c2.contains("✓ tests: passes · throws for an old coupon"))
+        assertTrue(c2.toString(), c2.contains("? verdict: Not verified · linked only by this change’s new tests"))
+        shot(panel, 420, 620, "tool-window-own-test-en")
+
+        // R3: 판정 칸이 까닭을 말한다
+        panel.selectRequirement("R3")
+        val c3 = panel.chainTexts()
+        c3.forEach { println("[VerifyLens 시험] 새 이유 근거 사슬 R3 | $it") }
+        assertTrue(c3.toString(), c3.contains("? verdict: Not verified · not a code behavior (a process step)"))
+        shot(panel, 420, 620, "tool-window-process-line-en")
+        assertNoKorean(panel.allTexts(), "tool window with the new reasons")
+    }
+
     fun testSampleHasNoChangedTests() {
         assertTrue(press("VerifyLens.CheckChanges").changedTests.isEmpty())
         assertTrue(press("VerifyLens.RunDemo").changedTests.isEmpty())
@@ -646,6 +693,90 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
     ).joinToString("\n")
 
     /**
+     * 쿠폰 저장소: main 에 코드와 검사 하나를 커밋하고, 브랜치에서 커밋하지 않은 채 규칙 둘(3번 틀리면 잠금 · 기한 지난 쿠폰 거부)과
+     * 이름이 요구사항과 다른 새 검사 둘을 더한다. 요구사항에는 절차 줄(R3)과 타입 요구사항(R4)도 넣는다.
+     */
+    private fun buildCouponRepo(dir: Path) {
+        Files.createDirectories(dir.resolve("src"))
+        Files.createDirectories(dir.resolve("test"))
+        git(dir, "init", "-q", "-b", "main")
+        Files.writeString(dir.resolve("src/coupon.ts"), couponCode(false))
+        Files.writeString(dir.resolve("test/coupon.test.ts"), couponTest(false))
+        git(dir, "add", "-A")
+        git(dir, "commit", "-q", "-m", "base: redeem a coupon")
+        git(dir, "checkout", "-q", "-b", "feature/coupon-rules")
+        Files.createDirectories(dir.resolve(".verifylens"))
+        Files.writeString(
+            dir.resolve(".verifylens/requirements.md"),
+            listOf(
+                "- R1: Lock the coupon after 3 failed redemptions.",
+                "- R2: Expired coupons are rejected.",
+                "- R3: Add tests for the coupon limit.",
+                "- R4: A type error when the amount is a string.",
+                "",
+            ).joinToString("\n"),
+        )
+        Files.writeString(dir.resolve("src/coupon.ts"), couponCode(true))
+        Files.writeString(dir.resolve("test/coupon.test.ts"), couponTest(true))
+        Files.writeString(dir.resolve(".verifylens/junit.xml"), COUPON_JUNIT)
+    }
+
+    private fun couponCode(rules: Boolean) = (
+        listOf(
+            "export type Coupon = { code: string; failures: number; locked: boolean; expiresAt: number; uses: number };",
+            "",
+            "export function redeemCoupon(coupon: Coupon, code: string, now: number): boolean {",
+        ) + (if (rules) listOf(
+            "  if (coupon.locked) {",
+            "    throw new Error('coupon locked');",
+            "  }",
+            "  if (coupon.expiresAt < now) {",
+            "    throw new Error('coupon expired');",
+            "  }",
+        ) else emptyList()) + listOf(
+            "  if (coupon.code !== code) {",
+            "    coupon.failures += 1;",
+        ) + (if (rules) listOf(
+            "    if (coupon.failures >= 3) {",
+            "      coupon.locked = true;",
+            "    }",
+        ) else emptyList()) + listOf(
+            "    return false;",
+            "  }",
+            "  coupon.uses += 1;",
+            "  return true;",
+            "}",
+            "",
+        )
+    ).joinToString("\n")
+
+    private fun couponTest(rules: Boolean) = (
+        listOf(
+            "import test from 'node:test';",
+            "import assert from 'node:assert';",
+            "import { redeemCoupon } from '../src/coupon.ts';",
+            "",
+            "const fresh = () => ({ code: 'A', failures: 0, locked: false, expiresAt: 10, uses: 0 });",
+            "",
+            "test('redeems with the right code', () => {",
+            "  assert.equal(redeemCoupon(fresh(), 'A', 1), true);",
+            "});",
+            "",
+        ) + (if (rules) listOf(
+            "test('third bad code turns the coupon off', () => {",
+            "  const c = fresh();",
+            "  for (let i = 0; i < 3; i++) redeemCoupon(c, 'B', 1);",
+            "  assert.equal(c.locked, true);",
+            "});",
+            "",
+            "test('throws for an old coupon', () => {",
+            "  assert.throws(() => redeemCoupon(fresh(), 'A', 11));",
+            "});",
+            "",
+        ) else emptyList())
+    ).joinToString("\n")
+
+    /**
      * 실제 폴더(…/real)에 저장소를 만들고, 프로젝트는 그 폴더를 가리키는 이은 폴더(…/repo)로 연다.
      * Windows 에서는 권한이 필요 없는 junction 을, 다른 곳에서는 심볼릭 링크를 쓴다.
      */
@@ -690,3 +821,11 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
 /** 바꾼 검사를 돌린 결과 (통과). 이름이 요구사항과 이어진다. */
 private const val LOCKOUT_JUNIT =
     "<?xml version=\"1.0\"?>\n<testsuites><testsuite name=\"t\"><testcase name=\"locks the account after 5 consecutive failures\" classname=\"t\"/></testsuite></testsuites>\n"
+
+/** 쿠폰 저장소의 검사 결과 (모두 통과). 새 검사 둘의 이름은 요구사항 문장과 다르다. */
+private const val COUPON_JUNIT =
+    "<?xml version=\"1.0\"?>\n<testsuites><testsuite name=\"t\">" +
+        "<testcase name=\"redeems with the right code\" classname=\"t\"/>" +
+        "<testcase name=\"third bad code turns the coupon off\" classname=\"t\"/>" +
+        "<testcase name=\"throws for an old coupon\" classname=\"t\"/>" +
+        "</testsuite></testsuites>\n"
