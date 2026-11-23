@@ -41,6 +41,16 @@ export const JUDGE_LABELS = (): Record<string, string> => Object.fromEntries(Obj
 /** 「검사 통과」 처럼 검사 결과를 짧게 말한다. */
 export const testPhrase = (s: string): string => (cur === 'en' ? (s === '통과' ? 'tests pass' : s === '실패' ? 'a test fails' : 'no test run') : `검사 ${s}`);
 
+/**
+ * 검사 결과를 짧게, 이어진 검사가 있는지까지: 결과가 없으면 이어진 검사가 있을 때 「검사 안 돌림」, 없을 때 「검사 없음」.
+ * 0.23.0 에서 미확인 이유를 둘로 나눴는데 코드 줄 표시 · 리포트는 「검사 미실행」 하나로 남아 있었다 (국내 홍보 세션이 체험 페이지에서 찾음, 11/23)
+ */
+export const testPhraseFor = (rr: { testStatus: string; tests: readonly unknown[] }): string =>
+  rr.testStatus === '미실행' ? (rr.tests.length ? L('검사 안 돌림', 'test not run') : L('검사 없음', 'no test')) : testPhrase(rr.testStatus);
+/** 표 칸에 쓰는 한 낱말 (통과 · 실패 · 안 돌림 · 없음) */
+export const testCell = (rr: { testStatus: string; tests: readonly unknown[] }): string =>
+  rr.testStatus === '미실행' ? (rr.tests.length ? L('안 돌림', 'not run') : L('없음', 'none')) : wTest(rr.testStatus);
+
 /** 결과 이름: 결과 A / Result A */
 export const setLabel = (key: string): string => (cur === 'en' ? `Result ${key}` : `결과 ${key}`);
 

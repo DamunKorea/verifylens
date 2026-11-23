@@ -103,3 +103,17 @@ test('the requirement step shows what was read from the sentence', () => {
   assert.equal(step.kind, 'req');
   assert.ok(step.pieces?.includes('must block'), JSON.stringify(step.pieces));
 });
+
+// 0.25.1: 코드 줄 표시도 「검사 없음」(이어진 검사 없음)과 「검사 안 돌림」(이어졌지만 결과 없음)을 나눈다 (전에는 둘 다 「검사 미실행」)
+test('line notes say "no test" or "test not run", like the card', () => {
+  for (const lang of ['en', 'ko'] as const) {
+    const none = runCheck({ requirements: 'A banned user cannot post comments', fileName: 'src/comments.ts', code: BAN(GUARD), tests: [], lang });
+    assert.ok(none.notes.every((n) => !/미실행|no test run/.test(n.note)), JSON.stringify(none.notes));
+    assert.match(none.notes[0].note, lang === 'en' ? /no test/ : /검사 없음/);
+    const notRun = runCheck({ requirements: 'A banned user cannot post comments', fileName: 'src/comments.ts', code: BAN(GUARD), tests: [{ name: 'a banned user cannot post comments', status: 'notrun' }], lang });
+    assert.match(notRun.notes[0].note, lang === 'en' ? /test not run/ : /검사 안 돌림/);
+  }
+  // 한국어 「5회 실패하면」: 그 횟수에 닿을 때
+  assert.deepEqual(sentencePieces(parseRequirements('- R1: 연속 5회 실패하면 계정을 잠근다')[0], 'ko')[0], '5회째에');
+  assert.deepEqual(sentencePieces(parseRequirements('- R1: 연속 5회 실패하면 계정을 잠근다')[0], 'en')[0], 'on the 5th time');
+});

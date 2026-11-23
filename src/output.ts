@@ -10,7 +10,7 @@ import { counts, nextAction, renderSummaryMd } from './summary.ts';
 import { extractFromPrBody } from './requirements.ts';
 import { renderConcept } from './concept.ts';
 import { ID, esc, hl, hlMark } from './view.ts';
-import { JUDGE_LABELS, L, getLang, joinNames, wEvidence, wJudge, wOverall, wRelation, wTest } from './i18n.ts';
+import { JUDGE_LABELS, L, getLang, joinNames, testCell, testPhraseFor, wEvidence, wJudge, wOverall, wRelation } from './i18n.ts';
 import { boundaryLine, boundaryShort, checkWord } from './numeric.ts';
 
 // ---------------------------------------------------------------- 작은 조각
@@ -79,7 +79,7 @@ function matrixCell(set: ResultSet, id: string): string {
   const u = e.unit;
   const loc = u ? ` <code>${esc(u.file.split('/').pop()!)}:${u.startLine}</code>${u.kind === 'function' ? `<em>${L('함수 전체', 'whole function')}</em>` : ''}` : '';
   const b = e.boundary ? ` <span class="bd ${e.boundary.ok ? 'ok' : e.boundary.ok === null ? 'unk' : 'diff'}">${esc(e.boundary.attempts !== null ? L(`${e.boundary.attempts}회째 동작`, `acts on attempt ${e.boundary.attempts}`) : boundaryShort(e.boundary))}</span>` : '';
-  return `<div class="mc"><div><span class="mk ${evCls(e.status)}"></span>${L(`근거 ${e.status}`, `evidence ${wEvidence(e.status)}`)}${loc}</div><div><span class="mk ${tsCls(rr.testStatus)}"></span>${L(`검사 ${rr.testStatus}`, `tests ${wTest(rr.testStatus)}`)}${b}</div></div>`;
+  return `<div class="mc"><div><span class="mk ${evCls(e.status)}"></span>${L(`근거 ${e.status}`, `evidence ${wEvidence(e.status)}`)}${loc}</div><div><span class="mk ${tsCls(rr.testStatus)}"></span>${testPhraseFor(rr)}${b}</div></div>`;
 }
 
 function overview(report: Report): string {
@@ -92,12 +92,12 @@ function overview(report: Report): string {
   const unc: string[] = [];
   for (const s of report.summaries) {
     const miss = report.sets.filter((x) => x.perReq[s.req.id].testStatus === '미실행' || x.perReq[s.req.id].evidence.status === '미발견');
-    if (miss.length) unc.push(`<span><b>${s.req.id}</b> ${miss.map((x) => `${x.key} ${x.perReq[s.req.id].evidence.status === '미발견' ? L('근거 없음', 'no evidence') : L('검사 미실행', 'no test run')}`).join(' · ')}</span>`);
+    if (miss.length) unc.push(`<span><b>${s.req.id}</b> ${miss.map((x) => `${x.key} ${x.perReq[s.req.id].evidence.status === '미발견' ? L('근거 없음', 'no evidence') : testPhraseFor(x.perReq[s.req.id])}`).join(' · ')}</span>`);
   }
   for (const set of report.sets) for (const d of set.dyn) unc.push(`<span><b>${set.key}</b> ${L('해석하지 못한 호출', 'unresolved call')} <code>${esc(d.file.split('/').pop()!)}:${d.line}</code> <code>${esc(d.text)}</code></span>`);
   return `<section class="ov"><div class="ovh"><h2>${L('요구사항별 검증 상태', 'Verification status by requirement')}</h2><div class="cnt"><span class="ok">${wOverall('확인됨')} <b>${c.확인됨}</b></span><span class="diff">${wOverall('다름')} <b>${c.다름}</b></span><span class="fail">${wOverall('실패')} <b>${c.실패}</b></span><span class="unk">${wOverall('미확인')} <b>${c.미확인}</b></span></div><div class="hint">${L('요구사항을 선택해 근거 보기', 'Select a requirement to see its evidence')}</div></div>
 <table class="mx"><thead>${head}</thead><tbody>${rows}</tbody></table>
-<div class="unc"><b>${L('검사 미실행 · 근거 없음', 'No test run · no evidence')}</b>${unc.join('') || `<span>${L('없음', 'none')}</span>`}</div></section>`;
+<div class="unc"><b>${L('검사 결과 없음 · 근거 없음', 'No test result · no evidence')}</b>${unc.join('') || `<span>${L('없음', 'none')}</span>`}</div></section>`;
 }
 
 // ---------------------------------------------------------------- 코드 비교
@@ -171,7 +171,7 @@ function timeline(report: Report, id: string): string {
         ` By the computed condition, ${joinNames(offSets.map((r) => r.set.label))} acts on attempt ${offSets.map((r) => r.b!.attempts).join(' / ')}, yet its test passes. Check which attempt the test actually looks at.`,
       )
     : '';
-  const marks = report.sets.map((s) => `${s.key} ${wTest(s.perReq[id].testStatus)}`).join(' · ');
+  const marks = report.sets.map((s) => `${s.key} ${testCell(s.perReq[id])}`).join(' · ');
   const cap =
     chk !== null
       ? L(`「${esc(chkName)}」 검사는 이름으로 보면 ${chk}번째 시도 뒤의 잠금을 확인합니다 — ${marks}.${offNote}`, `Going by its name, the test "${esc(chkName)}" checks the lock after attempt ${chk} — ${marks}.${offNote}`)

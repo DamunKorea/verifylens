@@ -13,7 +13,7 @@ import { renderHtml } from '../../src/output.ts';
 import { attention, counts, renderSummaryMd, undecidedReasons, type Attention } from '../../src/summary.ts';
 import { git, mergeBase, topLevel, uncommittedFiles, worktreeChangedFiles } from '../../src/git.ts';
 import type { Overall, Report, ReqResult, ReqSummary, ResultSet } from '../../src/types.ts';
-import { L, getLang, setLabel, testPhrase, wOverall, wTest } from '../../src/i18n.ts';
+import { L, getLang, setLabel, testCell, testPhraseFor, wOverall } from '../../src/i18n.ts';
 import { boundaryLine, boundaryShort, checkWord, pick, undecidedAction, undecidedLabel } from '../../src/numeric.ts';
 import { testPointsLine } from '../../src/testpoints.ts';
 import { editText, suspicious } from '../../src/testedits.ts';
@@ -116,7 +116,7 @@ export function runRepo(p: RepoParams): Run {
     );
   }
   if (stale) notes.push(L('테스트 결과가 코드보다 오래되어 쓰지 않았습니다. 테스트를 다시 실행하면 반영됩니다.', 'The test results are older than the code and were not used. Run the tests again to include them.'));
-  else if (!junitA && !p.junitB) notes.push(L('테스트 결과가 없어 검사는 모두 「미실행」으로 표시됩니다. 테스트를 실행하면 채워집니다.', 'There are no test results, so every requirement shows "no test run". Run the tests to fill them in.'));
+  else if (!junitA && !p.junitB) notes.push(L('테스트 결과가 없어 검사는 모두 「검사 없음」으로 표시됩니다. 테스트를 실행하면 채워집니다.', 'There are no test results, so every requirement shows "no test". Run the tests to fill them in.'));
   const report = evaluate(sets, reqs, p.repo, p.base);
   report.testsStale = stale;
   return { kind: 'repo', repo: p.repo, report, workingRef: p.workingRef, notes };
@@ -274,7 +274,7 @@ export function verifiedLine(report: Report, lang: 'ko' | 'en' = getLang()): str
  */
 export const passButOff = (rr: ReqResult): boolean => rr.testStatus === '통과' && rr.evidence.boundary?.ok === false;
 /** 검사 결과를 짧게. 위 경우는 「검사는 통과」라고 써서 어긋남이 드러나게 한다. */
-const testWord = (rr: ReqResult): string => (passButOff(rr) ? L('검사는 통과', 'but the test passes') : testPhrase(rr.testStatus));
+const testWord = (rr: ReqResult): string => (passButOff(rr) ? L('검사는 통과', 'but the test passes') : testPhraseFor(rr));
 /** 요구사항 하나에서 위 경우에 해당하는 결과들 */
 export function passButOffSets(report: Report, reqId: string): ResultSet[] {
   return report.sets.filter((x) => x.perReq[reqId] && passButOff(x.perReq[reqId]));
@@ -381,7 +381,7 @@ export function treeModel(report: Report): ReqRow[] {
         file: u?.file,
         line: u?.startLine,
         detail: [when, testWord(rr)].filter(Boolean).join(' · '),
-        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote(rr)}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhrase(rr.testStatus)}`,
+        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote(rr)}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhraseFor(rr)}`,
       };
     }),
   }));
@@ -470,7 +470,7 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
     const b = rr.evidence.boundary;
     const where = u ? `${mdCode(`${u.file.split('/').pop()}:${u.startLine}`)}${u.cond?.expr ? ' ' + mdCode(u.cond.expr) : u.kind === 'function' ? L(' 함수 전체', ' whole function') : ''}` : L('찾지 못함', 'not found');
     const when = !b ? '–' : b.attempts !== null ? L(`${b.attempts}번째${b.ok === false ? ` ⚠ (요구 ${b.required}회)` : ''}`, `attempt ${b.attempts}${b.ok === false ? ` ⚠ (required: ${b.required})` : ''}`) : `${b.ok === true ? '' : '⚠ '}${mdCell(boundaryLine(b))}`;
-    out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${wTest(rr.testStatus)} |`);
+    out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${testCell(rr)} |`);
     for (const t of rr.tests) {
       if (t.status !== 'fail') continue;
       const why = t.message.split('\n').map((x) => x.trim()).filter(Boolean).join(' ').slice(0, 140);

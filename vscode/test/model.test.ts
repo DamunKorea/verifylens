@@ -86,7 +86,7 @@ test('single-branch check in a real repo marks the working branch', () => {
   assert.equal(r.report.sets.length, 1);
   assert.equal(r.workingRef, 'feature/lockout-b');
   assert.equal(r.report.summaries.find((s) => s.req.id === 'R2')!.overall, '다름');
-  assert.ok(r.notes.some((n) => /미실행/.test(n)));
+  assert.ok(r.notes.some((n) => /「검사 없음」/.test(n)));
   assert.equal(M.currentBranch(repo), 'feature/lockout-b');
   assert.deepEqual(M.orderBases(M.localBranches(repo), 'feature/lockout-b')[0], 'main');
   assert.throws(() => M.runRepo({ repo, base: 'nope', a: 'feature/lockout-b', reqFile }), /기준 브랜치 「nope」/);
@@ -452,7 +452,7 @@ test('test results older than the code are not used', () => {
 
   rmSync(w.junit);
   run = w.check();
-  assert.match(run.notes.join(' '), /테스트 결과가 없어 검사는 모두 「미실행」/);
+  assert.match(run.notes.join(' '), /테스트 결과가 없어 검사는 모두 「검사 없음」/);
 });
 
 test('test reports from Vitest (JUnit) and Jest (JSON) are read', () => {

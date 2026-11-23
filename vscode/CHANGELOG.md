@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.25.1
+
+The same words for tests everywhere. Our own promotion session found this while recording a GIF on the browser page. No verdict changes.
+
+- **"No test" and "test not run" in every place.** 0.23.0 split the two reasons, but some places still said "no test run" for both: the note under the code line, the hover, the Problems list, the report and the text summary. All of them now say one of four things:
+  - "tests pass";
+  - "a test fails";
+  - "test not run": a test is linked but has no result;
+  - "no test": no test is linked.
+
+  The pill next to the attempt numbers says "No linked test" in Korean too.
+- **"5회 실패하면" reads as "on the 5th time".** A Korean count such as "연속 5회 실패하면 계정을 잠근다" showed as a bare "5회" among the read-as tags. It now reads "5회째에" in Korean and "on the 5th time" in English. Our JetBrains build pointed this out.
+
 ## 0.25.0
 
 The result now shows what VerifyLens read from each requirement sentence. "How do you turn a written requirement into a check without an LLM?" was the question we got most on X: three people asked it separately. The answer is now in the picture. No verdict changes.

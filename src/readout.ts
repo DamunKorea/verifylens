@@ -23,6 +23,8 @@ export function sentencePieces(req: Requirement, lang: 'ko' | 'en'): string[] {
     else if (c.rel === 'eq') out.push(ko ? `정확히 ${t}` : `exactly ${t}`);
     // 「after 5 failed logins」: 단위가 없는 횟수는 「5 뒤」가 아니라 「5번 뒤」
     else if (c.rel === 'after' && (!c.unit || c.unit === 'cnt')) out.push(ko ? `${c.value}번 뒤` : `after ${c.value} times`);
+    // 「연속 5회 실패하면 잠근다」: 그 횟수에 닿을 때 (방향 없이 「5회」만 보이던 것 — JetBrains 세션이 찾음, 11/23)
+    else if (c.rel === 'count') out.push(ko ? `${t}째에` : `on the ${ordinal(c.value)} time`);
     else out.push(t);
   }
   const statuses = req.concepts.flat().filter((t) => /^[1-5]\d\d$/.test(t));
@@ -36,6 +38,13 @@ export function sentencePieces(req: Requirement, lang: 'ko' | 'en'): string[] {
   const words = lookedFor(req);
   if (words.length) out.push(`${ko ? '찾는 낱말' : 'looks for'}: ${words.join(' · ')}`);
   return out;
+}
+
+/** 1st · 2nd · 3rd · 5th · 11th · 21st */
+function ordinal(n: number): string {
+  const t = n % 100;
+  if (t >= 11 && t <= 13) return `${n}th`;
+  return `${n}${({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th'}`;
 }
 
 /** 코드에서 찾는 낱말. 키워드를 적었으면 그대로, 아니면 문장의 개념을 문장에 쓰인 꼴로 (영어 문장의 「deleted」는 delet 이 아니라 deleted) */

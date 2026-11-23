@@ -90,7 +90,7 @@ var init_tokens = __esm({
 });
 
 // src/i18n.ts
-var cur, setLang, getLang, isEn, L, OVERALL, TEST, EVIDENCE, RELATION, JUDGE, wOverall, wTest, wEvidence, wRelation, wJudge, JUDGE_LABELS, testPhrase, setLabel, joinNames;
+var cur, setLang, getLang, isEn, L, OVERALL, TEST, EVIDENCE, RELATION, JUDGE, wOverall, wTest, wEvidence, wRelation, wJudge, JUDGE_LABELS, testPhrase, testPhraseFor, testCell, setLabel, joinNames;
 var init_i18n = __esm({
   "src/i18n.ts"() {
     cur = "ko";
@@ -112,6 +112,8 @@ var init_i18n = __esm({
     wJudge = (s) => cur === "en" ? JUDGE[s] ?? s : s;
     JUDGE_LABELS = () => Object.fromEntries(Object.keys(JUDGE).map((k) => [k, wJudge(k)]));
     testPhrase = (s) => cur === "en" ? s === "\uD1B5\uACFC" ? "tests pass" : s === "\uC2E4\uD328" ? "a test fails" : "no test run" : `\uAC80\uC0AC ${s}`;
+    testPhraseFor = (rr) => rr.testStatus === "\uBBF8\uC2E4\uD589" ? rr.tests.length ? L("\uAC80\uC0AC \uC548 \uB3CC\uB9BC", "test not run") : L("\uAC80\uC0AC \uC5C6\uC74C", "no test") : testPhrase(rr.testStatus);
+    testCell = (rr) => rr.testStatus === "\uBBF8\uC2E4\uD589" ? rr.tests.length ? L("\uC548 \uB3CC\uB9BC", "not run") : L("\uC5C6\uC74C", "none") : wTest(rr.testStatus);
     setLabel = (key) => cur === "en" ? `Result ${key}` : `\uACB0\uACFC ${key}`;
     joinNames = (xs) => cur === "en" ? xs.join(" and ") : xs.join("\xB7");
   }
@@ -3171,7 +3173,7 @@ function renderSummaryMd(report) {
       const b = rr.evidence.boundary;
       for (const x of rr.evidence.boundaries ?? []) parts.push(boundaryLine(x));
       parts.push(
-        rr.testStatus === "\uD1B5\uACFC" && b?.ok === false ? L(`\uAC80\uC0AC\uB294 \uD1B5\uACFC (\uAC80\uC0AC\uAC00 \uC694\uAD6C\uC0AC\uD56D\uACFC \uAC19\uC740 ${checkWord(b, "ko")}\uC744 \uD655\uC778\uD558\uB294\uC9C0 \uBCFC \uAC83)`.replace("\uD69F\uC218\uC744", "\uD69F\uC218\uB97C"), `but the test passes (check that the test exercises the same ${checkWord(b, "en")} as the requirement)`) : L(`\uAC80\uC0AC ${rr.testStatus}`, `tests ${wTest(rr.testStatus)}`)
+        rr.testStatus === "\uD1B5\uACFC" && b?.ok === false ? L(`\uAC80\uC0AC\uB294 \uD1B5\uACFC (\uAC80\uC0AC\uAC00 \uC694\uAD6C\uC0AC\uD56D\uACFC \uAC19\uC740 ${checkWord(b, "ko")}\uC744 \uD655\uC778\uD558\uB294\uC9C0 \uBCFC \uAC83)`.replace("\uD69F\uC218\uC744", "\uD69F\uC218\uB97C"), `but the test passes (check that the test exercises the same ${checkWord(b, "en")} as the requirement)`) : testPhraseFor(rr)
       );
       const fail = rr.tests.find((t) => t.status === "fail");
       if (fail) parts.push(`${L("\uC2E4\uD328 \uC774\uC720", "failure")}: ${fail.message || fail.name}`);
@@ -3187,7 +3189,7 @@ function renderSummaryMd(report) {
     const missing = report.sets.filter((x) => x.perReq[s.req.id].testStatus === "\uBBF8\uC2E4\uD589" || x.perReq[s.req.id].evidence.status === "\uBBF8\uBC1C\uACAC");
     if (missing.length) {
       any = true;
-      out.push(`- ${s.req.id}: ${missing.map((x) => `${x.label} (${x.perReq[s.req.id].evidence.status === "\uBBF8\uBC1C\uACAC" ? L("\uAD6C\uD604 \uADFC\uAC70 \uC5C6\uC74C", "no evidence found") : L("\uAC80\uC0AC \uBBF8\uC2E4\uD589", "no test run")})`).join(", ")}`);
+      out.push(`- ${s.req.id}: ${missing.map((x) => `${x.label} (${x.perReq[s.req.id].evidence.status === "\uBBF8\uBC1C\uACAC" ? L("\uAD6C\uD604 \uADFC\uAC70 \uC5C6\uC74C", "no evidence found") : testPhraseFor(x.perReq[s.req.id])})`).join(", ")}`);
     }
   }
   for (const set of report.sets) {
@@ -3223,6 +3225,7 @@ function sentencePieces(req, lang) {
     if (c.window) out.push(ko ? `${t} \uC548\uC5D0\uC11C` : `within ${t}`);
     else if (c.rel === "eq") out.push(ko ? `\uC815\uD655\uD788 ${t}` : `exactly ${t}`);
     else if (c.rel === "after" && (!c.unit || c.unit === "cnt")) out.push(ko ? `${c.value}\uBC88 \uB4A4` : `after ${c.value} times`);
+    else if (c.rel === "count") out.push(ko ? `${t}\uC9F8\uC5D0` : `on the ${ordinal2(c.value)} time`);
     else out.push(t);
   }
   const statuses = req.concepts.flat().filter((t) => /^[1-5]\d\d$/.test(t));
@@ -3236,6 +3239,11 @@ function sentencePieces(req, lang) {
   const words2 = lookedFor(req);
   if (words2.length) out.push(`${ko ? "\uCC3E\uB294 \uB0B1\uB9D0" : "looks for"}: ${words2.join(" \xB7 ")}`);
   return out;
+}
+function ordinal2(n) {
+  const t = n % 100;
+  if (t >= 11 && t <= 13) return `${n}th`;
+  return `${n}${{ 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th"}`;
 }
 function lookedFor(req) {
   if (!req.auto) return req.keywords.slice(0, MAX_WORDS);
@@ -3432,7 +3440,7 @@ function attemptComparison(required, at, label, test, lang, runStatus) {
   const stat = (caption, n, tone2) => `<span class="vl-stat vl-${tone2}"><small>${esc(caption)}</small>${ko ? `<b>${n}</b><span>\uBC88\uC9F8</span>` : `<span>Attempt</span><b>${n}</b>`}</span>`;
   const actual = runStatus && { \uD1B5\uACFC: "ok", \uC2E4\uD328: "diff", \uBBF8\uC2E4\uD589: "miss" }[runStatus];
   const notRun = !!test && /^(?:not run|돌리지 않음) · /.test(test.text);
-  const miss = notRun ? ko ? "\uAC80\uC0AC \uC548 \uB3CC\uB9BC" : "Test not run" : ko ? "\uAC80\uC0AC \uBBF8\uC2E4\uD589" : "No linked test";
+  const miss = notRun ? ko ? "\uAC80\uC0AC \uC548 \uB3CC\uB9BC" : "Test not run" : ko ? "\uC5F0\uACB0\uB41C \uAC80\uC0AC \uC5C6\uC74C" : "No linked test";
   const status = test && { ok: ko ? "\uAC80\uC0AC \uD1B5\uACFC" : "Test passed", diff: ko ? "\uAC80\uC0AC \uC2E4\uD328" : "Test failed", miss, plain: "" }[actual ?? test.tone];
   const tone = test ? stepTone(test) : "miss";
   return `<span class="vl-compare">${stat(ko ? "\uC694\uAD6C\uC0AC\uD56D" : "Required", required, "plain")}<span class="vl-link" aria-hidden="true">\u2192</span>${stat(label, at, at === required ? "ok" : "diff")}${status ? `<strong class="vl-test vl-${tone}">${symbols[tone]}${status}</strong>` : ""}</span>`;
@@ -3670,7 +3678,7 @@ function renderChain(report, s) {
     const t = rr.tests.find((x) => x.status === "fail") ?? rr.tests[0];
     const changed = rr.testStatus !== "\uC2E4\uD328" && rr.edits?.some(suspicious);
     const testLines = t ? wrapText(t.name, 20, 2) : [L("\uC5F0\uACB0\uB41C \uAC80\uC0AC \uC5C6\uC74C", "No linked test")];
-    const testSub = t ? t.status === "fail" ? wrapText(`${L("\uC2E4\uD328", "failed")} \xB7 ${t.message}`, 19, 1)[0] : L(`${rr.testStatus} \xB7 \uC5F0\uACB0 ${rr.tests.length}\uAC1C`, `${wTest(rr.testStatus)} \xB7 ${rr.tests.length} linked`) : L("\uBBF8\uC2E4\uD589 \u2192 \uB3D9\uC791 \uBBF8\uD655\uC778", "not run \u2192 behavior unverified");
+    const testSub = t ? t.status === "fail" ? wrapText(`${L("\uC2E4\uD328", "failed")} \xB7 ${t.message}`, 19, 1)[0] : rr.testStatus === "\uBBF8\uC2E4\uD589" ? L(`\uC548 \uB3CC\uB9BC \xB7 \uC5F0\uACB0 ${rr.tests.length}\uAC1C`, `not run \xB7 ${rr.tests.length} linked`) : L(`${rr.testStatus} \xB7 \uC5F0\uACB0 ${rr.tests.length}\uAC1C`, `${wTest(rr.testStatus)} \xB7 ${rr.tests.length} linked`) : L("\uAC80\uC0AC \uC5C6\uC74C \u2192 \uB3D9\uC791 \uBBF8\uD655\uC778", "no test \u2192 behavior unverified");
     p.push(arrow(COL.code.x + COL.code.w, cy, COL.test.x));
     p.push(box(COL.test.x, y, COL.test.w, LANE_H, { title: changed ? L("\u26A0 \uAC80\uC0AC \xB7 \uBCC0\uACBD\uB428", "\u26A0 tests \xB7 changed") : L("\uAC80\uC0AC", "tests"), lines: testLines, sub: testSub, color: changed ? ST.diff : testColor(rr.testStatus), dashed: !t }));
     const b = e.boundary;
@@ -4255,7 +4263,7 @@ function matrixCell(set, id) {
   const u = e.unit;
   const loc = u ? ` <code>${esc(u.file.split("/").pop())}:${u.startLine}</code>${u.kind === "function" ? `<em>${L("\uD568\uC218 \uC804\uCCB4", "whole function")}</em>` : ""}` : "";
   const b = e.boundary ? ` <span class="bd ${e.boundary.ok ? "ok" : e.boundary.ok === null ? "unk" : "diff"}">${esc(e.boundary.attempts !== null ? L(`${e.boundary.attempts}\uD68C\uC9F8 \uB3D9\uC791`, `acts on attempt ${e.boundary.attempts}`) : boundaryShort(e.boundary))}</span>` : "";
-  return `<div class="mc"><div><span class="mk ${evCls(e.status)}"></span>${L(`\uADFC\uAC70 ${e.status}`, `evidence ${wEvidence(e.status)}`)}${loc}</div><div><span class="mk ${tsCls(rr.testStatus)}"></span>${L(`\uAC80\uC0AC ${rr.testStatus}`, `tests ${wTest(rr.testStatus)}`)}${b}</div></div>`;
+  return `<div class="mc"><div><span class="mk ${evCls(e.status)}"></span>${L(`\uADFC\uAC70 ${e.status}`, `evidence ${wEvidence(e.status)}`)}${loc}</div><div><span class="mk ${tsCls(rr.testStatus)}"></span>${testPhraseFor(rr)}${b}</div></div>`;
 }
 function overview(report) {
   const c = counts(report);
@@ -4265,12 +4273,12 @@ function overview(report) {
   const unc = [];
   for (const s of report.summaries) {
     const miss = report.sets.filter((x) => x.perReq[s.req.id].testStatus === "\uBBF8\uC2E4\uD589" || x.perReq[s.req.id].evidence.status === "\uBBF8\uBC1C\uACAC");
-    if (miss.length) unc.push(`<span><b>${s.req.id}</b> ${miss.map((x) => `${x.key} ${x.perReq[s.req.id].evidence.status === "\uBBF8\uBC1C\uACAC" ? L("\uADFC\uAC70 \uC5C6\uC74C", "no evidence") : L("\uAC80\uC0AC \uBBF8\uC2E4\uD589", "no test run")}`).join(" \xB7 ")}</span>`);
+    if (miss.length) unc.push(`<span><b>${s.req.id}</b> ${miss.map((x) => `${x.key} ${x.perReq[s.req.id].evidence.status === "\uBBF8\uBC1C\uACAC" ? L("\uADFC\uAC70 \uC5C6\uC74C", "no evidence") : testPhraseFor(x.perReq[s.req.id])}`).join(" \xB7 ")}</span>`);
   }
   for (const set of report.sets) for (const d of set.dyn) unc.push(`<span><b>${set.key}</b> ${L("\uD574\uC11D\uD558\uC9C0 \uBABB\uD55C \uD638\uCD9C", "unresolved call")} <code>${esc(d.file.split("/").pop())}:${d.line}</code> <code>${esc(d.text)}</code></span>`);
   return `<section class="ov"><div class="ovh"><h2>${L("\uC694\uAD6C\uC0AC\uD56D\uBCC4 \uAC80\uC99D \uC0C1\uD0DC", "Verification status by requirement")}</h2><div class="cnt"><span class="ok">${wOverall("\uD655\uC778\uB428")} <b>${c.\uD655\uC778\uB428}</b></span><span class="diff">${wOverall("\uB2E4\uB984")} <b>${c.\uB2E4\uB984}</b></span><span class="fail">${wOverall("\uC2E4\uD328")} <b>${c.\uC2E4\uD328}</b></span><span class="unk">${wOverall("\uBBF8\uD655\uC778")} <b>${c.\uBBF8\uD655\uC778}</b></span></div><div class="hint">${L("\uC694\uAD6C\uC0AC\uD56D\uC744 \uC120\uD0DD\uD574 \uADFC\uAC70 \uBCF4\uAE30", "Select a requirement to see its evidence")}</div></div>
 <table class="mx"><thead>${head}</thead><tbody>${rows}</tbody></table>
-<div class="unc"><b>${L("\uAC80\uC0AC \uBBF8\uC2E4\uD589 \xB7 \uADFC\uAC70 \uC5C6\uC74C", "No test run \xB7 no evidence")}</b>${unc.join("") || `<span>${L("\uC5C6\uC74C", "none")}</span>`}</div></section>`;
+<div class="unc"><b>${L("\uAC80\uC0AC \uACB0\uACFC \uC5C6\uC74C \xB7 \uADFC\uAC70 \uC5C6\uC74C", "No test result \xB7 no evidence")}</b>${unc.join("") || `<span>${L("\uC5C6\uC74C", "none")}</span>`}</div></section>`;
 }
 function codePane(set, ev, mark) {
   const head = `<div class="ph">${idDot(set.key)}<b>${set.label}</b><span class="sub">${esc(set.ref)} \xB7 ${set.sha}</span></div>`;
@@ -4337,7 +4345,7 @@ function timeline(report, id) {
     ` ${offSets.map((r) => r.set.label).join("\xB7")}\uB294 \uACC4\uC0B0\uC73C\uB85C\uB294 ${offSets.map((r) => r.b.attempts).join("\xB7")}\uBC88\uC9F8\uC5D0 \uB3D9\uC791\uD558\uB294\uB370\uB3C4 \uAC80\uC0AC\uAC00 \uD1B5\uACFC\uD588\uC2B5\uB2C8\uB2E4. \uAC80\uC0AC\uAC00 \uC2E4\uC81C\uB85C \uBA87 \uBC88\uC9F8 \uC2DC\uB3C4\uB97C \uBCF4\uB294\uC9C0 \uD655\uC778\uD558\uC138\uC694.`,
     ` By the computed condition, ${joinNames(offSets.map((r) => r.set.label))} acts on attempt ${offSets.map((r) => r.b.attempts).join(" / ")}, yet its test passes. Check which attempt the test actually looks at.`
   ) : "";
-  const marks2 = report.sets.map((s) => `${s.key} ${wTest(s.perReq[id].testStatus)}`).join(" \xB7 ");
+  const marks2 = report.sets.map((s) => `${s.key} ${testCell(s.perReq[id])}`).join(" \xB7 ");
   const cap = chk !== null ? L(`\u300C${esc(chkName)}\u300D \uAC80\uC0AC\uB294 \uC774\uB984\uC73C\uB85C \uBCF4\uBA74 ${chk}\uBC88\uC9F8 \uC2DC\uB3C4 \uB4A4\uC758 \uC7A0\uAE08\uC744 \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 ${marks2}.${offNote}`, `Going by its name, the test "${esc(chkName)}" checks the lock after attempt ${chk} \u2014 ${marks2}.${offNote}`) : L("\uC774 \uC870\uAC74\uC744 \uC9C1\uC811 \uD655\uC778\uD558\uB294 \uAC80\uC0AC\uAC00 \uC5F0\uACB0\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", "No test that checks this condition directly is linked.");
   const order = before ? L(" \uCE74\uC6B4\uD130\uB97C \uC62C\uB9B0 \uB4A4 \uBE44\uAD50\uD558\uB294 \uCF54\uB4DC\uB85C \uC77D\uC5C8\uC2B5\uB2C8\uB2E4.", " Read as code that increments the counter before comparing.") : L(" \uCE74\uC6B4\uD130 \uC99D\uAC00 \uC21C\uC11C\uB294 \uCF54\uB4DC\uC5D0\uC11C \uD655\uC778\uD558\uC138\uC694.", " Check in the code whether the counter is incremented before the comparison.");
   return `<div class="card"><h4>${L("\uC2DC\uB3C4 \uD69F\uC218\uBCC4 \uC7A0\uAE08 \uC2DC\uC810", "When it locks, attempt by attempt")} <span class="mini">${L("\uC870\uAC74 \uAC12\uC5D0\uC11C \uACC4\uC0B0\uD55C \uC0AC\uC2E4", "computed from the condition")}</span></h4>${plot}<details class="comparison" ${plot ? "" : "open"}><summary>${L("\uC2DC\uB3C4\uBCC4 \uAC80\uC0AC\uC640 \uC7A0\uAE08 \uC0C1\uD0DC", "Test and lock state by attempt")}</summary><div class="tline">${head}${reqRow}${resRows}</div></details><div class="cap">${cap}${order}</div><div class="lg"><span><i class="sw" style="background:#4285E8"></i>${L("\uC694\uAD6C\uC0AC\uD56D", "requirement")}</span><span><i class="sw" style="background:var(--vl-ok)"></i>${L("\uC694\uAD6C\uC0AC\uD56D\uACFC \uAC19\uC740 \uC2DC\uC810", "same attempt as the requirement")}</span><span><i class="sw" style="background:var(--vl-diff)"></i>${L("\uB2E4\uB978 \uC2DC\uC810", "a different attempt")}</span><span><i class="sw miss"></i>${L("\uC7A0\uACA8\uC57C \uD558\uB294\uB370 \uC548 \uC7A0\uAE40", "should be locked, but is not")}</span></div></div>`;
@@ -4931,7 +4939,7 @@ var init_model = __esm({
     isWide = (ch) => /[ᄀ-ᇿ　-鿿가-힣＀-￯]/.test(ch);
     wideCount = (s) => [...s].filter(isWide).length;
     passButOff = (rr) => rr.testStatus === "\uD1B5\uACFC" && rr.evidence.boundary?.ok === false;
-    testWord = (rr) => passButOff(rr) ? L("\uAC80\uC0AC\uB294 \uD1B5\uACFC", "but the test passes") : testPhrase(rr.testStatus);
+    testWord = (rr) => passButOff(rr) ? L("\uAC80\uC0AC\uB294 \uD1B5\uACFC", "but the test passes") : testPhraseFor(rr);
     TXT = {
       ko: {
         title: "VerifyLens \uAC80\uC99D \uC694\uC57D",

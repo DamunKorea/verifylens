@@ -1,5 +1,5 @@
 import type { Report, ReqSummary, ResultSet } from './types.ts';
-import { L, joinNames, wEvidence, wOverall, wRelation, wTest } from './i18n.ts';
+import { L, joinNames, testPhraseFor, wEvidence, wOverall, wRelation } from './i18n.ts';
 import { boundaryLine, checkWord, undecidedAction, type UndecidedKind } from './numeric.ts';
 
 const where = (s: ResultSet, id: string) => {
@@ -101,7 +101,7 @@ export function renderSummaryMd(report: Report): string {
       parts.push(
         rr.testStatus === '통과' && b?.ok === false
           ? L(`검사는 통과 (검사가 요구사항과 같은 ${checkWord(b, 'ko')}을 확인하는지 볼 것)`.replace('횟수을', '횟수를'), `but the test passes (check that the test exercises the same ${checkWord(b, 'en')} as the requirement)`)
-          : L(`검사 ${rr.testStatus}`, `tests ${wTest(rr.testStatus)}`),
+          : testPhraseFor(rr),
       );
       const fail = rr.tests.find((t) => t.status === 'fail');
       if (fail) parts.push(`${L('실패 이유', 'failure')}: ${fail.message || fail.name}`);
@@ -118,7 +118,7 @@ export function renderSummaryMd(report: Report): string {
     const missing = report.sets.filter((x) => x.perReq[s.req.id].testStatus === '미실행' || x.perReq[s.req.id].evidence.status === '미발견');
     if (missing.length) {
       any = true;
-      out.push(`- ${s.req.id}: ${missing.map((x) => `${x.label} (${x.perReq[s.req.id].evidence.status === '미발견' ? L('구현 근거 없음', 'no evidence found') : L('검사 미실행', 'no test run')})`).join(', ')}`);
+      out.push(`- ${s.req.id}: ${missing.map((x) => `${x.label} (${x.perReq[s.req.id].evidence.status === '미발견' ? L('구현 근거 없음', 'no evidence found') : testPhraseFor(x.perReq[s.req.id])})`).join(', ')}`);
     }
   }
   for (const set of report.sets) {

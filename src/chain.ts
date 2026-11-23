@@ -80,8 +80,10 @@ export function renderChain(report: Report, s: ReqSummary): string {
     const testSub = t
       ? t.status === 'fail'
         ? wrapText(`${L('실패', 'failed')} · ${t.message}`, 19, 1)[0]
-        : L(`${rr.testStatus} · 연결 ${rr.tests.length}개`, `${wTest(rr.testStatus)} · ${rr.tests.length} linked`)
-      : L('미실행 → 동작 미확인', 'not run → behavior unverified');
+        : rr.testStatus === '미실행'
+          ? L(`안 돌림 · 연결 ${rr.tests.length}개`, `not run · ${rr.tests.length} linked`)
+          : L(`${rr.testStatus} · 연결 ${rr.tests.length}개`, `${wTest(rr.testStatus)} · ${rr.tests.length} linked`)
+      : L('검사 없음 → 동작 미확인', 'no test → behavior unverified');
     p.push(arrow(COL.code.x + COL.code.w, cy, COL.test.x));
     p.push(box(COL.test.x, y, COL.test.w, LANE_H, { title: changed ? L('⚠ 검사 · 변경됨', '⚠ tests · changed') : L('검사', 'tests'), lines: testLines, sub: testSub, color: changed ? ST.diff : testColor(rr.testStatus), dashed: !t }));
     // 동작 시점
