@@ -239,6 +239,9 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
     /** 아래쪽 근거 사슬 그림에 적힌 글 (시험용) */
     fun chainTexts(): List<String> = chain.lines()
 
+    /** 그림의 요구사항 칸에 붙은 「읽은 것」 칩 (시험용) */
+    fun chainPieces(): List<String> = chain.pieceLines()
+
     /** 요구사항 줄을 고른다 (시험용). 그림이 그 요구사항으로 바뀐다. */
     fun selectRequirement(id: String) {
         val node = (0 until root.childCount).map { root.getChildAt(it) as DefaultMutableTreeNode }.first { (it.userObject as ReqRow).id == id }
@@ -256,7 +259,7 @@ class VerifyLensPanel(private val project: Project) : SimpleToolWindowPanel(true
             val node = tree.getPathForRow(i).lastPathComponent
             (tree.cellRenderer.getTreeCellRendererComponent(tree, node, false, tree.isExpanded(i), model.isLeaf(node), i, false) as ColoredTreeCellRenderer).toolTipText
         }
-        return listOf(headline.text, context.text, notes.text).map { StringUtil.removeHtmlTags(it ?: "") } + rowTexts() + tips.map { StringUtil.removeHtmlTags(it) } + chainTexts()
+        return listOf(headline.text, context.text, notes.text).map { StringUtil.removeHtmlTags(it ?: "") } + rowTexts() + tips.map { StringUtil.removeHtmlTags(it) } + chainTexts() + chainPieces()
     }
 
     override fun dispose() {

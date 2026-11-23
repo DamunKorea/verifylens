@@ -7,7 +7,7 @@ This is the JetBrains counterpart of the [VS Code extension](../vscode/README.md
 - **No LLM, and your code never leaves your machine.** Static analysis (TypeScript compiler API) + local git + your JUnit test results. No network use, no telemetry.
 - **Unknown stays unknown.** No test or an unresolved call means "not verified", never "looks fine".
 
-> Preview 0.18.0. Analyzes **TypeScript and JavaScript**. The UI is in **English or Korean** and follows the IDE language (**Tools | VerifyLens | Language…** changes it). Run in IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried yet. See [what was checked](#what-was-checked-and-what-was-not).
+> Preview 0.19.0. Analyzes **TypeScript and JavaScript**. The UI is in **English or Korean** and follows the IDE language (**Tools | VerifyLens | Language…** changes it). Run in IntelliJ IDEA 2026.3 and Android Studio 2026.1; WebStorm has not been tried yet. See [what was checked](#what-was-checked-and-what-was-not).
 
 ## What it does
 
@@ -19,7 +19,7 @@ This is the JetBrains counterpart of the [VS Code extension](../vscode/README.md
 5. **Try the sample.** Shows the login-lockout example (two AI results, `failures >= 5` and `failures > 5`; every test passes in both) without touching your code.
 6. **Language.** English or Korean, following the IDE language. **Tools | VerifyLens | Language…** fixes it to one of them.
 7. **Tests changed in this change.** When a test linked to a requirement was edited, removed or skipped in the same change, the requirement keeps its verdict and gets `⚠ test changed` next to it, and a row under it names the test and what changed, for example `auth.test.ts:5   test changed in this change: 5 → 6`. Click the row to open the test. This is for the case where a suite was made green by editing the test. A test that is new in the change is not reported.
-8. **Evidence chain.** Under the list, the selected requirement is drawn as four boxes, requirement → code line → tests → when it acts, from the same model and in the same colours as the report and the try-it page. A missing link is a grey dashed box, so a Not verified requirement shows which link is missing. When the attempt can be computed, a row of dots shows the required attempt and the one the code acts on (`Required: 5`, `Code: 6 · 1 late`). With nothing selected, it shows the first requirement that is not Verified. Click the code box to go to the line, or the tests box to go to a test that was changed.
+8. **Evidence chain.** Under the list, the selected requirement is drawn as four boxes, requirement → code line → tests → when it acts, from the same model and in the same colours as the report and the try-it page. A missing link is a grey dashed box, so a Not verified requirement shows which link is missing. When the attempt can be computed, a row of dots shows the required attempt and the one the code acts on (`Required: 5`, `Code: 6 · 1 late`). With nothing selected, it shows the first requirement that is not Verified. Click the code box to go to the line, or the tests box to go to a test that was changed. Under the requirement box, small tags show what was read from the sentence (**read as**: the number and its direction, the kind of rule, the state, the words it looks for).
 
 The same actions are under **Tools | VerifyLens** and in Search Everywhere (`VerifyLens: Check my changes`, `VerifyLens: Run demo`).
 
@@ -33,7 +33,7 @@ Node is looked up in this order: the path you picked with **Tools | VerifyLens |
 
 ## Install
 
-The plugin has been submitted to JetBrains Marketplace and is awaiting review, so it cannot be found by search yet. Download `verifylens-jetbrains-0.18.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.18.0) (do not unzip it) and install it with **Settings | Plugins | ⚙ | Install Plugin from Disk…**. You can also build the zip yourself (below); it lands in `build/distributions/`.
+The plugin has been submitted to JetBrains Marketplace and is awaiting review, so it cannot be found by search yet. Download `verifylens-jetbrains-0.19.0.zip` from the [JetBrains preview release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.19.0) (do not unzip it) and install it with **Settings | Plugins | ⚙ | Install Plugin from Disk…**. You can also build the zip yourself (below); it lands in `build/distributions/`.
 
 ## Use it on your branch
 
@@ -84,7 +84,7 @@ You need Node.js 22.18+ and a JDK 21 or newer.
 npm install
 cd vscode && npm install && cd ..      # esbuild is taken from here
 cd jetbrains
-./gradlew buildPlugin                  # build/distributions/verifylens-jetbrains-0.18.0.zip
+./gradlew buildPlugin                  # build/distributions/verifylens-jetbrains-0.19.0.zip
 ./gradlew test                         # starts a headless IDE and drives the plugin
 ```
 
@@ -99,8 +99,8 @@ Checked on Windows 11 with Node 24:
 
 | | IntelliJ IDEA 2026.3 (build 263.7307) | Android Studio 2026.1.3 (platform 261.26222) |
 |---|---|---|
-| `./gradlew test` (14 tests in a headless IDE), 0.18.0 | pass | pass |
-| `./gradlew verifyPlugin -PverifyIde=<IDE folder>` (Plugin Verifier), 0.18.0 | compatible | compatible |
+| `./gradlew test` (14 tests in a headless IDE), 0.19.0 | pass | pass |
+| `./gradlew verifyPlugin -PverifyIde=<IDE folder>` (Plugin Verifier), 0.19.0 | compatible | compatible |
 | `./gradlew runIde` (real window, check run on a copy of a practice repository) | 0.2.0, English and Korean; 0.13.0, English | 0.1.0, Korean |
 
 - The tests open a repository as a project, press **Check my changes** and assert the tool window rows, the gutter icon, the line-end note (Korean `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과` and English `← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes`), navigation to line 21, the re-check after saving a file (the old test result is dropped), the demo, the missing-requirements and missing-Node messages, and that the engine is found inside the installed plugin folder.
@@ -112,6 +112,7 @@ Checked on Windows 11 with Node 24:
 - Engine of VS Code 0.22.0 (0.16.0): the sample and three small example projects give the same output as with the 0.21.0 engine. On a fourth, written for this check ("A frozen account cannot withdraw", where the code has a `frozen` field but the only guard is `amount > account.balance` with the message `insufficient funds or account frozen`, and a test with that name passes), 0.15.0 said Verified and 0.16.0 says Not verified (`no deciding check`). The path fix of 0.15.0 moved into the shared engine: the junction test still passes, and the bundled engine run on a `subst` drive reports `V:\`. The real IDE window on a `subst` drive was not opened again for 0.16.0.
 - Engine of VS Code 0.23.0 (0.17.0): the sample and three small example projects give the same output as with the 0.22.0 engine. On the fourth ("A frozen account cannot withdraw") the verdict is the same and the reason reads `nothing reads that state` (0.16.0: `no deciding check`). On a fifth, a copy of the first with one test marked skipped in the report, the verdict is the same and the test box of the evidence chain reads `not run · locks the account after 5 consecutive failures` (0.16.0: `no linked test`). The plugin's own code is the same as 0.16.0.
 - Engine of VS Code 0.24.0 (0.18.0): the sample and five small example projects give the same output as with the 0.23.0 engine. Two more were written for this check. With correct code: "Return 404 when the project does not exist" (`if (!project) res.status(404)`) and "Accounts with no activity for 90 days are marked inactive" (`days >= 90`), both with a passing test, were Not verified with the 0.23.0 engine and are Verified now. With wrong code: "A welcome email is sent after signup", where `signup` takes a `mailer` and never calls it and a test with that name passes, was Verified and is Not verified now (`no deciding check`). These were run through the bundled engine; the IDE window was not opened for them. The plugin's own code is the same as 0.17.0.
+- "Read as" tags (0.19.0, engine of VS Code 0.25.0): the tests assert the tags under the requirement box in Korean and English (`읽은 것: 5회 | 찾는 낱말: failure · lock`, `read as: after 5 times | looks for: failure · lock`, `read as: must block | state: locked | looks for: locked · valid · password`), that only the requirement box has them, and that the sample with two results shows them in both. The sample and seven small example projects give the same output as with the 0.24.0 engine apart from the new tags. The tags were also looked at in a real IntelliJ IDEA 2026.3 window (English, dark theme, 150% display scale); the Korean screen and the light theme were seen only in the test pictures.
 - In the real window (0.1.0, Korean) the tool window showed `요구사항 3개 중 1개만 근거와 검사로 확인됨` with R2 as `다름`, and line 21 of `auth.ts` carried the icon, the background and the note. The check was started by `-PautoRun=check`, not by a mouse click.
 - IntelliJ IDEA was run without a licence (free mode). The plugin is compiled against platform 261 and also builds against 263.
 
@@ -133,7 +134,7 @@ VS Code 확장과 **같은 분석 엔진**을 IntelliJ IDEA · WebStorm 같은 J
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC 의 **Node.js 18 이상**, git. Node 를 찾지 못하면 무엇을 설치해야 하는지 알림으로 알려 줍니다.
 - **화면 언어:** IDE 화면 언어를 따릅니다(한국어 IDE 면 한국어, 아니면 영어). **Tools | VerifyLens | Language…**(한국어 IDE 에서는 「화면 언어…」)에서 고정할 수 있습니다.
-- **설치:** [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.18.0)에서 `verifylens-jetbrains-0.18.0.zip` 을 받아(압축을 풀지 말고) **Settings | Plugins | ⚙ | Install Plugin from Disk…** 에서 고릅니다.
+- **설치:** [JetBrains 미리 보기 Release](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.19.0)에서 `verifylens-jetbrains-0.19.0.zip` 을 받아(압축을 풀지 말고) **Settings | Plugins | ⚙ | Install Plugin from Disk…** 에서 고릅니다.
 - **처음 써 보기:** 왼쪽 VerifyLens 도구 창에서 **샘플로 해 보기**를 누르세요.
 - **내 변경 확인:** `.verifylens/requirements.md` 에 요구사항을 한 줄씩 적고 **내 변경 확인**을 누르세요. 커밋하지 않아도 됩니다. 그 뒤로는 파일이 저장될 때마다 스스로 다시 확인합니다.
 - **보이는 것:** 맨 위 한 줄 요약, 요구사항별 상태와 근거 줄(누르면 그 줄로 이동), 근거 줄의 아이콘과 줄 끝 설명(예: `← R2 · 다름 · 6번째 시도에 동작 (요구사항 5회) · 검사는 통과`).

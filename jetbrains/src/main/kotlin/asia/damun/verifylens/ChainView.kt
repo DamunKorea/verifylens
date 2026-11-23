@@ -65,11 +65,12 @@ internal object Tones {
     }
 
     /** 칸 테두리: 글자색을 바탕에 반쯤 섞는다 (리포트의 color-mix 52% 와 같다) */
-    fun border(tone: String): Color {
-        val a = ink(tone)
-        val b = fill(tone)
-        fun mix(x: Int, y: Int) = (x * 0.52 + y * 0.48).toInt()
-        return Color(mix(a.red, b.red), mix(a.green, b.green), mix(a.blue, b.blue))
+    fun border(tone: String): Color = mix(ink(tone), fill(tone), 0.52)
+
+    /** a 를 share 만큼, 나머지는 b */
+    fun mix(a: Color, b: Color, share: Double): Color {
+        fun m(x: Int, y: Int) = (x * share + y * (1 - share)).toInt()
+        return Color(m(a.red, b.red), m(a.green, b.green), m(a.blue, b.blue))
     }
 }
 
@@ -89,11 +90,13 @@ internal class ChainView(private val onOpen: (setKey: String, kind: String) -> U
     /** follow = 앞 글 바로 뒤에 이어 그린다 (제목 줄처럼 색이 다른 글을 이을 때. 폭을 미리 재서 잇지 않는다) */
     private class Text(val s: String, val x: Int, val y: Int, val font: Font, val color: Color, val follow: Boolean = false)
     private class Box(val r: Rectangle, val tone: String)
+    private class Chip(val r: Rectangle, val tone: String)
     private class Dot(val x: Int, val y: Int, val d: Int, val n: Int, val tone: String, val active: Boolean, val after: Boolean)
     private class Hit(val r: Rectangle, val setKey: String, val kind: String, val tip: String, val open: Boolean)
 
     private val texts = ArrayList<Text>()
     private val boxes = ArrayList<Box>()
+    private val chips = ArrayList<Chip>()
     private val dotList = ArrayList<Dot>()
     private val hits = ArrayList<Hit>()
     private var laidOutWidth = -1
@@ -151,6 +154,11 @@ internal class ChainView(private val onOpen: (setKey: String, kind: String) -> U
         return out
     }
 
+    /** 요구사항 칸의 「읽은 것」 칩 (시험용): 줄마다 「읽은 것: 조각 | 조각」. 결과가 둘이면 줄도 둘이다. */
+    fun pieceLines(): List<String> =
+        lanes.flatMap { l -> l.steps.filter { it.pieces.isNotEmpty() }.map { "${readAs()}: ${it.pieces.joinToString(" | ")}" } }
+
+    private fun readAs() = I18n.t("읽은 것", "read as")
     private fun heading(r: ReqRow) = "${r.id} · ${I18n.overall(r.overall)} · ${I18n.t("근거 사슬", "Evidence chain")}"
     private fun hint() = I18n.t("회색 점선 = 비어 있는 칸", "grey dashed = missing")
     private fun laneLabel(lane: ChainLane) = I18n.t("코드 · ${lane.label}", "Code · ${lane.label}")
@@ -172,6 +180,7 @@ internal class ChainView(private val onOpen: (setKey: String, kind: String) -> U
         laidOutWidth = w
         texts.clear()
         boxes.clear()
+        chips.clear()
         dotList.clear()
         hits.clear()
         val r = row
@@ -236,7 +245,10 @@ internal class ChainView(private val onOpen: (setKey: String, kind: String) -> U
                 val fm = getFontMetrics(font)
                 val wrapped = wrap(step.text, fm, textW, 3)
                 val lineH = fm.height
-                val h = maxOf(wrapped.size * lineH, fmTitle.height) + s(10)
+                val textH = maxOf(wrapped.size * lineH, fmTitle.height)
+                // 요구사항 칸: 글 아래에 문장에서 읽은 조각을 칩으로 (칸 안쪽 폭 전체를 쓴다)
+                val chipsH = if (step.pieces.isEmpty()) 0 else layoutChips(step, pad + inL, w - pad - inR, y + s(5) + textH + s(5), getFontMetrics)
+                val h = textH + s(10) + if (chipsH > 0) chipsH + s(5) else 0
                 val rect = Rectangle(pad, y, w - 2 * pad, h)
                 boxes.add(Box(rect, step.tone))
                 val firstBase = y + s(5) + fm.ascent
@@ -244,7 +256,8 @@ internal class ChainView(private val onOpen: (setKey: String, kind: String) -> U
                 wrapped.forEachIndexed { k, line -> texts.add(Text(line, textX, firstBase + k * lineH, font, fg)) }
                 val key = "${lane.setKey}/${step.kind}"
                 val open = key in clickable
-                val tip = "${step.title}: ${step.text}" + if (open) I18n.t(" — 눌러서 이동", " — click to go there") else ""
+                val read = if (step.pieces.isEmpty()) "" else " — ${readAs()}: ${step.pieces.joinToString(" | ")}"
+                val tip = "${step.title}: ${step.text}" + read + if (open) I18n.t(" — 눌러서 이동", " — click to go there") else ""
                 hits.add(Hit(rect, lane.setKey, step.kind, tip, open))
                 y += h
                 if (i < lane.steps.size - 1) {
@@ -281,6 +294,47 @@ internal class ChainView(private val onOpen: (setKey: String, kind: String) -> U
             y += s(4)
         }
         laidOutHeight = y + s(4)
+    }
+
+    /**
+     * 「읽은 것」 이름표와 칩을 x0 ~ maxX 사이에 왼쪽부터 놓고, 넘치면 다음 줄로 내린다. 쓴 높이를 돌려준다.
+     * 칩 하나가 한 줄보다 길면(찾는 낱말이 많을 때) 칩 안에서 줄을 나눈다.
+     */
+    private fun layoutChips(step: ChainStep, x0: Int, maxX: Int, top: Int, getFontMetrics: (Font) -> FontMetrics): Int {
+        val small = JBUI.Fonts.smallFont()
+        val smallBold = small.deriveFont(Font.BOLD)
+        val fm = getFontMetrics(small)
+        val fmB = getFontMetrics(smallBold)
+        val padX = s(6)
+        val padY = s(1)
+        val gap = s(4)
+        var cx = x0
+        var cy = top
+        var rowH = 0
+        fun place(wd: Int, ht: Int): Int {
+            if (cx > x0 && cx + wd > maxX) {
+                cx = x0
+                cy += rowH + gap
+                rowH = 0
+            }
+            val x = cx
+            cx += wd + gap
+            rowH = maxOf(rowH, ht)
+            return x
+        }
+        val oneLine = fm.height + 2 * padY
+        val label = readAs()
+        val lx = place(fmB.stringWidth(label) + s(2), oneLine)
+        texts.add(Text(label, lx, cy + padY + fmB.ascent, smallBold, Tones.ink("miss")))
+        for (piece in step.pieces) {
+            val lines = wrap(piece, fm, maxX - x0 - 2 * padX, 3)
+            val wd = lines.maxOf { fm.stringWidth(it) } + 2 * padX
+            val ht = lines.size * fm.height + 2 * padY
+            val x = place(wd, ht)
+            chips.add(Chip(Rectangle(x, cy, wd, ht), step.tone))
+            lines.forEachIndexed { k, line -> texts.add(Text(line, x + padX, cy + padY + fm.ascent + k * fm.height, small, UIUtil.getLabelForeground())) }
+        }
+        return cy + rowH - top
     }
 
     /** 폭에 맞춰 줄을 나눈다. 띄어쓰기에서 끊고, 긴 낱말은 글자에서 끊는다. maxLines 를 넘으면 … 으로 줄인다. */
@@ -355,6 +409,15 @@ internal class ChainView(private val onOpen: (setKey: String, kind: String) -> U
                     g2.color = Tones.ink(b.tone)
                     g2.fillRoundRect(r.x, r.y, s(3), r.height - 1, s(2), s(2))
                 }
+            }
+            for (c in chips) {
+                // 칩: 칸 바탕에 글자색을 조금 섞은 알약 (리포트의 7% · 30% 와 같다)
+                val r = c.r
+                val round = minOf(r.height, s(18))
+                g2.color = Tones.mix(Tones.ink(c.tone), Tones.fill(c.tone), 0.07)
+                g2.fillRoundRect(r.x, r.y, r.width - 1, r.height - 1, round, round)
+                g2.color = Tones.mix(Tones.ink(c.tone), Tones.fill(c.tone), 0.30)
+                g2.drawRoundRect(r.x, r.y, r.width - 1, r.height - 1, round, round)
             }
             val smallBold = JBUI.Fonts.smallFont().deriveFont(Font.BOLD)
             val small = JBUI.Fonts.smallFont()

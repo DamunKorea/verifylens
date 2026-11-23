@@ -405,6 +405,12 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("⚠ 동작: 6번째 시도 (요구 5) ✗ 1번 늦음", koChain[4])
         assertEquals(listOf("요구사항: 5", "코드: 6 · 1번 늦음"), koChain.drop(5))
         assertEquals(listOf("plain", "ok", "ok", "diff"), ko.chains["R2"]!!.single().steps.map { it.tone })
+        // 요구사항 칸 아래의 「읽은 것」 칩: 문장에서 읽은 숫자와 코드에서 찾는 낱말 (엔진이 낸 것 그대로)
+        val koPieces = koPanel.chainPieces()
+        koPieces.forEach { println("[VerifyLens 시험] 읽은 것(한국어) | $it") }
+        assertEquals(listOf("읽은 것: " + ko.chains["R2"]!!.single().steps[0].pieces.joinToString(" | ")), koPieces)
+        assertTrue(koPieces[0], koPieces[0].startsWith("읽은 것: 5회 | 찾는 낱말: "))
+        assertTrue(ko.chains["R2"]!!.single().steps.drop(1).all { it.pieces.isEmpty() })
         shot(koPanel, 420, 620, "tool-window-chain")
 
         // 영어 화면
@@ -422,6 +428,10 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("⚠ acts: attempt 6 (required 5) ✗ 1 late", chain[4])
         assertEquals(listOf("Required: 5", "Code: 6 · 1 late"), chain.drop(5))
         assertEquals(mapOf("R2" to 5), r.dots.mapValues { it.value.required })
+        val pieces = panel.chainPieces()
+        pieces.forEach { println("[VerifyLens 시험] 읽은 것 | $it") }
+        assertEquals(1, pieces.size)
+        assertTrue(pieces[0], pieces[0].startsWith("read as: after 5 times | looks for: "))
         shot(panel, 420, 620, "tool-window-chain-en")
         shot(panel, 300, 680, "tool-window-chain-en-narrow")
 
@@ -439,7 +449,11 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("grey dashed = missing", c3[1])
         assertTrue(c3.toString(), c3.any { it.startsWith("? tests: no linked test") })
         assertFalse(c3.any { it.startsWith("Required:") })
+        val p3 = panel.chainPieces()
+        p3.forEach { println("[VerifyLens 시험] 읽은 것 R3 | $it") }
+        assertTrue(p3.toString(), p3.single().startsWith("read as: must block | state: locked | looks for: "))
         shot(panel, 420, 620, "tool-window-chain-en-r3")
+        shot(panel, 300, 680, "tool-window-chain-en-r3-narrow")
 
         // 「확인됨」도 같은 그림으로 본다
         panel.selectRequirement("R1")
@@ -460,6 +474,8 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals(2, lanes.size)
         assertTrue(lanes.toString(), lanes[0].endsWith("B") && lanes[1].endsWith("A"))
         assertEquals(listOf("Required: 5", "A: 5 · same attempt", "B: 6 · 1 late"), demo.takeLast(3))
+        assertEquals(2, demoPanel.chainPieces().size)
+        assertEquals(1, demoPanel.chainPieces().toSet().size)
         shot(demoPanel, 420, 820, "tool-window-chain-en-demo")
         demoPanel.clickChain("B", "code")
         val vf = FileDocumentManager.getInstance().getFile(FileEditorManager.getInstance(project).selectedTextEditor!!.document)!!

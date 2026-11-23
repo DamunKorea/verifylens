@@ -73,6 +73,9 @@ class ChainStep {
     /** ok | diff | fail | miss | plain (칸의 색. 리포트와 같은 규칙으로 엔진이 정한다) */
     var tone = "plain"
 
+    /** 요구사항 칸에만: 문장에서 엔진이 읽은 조각 (숫자와 방향 · 규칙 종류 · 상태 · 찾는 낱말). 「읽은 것」 칩으로 그린다. */
+    var pieces: List<String> = emptyList()
+
     /** 검사 칸: 통과했지만 이번 변경에서 바뀐 검사 */
     var changed = false
 }

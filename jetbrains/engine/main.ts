@@ -53,7 +53,7 @@ function present(run: M.Run, extra: Record<string, unknown> = {}) {
     chains[s.req.id] = report.sets.map((set, i) => ({
       setKey: set.key,
       label: set.label,
-      steps: M.chainSteps(report, s.req.id, undefined, i).map((x) => ({ kind: x.kind, title: x.title, text: x.text, tone: stepTone(x, s.overall), changed: x.changed === true })),
+      steps: M.chainSteps(report, s.req.id, undefined, i).map((x) => ({ kind: x.kind, title: x.title, text: x.text, tone: stepTone(x, s.overall), changed: x.changed === true, pieces: x.pieces ?? [] })),
     }));
     const d = M.attemptDots(report, s.req.id);
     if (d) dots[s.req.id] = d;
