@@ -149,7 +149,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertEquals("feature/lockout-b + 커밋 전 변경 ← main", service.result!!.context)
         val note = VerifyLensLinePainter().getLineExtensions(project, auth, 20)!!.single().text.trim()
         println("[VerifyLens 시험] 저장 뒤 21번째 줄 끝 | $note")
-        assertEquals("← R2 · 미확인 · 5번째 시도에 동작 · 검사 미실행", note)
+        assertEquals("← R2 · 미확인 · 5번째 시도에 동작 · 검사 오래됨", note)
     }
 
     /** 「샘플로 해 보기」: 내 코드 없이 로그인 잠금 예(결과 A · B)를 보여 준다. */
@@ -409,7 +409,7 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         val koPieces = koPanel.chainPieces()
         koPieces.forEach { println("[VerifyLens 시험] 읽은 것(한국어) | $it") }
         assertEquals(listOf("읽은 것: " + ko.chains["R2"]!!.single().steps[0].pieces.joinToString(" | ")), koPieces)
-        assertTrue(koPieces[0], koPieces[0].startsWith("읽은 것: 5회 | 찾는 낱말: "))
+        assertTrue(koPieces[0], koPieces[0].startsWith("읽은 것: 5회째에 | 찾는 낱말: "))
         assertTrue(ko.chains["R2"]!!.single().steps.drop(1).all { it.pieces.isEmpty() })
         shot(koPanel, 420, 620, "tool-window-chain")
 
