@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.26.0
+
+A first test on real pull requests, and what it changed. We ran 17 merged pull requests of a public TypeScript repository and read every line VerifyLens took as a requirement. Half were not requirements, and three of those were Verified. This version fixes that, and an older bug that let lines in test files become evidence. Then we measured on two public repositories we had not looked at. Verdicts on all our earlier cases did not change.
+
+- **Fewer lines that are not requirements.** When requirements are taken from a pull request or an issue, these are now left out:
+  - the author's to-do list in pull request templates ("The author should do the following": add tests, run tests, format and lint commands, TSDoc), and lines such as "Add tests for …", "Apply it to …" or "The new tests check …";
+  - reasons and quotes ("According to RFC …", "RFC 9110 allows …", "The docs state that …", "This matters for …", "#12 covers …");
+  - descriptions of the old behavior ("… was accepted as a valid code", "… made the request throw, so the response was 500", "… already returns 404");
+  - the reproduction, environment and "what do you see instead" sections of issue templates, and short list lines that end in a colon.
+- **Process lines and type-level requirements are never Verified.** A line such as "Add tests for …" is not linked to code or tests. Its reason is "not a code behavior (a process step)". A line such as "A type error when …" says "type-level requirement, not readable": VerifyLens reads runtime conditions, not TypeScript types.
+- **A change's own new tests are linked when their names differ from the sentence.** Only new tests in the test file paired with the evidence file (`coupon.test.ts` and `coupon.ts`) that share a word with the requirement and with the evidence line. They count toward Verified only when the requirement's number was matched in the code. Otherwise the requirement stays Not verified with the reason "linked only by this change's new tests", and the tests are listed so you can check them. On the first run on a new repository, letting them count fully added four wrong Verified verdicts, so we did not.
+- **A `test/` or `tests/` folder at the top of the repository is a test folder.** Before, the engine needed a folder above it, so lines in `test/hooks.ts` could become evidence. In one repository, 12 of 16 Verified verdicts stood on such lines. The browser page already read these folders as tests.
+
+Our own reading of each line (tests counted as passing because CI passed before merge; three repositories, not a benchmark):
+
+| | A: 17 PRs (seen while fixing) | B: 17 PRs (new) | C: 15 PRs (new) |
+|---|---|---|---|
+| Lines taken as requirements | 82 → 54 | 177 → 168 | 66 → 59 |
+| Real requirements dropped | 0 | 0 | 0 |
+| Verified on the right line | 1 → 3 | 2 → 3 | 2 → 6 |
+| Verified but wrong | 5 → 2 | 4 → 4 | 14 → 7 |
+| Different | 0 → 0 | 0 → 0 | 0 → 0 |
+
+First runs: on B, the first version of the new-test rule went from 6 Verified to 14 (right 2 → 6, wrong 4 → 8), so the rule was changed before release. On C, the first run changed no verdict and the 13 lines it dropped were all non-requirements; reading its results found the `test/` folder bug. The B and C numbers above are after those fixes.
+
+Still: 13 of the 25 Verified verdicts on these pull requests are on the wrong line, mostly a neighbouring condition or a default value. On real pull requests, open the evidence line before you trust Verified. Summary headings from review bots ("Bug Fixes"), test result lines and design notes are still taken as requirements.
+
 ## 0.25.2
 
 A fix to 0.25.1's wording: it said "no test" where tests exist. Our JetBrains build found it, where the notes are seen most, after every save. No verdict changes.

@@ -135,6 +135,8 @@ export type Requirement = {
   only: boolean;
   /** 확인하거나 막는 조건이 있어야 하는 요구사항인가 (해야 · must · 거부 · 만) */
   needsCheck?: boolean;
+  /** 판정하지 않는 줄: 절차(테스트 추가 · 실행 등) · 타입 수준 요구사항. 근거와 검사를 잇지 않고 늘 「미확인」 */
+  unreadable?: 'process' | 'type';
 };
 
 export type Boundary = {
@@ -193,6 +195,8 @@ export type TestEdit = {
   /** 검사 자체가 아니라 그것이 가져오는 도우미 · 준비 파일이 바뀐 경우 그 파일 */
   via?: string;
 };
+/** 이번 변경에서 새로 더한 검사 하나와 그 검사 파일이 가져오는 상대 경로 */
+export type AddedTest = { file: string; full: string; title: string; imports: string[] };
 export type ReqResult = {
   evidence: Evidence;
   tests: TestCase[];
@@ -201,6 +205,8 @@ export type ReqResult = {
   edits?: TestEdit[];
   /** 이 결과에는 테스트 결과가 하나도 없다 (리포트 파일이 없거나, 오래되어 버렸거나, 체험 페이지에 적지 않음). 「검사 없음」과 다르다 */
   noResults?: boolean;
+  /** 이름이 아니라 「이번 변경이 새로 더한 검사」(근거 파일과 짝인 검사 파일)로 이어졌다. 숫자가 맞게 판정된 때가 아니면 「확인됨」이라 하지 않는다 */
+  ownTests?: boolean;
 };
 
 export type ResultSet = {
@@ -217,6 +223,8 @@ export type ResultSet = {
   tests: TestCase[];
   /** 이번 변경에서 바뀐 검사 (검사 파일을 기준 커밋과 견줌) */
   testEdits?: TestEdit[];
+  /** 이번 변경에서 새로 더한 검사 (이름으로 이어지는 검사가 없을 때, 근거 파일과 짝인 검사 파일의 것을 잇는다) */
+  addedTests?: AddedTest[];
   perReq: Record<string, ReqResult>;
 };
 

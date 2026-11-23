@@ -90,6 +90,11 @@ test('an unverified requirement says which kind of reason stopped it', () => {
   // 테스트 결과가 하나도 없으면 「검사 결과 없음」, 결과는 있는데 이어진 것이 없으면 「검사 없음」 (0.25.2)
   assert.deepEqual(kinds('Admins can refund orders', 'export function refund(order: unknown) { return order; }\n'), ['no-results']);
   assert.deepEqual(kinds('Admins can refund orders', 'export function refund(order: unknown) { return order; }\n', ['exports a csv']), ['no-test']);
+  // 절차 줄 · 타입 요구사항은 코드 줄과 검사를 잇지 않고 늘 「미확인」 (실제 PR 에서 「Add tests …」가 「확인됨」이 됐다, 0.26.0)
+  const refund = 'export function refund(order: { paid: boolean }) { if (!order.paid) throw new Error("unpaid"); return order; }\n';
+  assert.deepEqual(kinds('Add tests for refunds of unpaid orders', refund, ['refund of unpaid orders is rejected']), ['not-behavior']);
+  assert.deepEqual(kinds('테스트 추가: 미결제 주문 환불', refund, ['refund of unpaid orders is rejected']), ['not-behavior']);
+  assert.deepEqual(kinds('A type error when refund gets an order without paid', refund, ['refund of unpaid orders is rejected']), ['type-level']);
   assert.equal(undecidedLabel('conflict', 'ko'), '다른 값이 함께 있음');
   assert.match(undecidedAction('wording', 'en'), /at least/);
 });

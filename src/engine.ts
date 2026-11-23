@@ -6,14 +6,15 @@ import { analyzeFile, resolveRefs } from './analyze.ts';
 import { boundaryNote, calendarBoundary, judge, matchScale, missingBoundary, partValue, pick } from './numeric.ts';
 import { changedFiles, changedLines, changedPaths, mergeBase, shortSha, showFile, trackedFiles, uncommittedFiles, worktreeChangedFiles, worktreeChangedLines } from './git.ts';
 import { parseTestReport } from './tests.ts';
-import { diffTestFiles } from './testedits.ts';
-import type { TestEdit } from './types.ts';
+import { addedTests, diffTestFiles } from './testedits.ts';
+import type { AddedTest, TestEdit } from './types.ts';
 import { tokenize, stem } from './tokens.ts';
 import { conceptsFor, normalizePhrases } from './glossary.ts';
 import { L, setLabel } from './i18n.ts';
 
 const CODE_EXT = /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
-const TEST_FILE = /(\.test\.|\.spec\.|__tests__\/|\/tests?\/)/;
+// 저장소 맨 위의 test/ · tests/ 도 검사 폴더다 (전에는 앞에 / 가 있어야 해서 test/hooks.ts 의 줄이 근거가 됐다 — 실제 PR 시험 ky, 0.26.0)
+const TEST_FILE = /(\.test\.|\.spec\.|__tests__\/|(^|\/)tests?\/)/;
 
 /**
  * 한 결과(브랜치)를 분석한다.
@@ -60,6 +61,7 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
   const tests: TestCase[] = opts.junit ? parseTestReport(readFileSync(opts.junit, 'utf8')) : [];
   // 이번 변경에서 바뀐 · 지운 검사: 검사 파일을 갈라진 지점의 글과 견준다
   const testEdits: TestEdit[] = [];
+  const added: AddedTest[] = [];
   try {
     const fork = opts.worktree ? from : mergeBase(repo, base, ref);
     const changed = (opts.worktree ? changedPaths(repo, fork) : changedPaths(repo, base, ref))
@@ -72,6 +74,7 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
         .map((f) => ({ file: f, text: read(f) }))
         .filter((x): x is { file: string; text: string } => x.text !== null);
     testEdits.push(...diffTestFiles(changed, others));
+    added.push(...addedTests(changed));
   } catch {
     /* 견줄 수 없으면 검사 변경은 보이지 않는다 */
   }
@@ -97,6 +100,7 @@ export function analyzeResult(opts: { key: 'A' | 'B'; repo: string; base: string
     dyn: analyses.flatMap((a) => a.dyn),
     tests,
     testEdits,
+    ...(added.length ? { addedTests: added } : {}),
     perReq: {},
   };
 }
@@ -121,14 +125,16 @@ export function analyzeFiles(o: {
     });
   resolveRefs(analyses, (f) => o.files[f] ?? null, Object.keys(o.files));
   const testEdits: TestEdit[] = [];
+  const added: AddedTest[] = [];
   if (o.baseFiles) {
     const base = o.baseFiles;
     const tests = [...new Set([...Object.keys(base), ...Object.keys(o.files)])].filter((f) => CODE_EXT.test(f) && TEST_FILE.test(f));
     const changed = tests.filter((f) => base[f] !== o.files[f]).map((f) => ({ file: f, before: base[f] ?? null, after: o.files[f] ?? null }));
     const others = () => tests.filter((f) => base[f] === o.files[f] && o.files[f] !== undefined).map((f) => ({ file: f, text: o.files[f] }));
     testEdits.push(...diffTestFiles(changed, others));
+    added.push(...addedTests(changed));
   }
-  return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], testEdits, perReq: {} };
+  return { key: o.key, label: setLabel(o.key), ref: o.ref, sha: o.sha, files: o.files, analyses, units: analyses.flatMap((a) => a.units), dyn: analyses.flatMap((a) => a.dyn), tests: o.tests ?? [], testEdits, ...(added.length ? { addedTests: added } : {}), perReq: {} };
 }
 
 /** 숫자가 요구사항의 값과 같은가 (단위 환산 포함) */
@@ -824,6 +830,53 @@ const sameTestName = (a: string, b: string) => {
   const [short, long] = x.length < y.length ? [x, y] : [y, x];
   return short.split(' ').length >= 3 && long.endsWith(' ' + short);
 };
+const stemOf = (p: string) => p.replace(/^.*\//, '').replace(/\.(?:test|spec)(?=\.)/, '').replace(/\.[^.]+$/, '');
+const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+const joinPath = (dir: string, spec: string) => {
+  const out: string[] = [];
+  for (const part of [...(dir ? dir.split('/') : []), ...spec.split('/')]) {
+    if (part === '..') out.pop();
+    else if (part && part !== '.') out.push(part);
+  }
+  return out.join('/');
+};
+/** 새 검사의 파일이 근거 파일의 짝인가: 이름이 같고(cookie.test.ts ↔ cookie.ts), 같은 폴더에 있거나 그 파일을 가져온다 */
+function pairsWith(t: AddedTest, evFile: string): boolean {
+  if (stemOf(t.file) !== stemOf(evFile)) return false;
+  if (dirOf(t.file) === dirOf(evFile)) return true;
+  const target = evFile.replace(/\.[^./]+$/, '');
+  return t.imports.some((spec) => {
+    const p = joinPath(dirOf(t.file), spec).replace(/\.(?:[cm]?[jt]sx?)$/, '');
+    return p === target || `${p}/index` === target;
+  });
+}
+/**
+ * 이번 변경이 새로 더한 검사를 잇는다 (이름으로 이어진 검사가 없을 때만).
+ * 근거가 판단하는 조건까지 찾았고(발견) 숫자가 맞게 판정됐을 때, 근거 파일과 짝인 검사 파일에 새로 생긴 검사 가운데
+ * 요구사항의 낱말 하나 이상을 이름에 담은 것. 막는 요구사항이면 거부를 말해야 한다.
+ * (실제 공개 PR 17개에서 근거 줄은 실제로 고친 줄인데 PR 의 새 검사 이름이 문장과 달라 「검사 없음」으로 남은 것이 12줄이었다, 0.26.0)
+ */
+function ownTests(req: Requirement, s: ResultSet, ev: Evidence): TestCase[] {
+  if (ev.status !== '발견' || !ev.unit || !s.addedTests?.length || !s.tests.length) return [];
+  // 반복문의 조건(for … i < len)은 숫자 없는 요구사항을 판단하는 줄이 아니다 (실제 PR 에서 그 안의 Object.hasOwn 대신 i < len 이 근거가 됐다)
+  if (/^\s*(?:for|while|do)\b/.test(ev.unit.text)) return [];
+  const settled = !!ev.boundaries?.length && ev.boundaries.every((b) => b.ok === true);
+  if (req.numbers.length && !settled) return [];
+  const evFile = ev.unit.file;
+  const real = (x: string) => !BROAD.has(x) && !FILLER.has(x);
+  const words = new Set([...req.tokens, ...req.concepts.flat()].filter(real));
+  // 검사 이름이 근거 줄(또는 그 함수 이름)과도 낱말을 나눠야 한다: 근거 줄이 엉뚱하면(반복문의 i < len) 잇지 않는다
+  const evWords = new Set([...(ev.unit.condTokens ?? ev.unit.tokens), ...tokenize(ev.unit.fn ?? '')].filter(real));
+  const picked = s.addedTests.filter((a) => {
+    if (!pairsWith(a, evFile)) return false;
+    if (req.guardCue && !NEGATIVE_TEST.test(a.full)) return false;
+    if (isUniqueReq(req) && !TWICE_TEST.test(a.full)) return false;
+    const names = [...new Set([...tokenize(normalizePhrases(plainNumbers(a.full))), ...conceptsFor(a.full).flat()])];
+    return names.some((x) => words.has(x)) && names.some((x) => evWords.has(x));
+  });
+  return s.tests.filter((t) => picked.some((a) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title)));
+}
+
 /** 바뀐 검사가 이 요구사항의 검사인가: 이어진 실행 결과와 이름이 같거나, 그 이름(지금 · 전 이름 · describe 포함)이 이 요구사항에 이어지면 */
 function editLinked(req: Requirement, e: TestEdit, mapped: TestCase[], ev: Evidence): boolean {
   if (mapped.some((t) => sameTestName(t.name, e.full) || sameTestName(t.name, e.title))) return true;
@@ -841,11 +894,14 @@ export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, b
   for (const s of sets) {
     const names = new Set(s.analyses.flatMap((a) => a.names ?? []));
     for (const r of reqs) {
-      const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
-      const mapped = mapTests(r, s.tests, evidence);
-      const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped), ...(s.tests.length ? {} : { noResults: true }) };
+      // 절차 줄 · 타입 요구사항은 코드 줄과 검사를 잇지 않는다 (이어 두면 「확인됨」이 될 수 있다 — 실제 PR 시험에서 「Add tests …」가 그랬다)
+      const evidence: Evidence = r.unreadable ? { unit: null, score: 0, status: '미발견', why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
+      const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence);
+      const own = byName.length || r.unreadable ? [] : ownTests(r, s, evidence);
+      const mapped = byName.length ? byName : own;
+      const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped), ...(s.tests.length ? {} : { noResults: true }), ...(own.length ? { ownTests: true } : {}) };
       // 이번 변경에서 바뀐 검사 가운데 이 요구사항의 것: 실행 결과와 같은 이름 규칙으로 잇는다 (지운 검사는 실행 결과에 없다)
-      const edits = (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
+      const edits = r.unreadable ? [] : (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
       if (edits.length) rr.edits = edits;
       s.perReq[r.id] = rr;
     }
@@ -888,5 +944,9 @@ function summarize(req: Requirement, sets: ResultSet[]): ReqSummary {
   else if (anyFail) overall = '실패';
   else if (allFound && allPass && !unsettled) overall = '확인됨';
   else overall = '미확인';
+  // 「이번 변경의 새 검사」로만 이어졌으면 숫자가 코드와 맞게 판정된 때만 그 검사 결과를 판정에 쓴다.
+  // (실제 공개 PR 시험 h3: 근거 줄이 엉뚱한데 새 검사가 이어져 「확인됨」이 된 것이 넷 늘었다. 새 검사는 보이되 「미확인」으로 둔다)
+  const ownOnly = evs.some((e) => e.ownTests && !(e.evidence.boundaries?.length && e.evidence.boundaries.every((b) => b.ok === true)));
+  if (ownOnly) overall = relation.kind === '불일치' || boundaryBad ? '다름' : '미확인';
   return { req, relation, overall, notes };
 }

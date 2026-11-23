@@ -120,3 +120,30 @@ test('line notes say "no test" or "test not run", like the card', () => {
   assert.deepEqual(sentencePieces(parseRequirements('- R1: 연속 5회 실패하면 계정을 잠근다')[0], 'ko')[0], '5회째에');
   assert.deepEqual(sentencePieces(parseRequirements('- R1: 연속 5회 실패하면 계정을 잠근다')[0], 'en')[0], 'on the 5th time');
 });
+
+// 실제 공개 PR 에서 근거 줄은 실제로 고친 줄인데 PR 의 새 검사 이름이 문장과 달라 「검사 없음」으로 남았다 (0.26.0).
+// 이번 변경이 새로 더한 검사 가운데, 근거 파일과 짝인 검사 파일의 것이고 요구사항 · 근거 줄과 낱말을 나누면 잇는다.
+test('a change’s own new tests link to its requirement when the names differ', () => {
+  const code = 'export function isValidCode(code: string): boolean {\n  if (code.trim().length < 3) return false;\n  return true;\n}\n';
+  const spec = "import { isValidCode } from './coupon';\nit('rejects a code made of spaces', () => { expect(isValidCode('   ')).toBe(false); });\n";
+  const tests = [{ name: 'rejects a code made of spaces', status: 'pass' as const }];
+  const run = (files: Record<string, string>, baseFiles?: Record<string, string>) =>
+    runCheck({ requirements: '- R1: Reject coupon codes shorter than 3 characters', fileName: '', code: '', tests, lang: 'en', files, baseFiles }).rows[0];
+  // 바뀐 것을 모르면(직접 붙여 넣은 코드) 이름으로만 잇는다
+  assert.equal(run({ 'src/coupon.ts': code, 'src/coupon.test.ts': spec }).overall, '미확인');
+  // 이번 변경이 새로 더한 검사 (짝인 파일)
+  const linked = run({ 'src/coupon.ts': code, 'src/coupon.test.ts': spec }, {});
+  assert.equal(linked.overall, '확인됨');
+  assert.deepEqual(linked.tests, ['✓ rejects a code made of spaces']);
+  // 원래 있던 검사는 「새로 더한 검사」가 아니다
+  assert.equal(run({ 'src/coupon.ts': code, 'src/coupon.test.ts': spec }, { 'src/coupon.test.ts': spec }).overall, '미확인');
+  // 짝이 아닌 파일의 새 검사는 잇지 않는다
+  assert.equal(run({ 'src/coupon.ts': code, 'src/cart.test.ts': spec }, {}).overall, '미확인');
+  // 숫자 없는 요구사항은 새 검사를 잇되 「확인됨」이라 하지 않는다 (근거 줄이 엉뚱해도 검사가 통과하면 「확인됨」이 됐다 — 실제 PR 시험 h3)
+  const add = 'export function addCoupon(code: string): void {\n  if (code.trim() === "") throw new Error("blank");\n  saved.push(code);\n}\nconst saved: string[] = [];\n';
+  const addSpec = "import { addCoupon } from './coupon';\nit('throws for a code of spaces', () => { expect(() => addCoupon('  ')).toThrow(); });\n";
+  const blank = runCheck({ requirements: '- R1: Blank coupon codes are refused', fileName: '', code: '', tests: [{ name: 'throws for a code of spaces', status: 'pass' }], lang: 'en', files: { 'src/coupon.ts': add, 'src/coupon.test.ts': addSpec }, baseFiles: {} }).rows[0];
+  assert.equal(blank.overall, '미확인');
+  assert.deepEqual(blank.tests, ['✓ throws for a code of spaces']);
+  assert.deepEqual(blank.todo.map((t) => t.label), ['linked only by this change’s new tests']);
+});

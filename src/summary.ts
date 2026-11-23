@@ -29,6 +29,7 @@ export function attention(report: Report, s: ReqSummary): Attention {
 /** 「미확인」인 까닭을 종류로 돌려준다. 판단을 막은 것부터 앞에 둔다. 「미확인」이 아니면 빈 목록이다. */
 export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[] {
   if (s.overall !== '미확인') return [];
+  if (s.req.unreadable) return [s.req.unreadable === 'process' ? 'not-behavior' : 'type-level'];
   const out = new Set<UndecidedKind>();
   for (const set of report.sets) {
     const rr = set.perReq[s.req.id];
@@ -42,6 +43,7 @@ export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[]
   }
   // 근거가 아예 없으면 「코드에 숫자 없음」은 같은 말이다
   if (out.has('no-evidence')) out.delete('missing');
+  if (report.sets.some((x) => x.perReq[s.req.id].ownTests)) out.add('own-test');
   const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === '미실행');
   // 이어진 검사는 있는데 결과가 없으면(건너뜀 · 체험 페이지는 돌리지 않음) 「검사 없음」이 아니라 「돌리지 않음」이다
   const notRun = untested && report.sets.every((x) => x.perReq[s.req.id].testStatus !== '미실행' || x.perReq[s.req.id].tests.length > 0);

@@ -46,6 +46,64 @@ test('PR templates: process checklists and "I have …" lines are not requiremen
   assert.deepEqual(extractRequirements('## 체크리스트\n- [ ] 연속 5회 실패하면 계정을 잠근다\n'), ['연속 5회 실패하면 계정을 잠근다']);
 });
 
+// 실제 공개 PR 17개에서 뽑은 82줄의 절반이 요구사항이 아니었다 (0.26.0). 같은 모양을 우리 말로 적었다.
+test('real PR prose: process steps, reasons, quotes and the old bug are not requirements', () => {
+  const pr = [
+    'Fixes #12',
+    '',
+    '- A coupon code of a single space was accepted as a valid code.',
+    '- Reject coupon codes shorter than 3 characters.',
+    '- Add tests for a code with spaces.',
+    '- Apply it to the web and mobile handlers.',
+    '- The new tests check both cases.',
+    '',
+    '### The author should do the following, if applicable',
+    '',
+    '- [x] Add tests',
+    '- [x] Run tests',
+    '- [x] `pnpm run check:fix` to format and lint the code',
+    '- [ ] Add TSDoc/JSDoc to document the code',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(pr), ['Reject coupon codes shorter than 3 characters']);
+  const bullets = [
+    '- This matters for large exports: the body must fit within the limit.',
+    '- The legacy router already returns 404 for those paths.',
+    '- Overriding the method on a POST with a body made the request throw, so the response was 500.',
+    '- #45 covers the case without headers.',
+    '- RFC 9110 allows whitespace before the semicolon.',
+    '- Now the body is dropped for GET and HEAD.',
+    '- The rewritten request should drop the old length, as the form branch already does.',
+    '- A 204 response now becomes a result with only status and headers.',
+    '- Without it, nothing is accepted that was not before.',
+    '- Decode the body so a leading BOM is kept.',
+    '- With overwrite set to false, a header the response already has is kept.',
+    '- Skip users who already voted.',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(bullets), [
+    'Now the body is dropped for GET and HEAD',
+    'The rewritten request should drop the old length, as the form branch already does',
+    'A 204 response now becomes a result with only status and headers',
+    'Without it, nothing is accepted that was not before',
+    'Decode the body so a leading BOM is kept',
+    'With overwrite set to false, a header the response already has is kept',
+    'Skip users who already voted',
+  ]);
+  const issue = [
+    '### What version are you using?',
+    '',
+    '1.2.3',
+    '',
+    '### What is the expected behavior?',
+    '',
+    'A locked account should not log in. According to RFC 6749 section 5.2, the server must answer with 400. The docs state that a 204 with a body becomes a 502.',
+    '',
+    '### What do you see instead?',
+    '',
+    'The login should fail but it returned 200.',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(issue), ['A locked account should not log in']);
+});
+
 const LOGIN = "export function onFailedLogin(user: { failures: number; locked: boolean }) {\n  user.failures += 1;\n  if (user.failures > 5) user.locked = true;\n}\n";
 const LOGIN_TEST = (n: number) => `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { onFailedLogin } from '../src/login.ts';\n\ntest('locks the account after 5 consecutive failures', () => {\n  const u = { failures: 0, locked: false };\n  for (let i = 0; i < ${n}; i++) onFailedLogin(u);\n  assert.equal(u.locked, true);\n});\n`;
 

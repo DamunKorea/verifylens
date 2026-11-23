@@ -1550,6 +1550,28 @@ var init_numeric = __esm({
       stale: {
         label: { ko: "\uAC80\uC0AC \uC624\uB798\uB428", en: "tests out of date" },
         action: { ko: "\uCF54\uB4DC\uB97C \uBC14\uAFBC \uB4A4 \uD14C\uC2A4\uD2B8\uB97C \uB2E4\uC2DC \uB3CC\uB9B0\uB2E4.", en: "Run the tests again after the code change." }
+      },
+      // 실제 공개 PR 17개에서 「Add tests …」 줄이 「확인됨」이 됐다 (0.26.0)
+      "not-behavior": {
+        label: { ko: "\uCF54\uB4DC \uB3D9\uC791\uC774 \uC544\uB2CC \uC904(\uC808\uCC28)", en: "not a code behavior (a process step)" },
+        action: {
+          ko: "\u300C\uD14C\uC2A4\uD2B8 \uCD94\uAC00 \xB7 \uC2E4\uD589 \xB7 \uC11C\uC2DD \uB9DE\uCD94\uAE30\u300D \uAC19\uC740 \uD560 \uC77C\uC740 \uD310\uC815\uD558\uC9C0 \uC54A\uB294\uB2E4. \uC694\uAD6C\uC0AC\uD56D \uBAA9\uB85D\uC5D0\uC11C \uBE7C\uAC70\uB098, \uCF54\uB4DC\uAC00 \uD574\uC57C \uD560 \uB3D9\uC791\uC73C\uB85C \uACE0\uCCD0 \uC801\uB294\uB2E4.",
+          en: "Steps such as adding or running tests or formatting are not judged. Remove the line, or rewrite it as something the code must do."
+        }
+      },
+      "own-test": {
+        label: { ko: "\uC774\uBC88 \uBCC0\uACBD\uC758 \uC0C8 \uAC80\uC0AC\uB85C\uB9CC \uC774\uC5B4\uC9D0", en: "linked only by this change\u2019s new tests" },
+        action: {
+          ko: "\uAC80\uC0AC \uC774\uB984\uC774 \uC694\uAD6C\uC0AC\uD56D\uACFC \uB2EC\uB77C, \uC774\uBC88 \uBCC0\uACBD\uC774 \uB354\uD55C \uAC80\uC0AC(\uADFC\uAC70 \uD30C\uC77C\uACFC \uC9DD\uC778 \uAC80\uC0AC \uD30C\uC77C)\uB85C \uC774\uC5C8\uB2E4. \uADF8 \uAC80\uC0AC\uAC00 \uC774 \uC694\uAD6C\uC0AC\uD56D\uC744 \uD655\uC778\uD558\uB294\uC9C0 \uBCF4\uACE0, \uB9DE\uC73C\uBA74 \uAC80\uC0AC \uC774\uB984\uC5D0 \uC694\uAD6C\uC0AC\uD56D\uC758 \uB0B1\uB9D0\uC744 \uB123\uB294\uB2E4.",
+          en: "The test names differ from the requirement, so the tests this change added (in the test file paired with the evidence) were linked. Check that one of them covers this requirement; if it does, use the requirement\u2019s words in its name."
+        }
+      },
+      "type-level": {
+        label: { ko: "\uD0C0\uC785 \uC694\uAD6C\uC0AC\uD56D \u2014 \uC77D\uC9C0 \uBABB\uD568", en: "type-level requirement, not readable" },
+        action: {
+          ko: "TypeScript \uD0C0\uC785 \uC624\uB958\uB294 \uD0C0\uC785 \uAC80\uC0AC(tsc)\uC640 @ts-expect-error \uD14C\uC2A4\uD2B8\uB85C \uD655\uC778\uD55C\uB2E4. VerifyLens \uB294 \uC2E4\uD589\uB418\uB294 \uC870\uAC74\uB9CC \uC77D\uB294\uB2E4.",
+          en: "Check TypeScript type errors with the type checker (tsc) and @ts-expect-error tests. VerifyLens reads runtime conditions only."
+        }
       }
     };
     undecidedLabel = (k, lang = getLang()) => pick(UNDECIDED[k].label, lang);
@@ -1909,6 +1931,16 @@ function diffTestFiles(changed, others = () => []) {
       if (out.some((e) => e.file === file && e.full === b.full)) continue;
       out.push({ file, line: b.line, title: b.title, full: b.full, kind: "changed", values: via.flatMap((h) => helpers.get(h) ?? []).slice(0, 4), fewerChecks: 0, via: via[0] });
     }
+  }
+  return out;
+}
+function addedTests(changed) {
+  const out = [];
+  for (const c of changed) {
+    if (c.after === null) continue;
+    const had = new Set((c.before === null ? [] : safeBlocks(c.file, c.before)).map((b) => b.full));
+    const imports = [...c.after.matchAll(/(?:\bfrom|\bimport\s*\(|\brequire\s*\()\s*['"](\.{1,2}(?:\/[^'"]*)?)['"]/g)].map((m) => m[1]);
+    for (const b of safeBlocks(c.file, c.after)) if (!b.skipped && !had.has(b.full)) out.push({ file: c.file, full: b.full, title: b.title, imports });
   }
   return out;
 }
@@ -2294,11 +2326,13 @@ function analyzeResult(opts) {
   );
   const tests = opts.junit ? parseTestReport(readFileSync(opts.junit, "utf8")) : [];
   const testEdits = [];
+  const added = [];
   try {
     const fork = opts.worktree ? from : mergeBase(repo, base2, ref);
     const changed = (opts.worktree ? changedPaths(repo, fork) : changedPaths(repo, base2, ref)).filter((p) => CODE_EXT.test(p.path) && TEST_FILE.test(p.path)).map((p) => ({ file: p.path, before: showFile(repo, fork, p.old), after: p.deleted ? null : read(p.path) }));
     const others = () => allFiles.filter((f) => CODE_EXT.test(f) && TEST_FILE.test(f) && !changed.some((c) => c.file === f)).map((f) => ({ file: f, text: read(f) })).filter((x) => x.text !== null);
     testEdits.push(...diffTestFiles(changed, others));
+    added.push(...addedTests(changed));
   } catch {
   }
   let wip;
@@ -2322,6 +2356,7 @@ function analyzeResult(opts) {
     dyn: analyses.flatMap((a) => a.dyn),
     tests,
     testEdits,
+    ...added.length ? { addedTests: added } : {},
     perReq: {}
   };
 }
@@ -2710,6 +2745,33 @@ function mapTests(req, tests, ev) {
   }
   return tests.filter((t) => sameRule(t) || agrees(t) || bySentence(t));
 }
+function pairsWith(t, evFile) {
+  if (stemOf(t.file) !== stemOf(evFile)) return false;
+  if (dirOf(t.file) === dirOf(evFile)) return true;
+  const target = evFile.replace(/\.[^./]+$/, "");
+  return t.imports.some((spec) => {
+    const p = joinPath(dirOf(t.file), spec).replace(/\.(?:[cm]?[jt]sx?)$/, "");
+    return p === target || `${p}/index` === target;
+  });
+}
+function ownTests(req, s, ev) {
+  if (ev.status !== "\uBC1C\uACAC" || !ev.unit || !s.addedTests?.length || !s.tests.length) return [];
+  if (/^\s*(?:for|while|do)\b/.test(ev.unit.text)) return [];
+  const settled = !!ev.boundaries?.length && ev.boundaries.every((b) => b.ok === true);
+  if (req.numbers.length && !settled) return [];
+  const evFile = ev.unit.file;
+  const real = (x) => !BROAD.has(x) && !FILLER.has(x);
+  const words2 = new Set([...req.tokens, ...req.concepts.flat()].filter(real));
+  const evWords = new Set([...ev.unit.condTokens ?? ev.unit.tokens, ...tokenize(ev.unit.fn ?? "")].filter(real));
+  const picked = s.addedTests.filter((a) => {
+    if (!pairsWith(a, evFile)) return false;
+    if (req.guardCue && !NEGATIVE_TEST.test(a.full)) return false;
+    if (isUniqueReq(req) && !TWICE_TEST.test(a.full)) return false;
+    const names = [.../* @__PURE__ */ new Set([...tokenize(normalizePhrases(plainNumbers(a.full))), ...conceptsFor(a.full).flat()])];
+    return names.some((x) => words2.has(x)) && names.some((x) => evWords.has(x));
+  });
+  return s.tests.filter((t) => picked.some((a) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title)));
+}
 function editLinked(req, e, mapped, ev) {
   if (mapped.some((t) => sameTestName(t.name, e.full) || sameTestName(t.name, e.title))) return true;
   const names = [e.full, e.title, ...e.was ? [e.was] : []];
@@ -2724,10 +2786,12 @@ function evaluate(sets, reqs, repo, base2) {
   for (const s of sets) {
     const names = new Set(s.analyses.flatMap((a) => a.names ?? []));
     for (const r of reqs) {
-      const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
-      const mapped = mapTests(r, s.tests, evidence);
-      const rr = { evidence, tests: mapped, testStatus: testStatus(mapped), ...s.tests.length ? {} : { noResults: true } };
-      const edits = (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
+      const evidence = r.unreadable ? { unit: null, score: 0, status: "\uBBF8\uBC1C\uACAC", why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
+      const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence);
+      const own = byName.length || r.unreadable ? [] : ownTests(r, s, evidence);
+      const mapped = byName.length ? byName : own;
+      const rr = { evidence, tests: mapped, testStatus: testStatus(mapped), ...s.tests.length ? {} : { noResults: true }, ...own.length ? { ownTests: true } : {} };
+      const edits = r.unreadable ? [] : (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
       if (edits.length) rr.edits = edits;
       s.perReq[r.id] = rr;
     }
@@ -2768,9 +2832,11 @@ function summarize(req, sets) {
   else if (anyFail) overall = "\uC2E4\uD328";
   else if (allFound && allPass && !unsettled) overall = "\uD655\uC778\uB428";
   else overall = "\uBBF8\uD655\uC778";
+  const ownOnly = evs.some((e) => e.ownTests && !(e.evidence.boundaries?.length && e.evidence.boundaries.every((b) => b.ok === true)));
+  if (ownOnly) overall = relation.kind === "\uBD88\uC77C\uCE58" || boundaryBad ? "\uB2E4\uB984" : "\uBBF8\uD655\uC778";
   return { req, relation, overall, notes };
 }
-var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, ACTION_REQ, ACTION_VERBS, NOT_STATE, STATE_LEAD, STATE_WHO, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName;
+var CODE_EXT, TEST_FILE, litMatches, leftHits, COUNTED, COUNT_LEFT, PERIOD_UNITS, fitsUnit, numberPart, BODY_WEIGHT, SAME_THING, sameThing, SOURCE_RANK, GENERIC, MEASURE, FILLER, UNIQUE, PER_PERIOD, PERIOD_NAME, TIME_CMP, SAME_AGAIN, FIXED_REQ, FIXED_MONEY, TWICE_TEST, isUniqueReq, DUP_GUARD, ERROR_TEXT, STRONG_DUP, STATE_LIT, IRREGULAR, ACTION_REQ, ACTION_VERBS, NOT_STATE, STATE_LEAD, STATE_WHO, subjectOf, AGE, WEAK_NAME, TIME_UNIT, TIME_NAME, TIME_WORDS, QUALIFIER, nameCore, sameName, conflictSay, severity, ORD_EN, ORD_KO, NEGATIVE_TEST, plainNumbers, WORD_NUMBER, ORDINAL, namedNumbers, LIMIT_TEST, BROAD, sameTestName, stemOf, dirOf, joinPath;
 var init_engine = __esm({
   "src/engine.ts"() {
     init_analyze();
@@ -2782,7 +2848,7 @@ var init_engine = __esm({
     init_glossary();
     init_i18n();
     CODE_EXT = /\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/;
-    TEST_FILE = /(\.test\.|\.spec\.|__tests__\/|\/tests?\/)/;
+    TEST_FILE = /(\.test\.|\.spec\.|__tests__\/|(^|\/)tests?\/)/;
     litMatches = (req, lit) => lit !== void 0 && (req.numbers.some((n) => Math.abs(n - lit) <= 1) || req.constraints.some((c) => matchScale(c, lit) !== null));
     leftHits = (req, left) => {
       const set = new Set(req.tokens);
@@ -2866,10 +2932,33 @@ var init_engine = __esm({
       const [short, long] = x.length < y.length ? [x, y] : [y, x];
       return short.split(" ").length >= 3 && long.endsWith(" " + short);
     };
+    stemOf = (p) => p.replace(/^.*\//, "").replace(/\.(?:test|spec)(?=\.)/, "").replace(/\.[^.]+$/, "");
+    dirOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+    joinPath = (dir, spec) => {
+      const out = [];
+      for (const part of [...dir ? dir.split("/") : [], ...spec.split("/")]) {
+        if (part === "..") out.pop();
+        else if (part && part !== ".") out.push(part);
+      }
+      return out.join("/");
+    };
   }
 });
 
 // src/requirements.ts
+function oldBehavior(t) {
+  if (DIRECTIVE.test(t)) return false;
+  if (/^(?:예전|이전|기존|원래)(?:에는|엔)\s/.test(t)) return true;
+  const lead = (m) => {
+    if (!m) return false;
+    const before = t.slice(0, m.index);
+    return before.trim().length > 0 && !/[,(—–→:;]/.test(before) && before.split(/\s+/).length <= 14 && !BEFORE_PAST.test(before) && !BEFORE_GET.test(before);
+  };
+  return lead(ALREADY.exec(t)) || lead(PAST.exec(t));
+}
+function notRequirement(t) {
+  return PROCESS_LINE.test(t) || CITE.test(t) || oldBehavior(t);
+}
 function parseRequirements(md) {
   const reqs = [];
   for (const raw of md.split("\n")) {
@@ -2887,7 +2976,8 @@ function parseRequirements(md) {
     const statuses = [...text.matchAll(HTTP_STATUS)].map((x) => x[1] ?? x[2]);
     for (const s of statuses) if (!concepts.some((g) => g.includes(s))) concepts.push([s]);
     const tokens = auto ? concepts.flat() : [...kwTokens, ...statuses];
-    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) || MISSING_CUE.test(text) });
+    const unreadable = PROCESS_LINE.test(text) ? "process" : TYPE_LEVEL.test(text) ? "type" : void 0;
+    reqs.push({ id: m[1].toUpperCase(), text, keywords, auto, concepts, tokens: [...new Set(tokens)], numbers, guardCue: GUARD_CUE.test(text), constraints, only: ONLY_CUE.test(text), needsCheck: GUARD_CUE.test(text) || CHECK_CUE.test(text) || ONLY_CUE.test(text) || MISSING_CUE.test(text), ...unreadable ? { unreadable } : {} });
   }
   return reqs;
 }
@@ -2906,18 +2996,19 @@ function extractRequirements(md, max = 12) {
     if (head) {
       const title = (head[2] ?? head[1]).trim();
       section = SECTION.test(title);
-      process2 = !section && PROCESS_SECTION.test(title);
+      const markedHead = !line.endsWith(":") || /^(#|\*\*)/.test(line);
+      process2 = !section && (PROCESS_SECTION.test(title) || markedHead && BACKGROUND_SECTION.test(title));
       continue;
     }
     if (process2) continue;
     const item = line.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/);
     if (item) {
       const t = clean(item[1]);
-      if (AUTHOR_ITEM.test(t)) continue;
+      if (AUTHOR_ITEM.test(t) || notRequirement(t) || /[:：]$/.test(t) && t.split(/\s+/).length <= 8) continue;
       (section ? inSection : bullets).push(t);
     } else if (section || MODAL.test(line)) {
       for (const part of line.split(/(?<=[.。!?])\s+/)) {
-        if (/[:：]$/.test(part.trim()) || AUTHOR_ITEM.test(part.trim())) continue;
+        if (/[:：]$/.test(part.trim()) || AUTHOR_ITEM.test(part.trim()) || notRequirement(clean(part))) continue;
         if (section) inSection.push(clean(part));
         else if (MODAL.test(part)) sentences.push(clean(part));
       }
@@ -2944,7 +3035,7 @@ function draftRequirements(cands, source = "", start = 1) {
 function extractFromPrBody(md) {
   return draftRequirements(extractRequirements(md));
 }
-var ONLY_CUE, GUARD_CUE, MISSING_CUE, HTTP_STATUS, CHECK_CUE, SECTION, MODAL, PROCESS_SECTION, AUTHOR_ITEM;
+var ONLY_CUE, GUARD_CUE, MISSING_CUE, HTTP_STATUS, CHECK_CUE, PROCESS_LINE, TYPE_LEVEL, CITE, DIRECTIVE, PAST, ALREADY, BEFORE_PAST, BEFORE_GET, SECTION, MODAL, PROCESS_SECTION, BACKGROUND_SECTION, AUTHOR_ITEM;
 var init_requirements = __esm({
   "src/requirements.ts"() {
     init_tokens();
@@ -2956,9 +3047,18 @@ var init_requirements = __esm({
     MISSING_CUE = /\b(?:does not|doesn't|do not|don't)\s+exist|\bnot found\b|\bis missing\b|\bno such\b|없으면|존재하지\s*않|찾을\s*수\s*없/i;
     HTTP_STATUS = /\b(?:return|returns|respond|responds|response|status|http|with)\s+(?:an?\s+|the\s+|http\s+)?([1-5]\d\d)\b|\b([1-5]\d\d)\s+(?:error|status|response|not found|forbidden|unauthori[sz]ed|conflict)\b/gi;
     CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있|\bonce\s+(?:per|a|each|for)\b|\bonly once\b|\bonly one\b|한\s*번(?:씩)?만|하나만|중복/i;
+    PROCESS_LINE = /^(?:(?:add|write|update|run|fix|ran|added|wrote|updated|include|included)\s+(?:(?:the|a|an|new|more|unit|e2e|integration|regression|missing|some)\s+){0,3}tests?\b|(?:the\s+)?(?:new|added|updated|existing)\s+tests?\b|`?(?:npm|pnpm|yarn|bun|npx|deno)\s|(?:add|update|write)\s+(?:the\s+)?(?:ts|js)?doc|(?:update|add)\s+(?:the\s+)?(?:docs?|documentation|readme|changelog|changeset)\b|(?:apply|do)\s+(?:it|this|that|the\s+same(?:\s+\w+)?)\s+(?:to|in|for)\b|테스트\s*(?:를|을)?\s*(?:추가|작성|실행|돌|보강)|문서\s*(?:를|을)?\s*(?:추가|갱신|업데이트))|\bto\s+(?:format|lint)\b/i;
+    TYPE_LEVEL = /\btype\s+errors?\b|\btype[-\s]?checks?\b|\bcompile[-\s]?time\b|\b(?:typescript|ts)\s+(?:errors?|types?)\b|타입\s*(?:오류|에러|검사)|컴파일\s*(?:오류|에러)/i;
+    CITE = /^(?:according\s+to|per\s+(?:rfc|the\s+spec)|rfc[\s-]?\d|this\s+(?:matters|is\s+(?:important|needed|why|because)|happens|breaks|causes)\b|#\d+\s|(?:actual|current)\s+(?:behaviou?r|result|output)?\s*(?:vs\.?|:))|\b(?:documents?|states?|specifies)\s+that\b|.{0,30}에\s*따르면/i;
+    DIRECTIVE = /\b(?:should|must|shall|will|now|no\s+longer|needs?\s+to|has\s+to|have\s+to)\b|해야|여야|되어야|하도록|않게|않아야/i;
+    PAST = /\b(?:was|were|had|did|kept|made|returned|threw|caused|broke|failed|crashed|ignored|accepted|skipped|turned|became|got|leaked|lost|stripped|dropped|showed|let)\b/i;
+    ALREADY = /\balready\s+(?:does|do|did|is|are|has|have|returns?|handles?|works?|exists?|supports?)\b/i;
+    BEFORE_PAST = /\b(?:is|are|be|been|being|does|do|can|cannot|that|which|who|when|if|unless|so|after|before|once|until|while)\b/i;
+    BEFORE_GET = /\bgets?\b/;
     SECTION = /(acceptance\s*criteria|requirements?|definition\s*of\s*done|expected\s*behaviou?r|요구\s*사항|인수\s*조건|완료\s*조건|수용\s*기준|기대\s*동작|해야\s*할\s*일|체크\s*리스트)/i;
     MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|된다|must|should|shall|when |if |needs? to|able to|cannot|can't)/i;
-    PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review/i;
+    PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review|\bauthor\s+should\b|should\s+do\s+the\s+following|\bif\s+applicable\b/i;
+    BACKGROUND_SECTION = /actual\s+(?:behaviou?r|result)|current\s+behaviou?r|what\s+do\s+you\s+see|what\s+happens|steps?\s+(?:to\s+)?reproduc|reproduc|use\s+case|motivation|^background$|^context$|environment|versions?\b|platform|runtime|root\s+cause|investigation|^logs?$|재현|현재\s*동작|^배경$|환경/i;
     AUTHOR_ITEM = /^(?:I(?:'ve|'m|'d)\b|I\s+(?:have|has|am|did|added|ran|tested|updated|created|confirm(?:ed)?|agree|read|followed|checked|made|wrote|signed|performed|reviewed|verified|included|linked)\b|we(?:'ve|\s+have)\s|저는\s|제가\s)/i;
   }
 });
@@ -3126,6 +3226,7 @@ function attention(report, s) {
 }
 function undecidedReasons(report, s) {
   if (s.overall !== "\uBBF8\uD655\uC778") return [];
+  if (s.req.unreadable) return [s.req.unreadable === "process" ? "not-behavior" : "type-level"];
   const out = /* @__PURE__ */ new Set();
   for (const set of report.sets) {
     const rr = set.perReq[s.req.id];
@@ -3138,6 +3239,7 @@ function undecidedReasons(report, s) {
     if (rr.evidence.caveat) out.add("extra-condition");
   }
   if (out.has("no-evidence")) out.delete("missing");
+  if (report.sets.some((x) => x.perReq[s.req.id].ownTests)) out.add("own-test");
   const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === "\uBBF8\uC2E4\uD589");
   const notRun = untested && report.sets.every((x) => x.perReq[s.req.id].testStatus !== "\uBBF8\uC2E4\uD589" || x.perReq[s.req.id].tests.length > 0);
   const noResults = report.sets.every((x) => x.tests.length === 0);

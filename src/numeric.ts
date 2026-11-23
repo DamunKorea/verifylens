@@ -544,7 +544,7 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
  * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
  * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
  */
-export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'state-unread' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'not-run' | 'no-results' | 'stale';
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'state-unread' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'not-run' | 'no-results' | 'stale' | 'not-behavior' | 'type-level' | 'own-test';
 const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   wording: {
     label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
@@ -621,6 +621,28 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   stale: {
     label: { ko: '검사 오래됨', en: 'tests out of date' },
     action: { ko: '코드를 바꾼 뒤 테스트를 다시 돌린다.', en: 'Run the tests again after the code change.' },
+  },
+  // 실제 공개 PR 17개에서 「Add tests …」 줄이 「확인됨」이 됐다 (0.26.0)
+  'not-behavior': {
+    label: { ko: '코드 동작이 아닌 줄(절차)', en: 'not a code behavior (a process step)' },
+    action: {
+      ko: '「테스트 추가 · 실행 · 서식 맞추기」 같은 할 일은 판정하지 않는다. 요구사항 목록에서 빼거나, 코드가 해야 할 동작으로 고쳐 적는다.',
+      en: 'Steps such as adding or running tests or formatting are not judged. Remove the line, or rewrite it as something the code must do.',
+    },
+  },
+  'own-test': {
+    label: { ko: '이번 변경의 새 검사로만 이어짐', en: 'linked only by this change’s new tests' },
+    action: {
+      ko: '검사 이름이 요구사항과 달라, 이번 변경이 더한 검사(근거 파일과 짝인 검사 파일)로 이었다. 그 검사가 이 요구사항을 확인하는지 보고, 맞으면 검사 이름에 요구사항의 낱말을 넣는다.',
+      en: 'The test names differ from the requirement, so the tests this change added (in the test file paired with the evidence) were linked. Check that one of them covers this requirement; if it does, use the requirement’s words in its name.',
+    },
+  },
+  'type-level': {
+    label: { ko: '타입 요구사항 — 읽지 못함', en: 'type-level requirement, not readable' },
+    action: {
+      ko: 'TypeScript 타입 오류는 타입 검사(tsc)와 @ts-expect-error 테스트로 확인한다. VerifyLens 는 실행되는 조건만 읽는다.',
+      en: 'Check TypeScript type errors with the type checker (tsc) and @ts-expect-error tests. VerifyLens reads runtime conditions only.',
+    },
   },
 };
 export const undecidedLabel = (k: UndecidedKind, lang = getLang()) => pick(UNDECIDED[k].label, lang);

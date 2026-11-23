@@ -2,7 +2,7 @@
 // 에이전트가 실패하던 검사의 숫자를 바꾸거나(5 → 6), 확인 줄을 지우거나, 검사를 지우거나 건너뛰게 해서
 // 「모두 통과」를 만든 경우를 근거 옆에 보이려고 쓴다. 판정 낱말은 바꾸지 않는다.
 import ts from 'typescript';
-import type { TestEdit } from './types.ts';
+import type { AddedTest, TestEdit } from './types.ts';
 
 type Block = { title: string; full: string; line: number; text: string; skipped: boolean };
 
@@ -263,6 +263,21 @@ export function diffTestFiles(changed: { file: string; before: string | null; af
       if (out.some((e) => e.file === file && e.full === b.full)) continue;
       out.push({ file, line: b.line, title: b.title, full: b.full, kind: 'changed', values: via.flatMap((h) => helpers.get(h) ?? []).slice(0, 4), fewerChecks: 0, via: via[0] });
     }
+  }
+  return out;
+}
+
+/**
+ * 이번 변경에서 새로 더한 검사: 기준 커밋의 같은 파일에 같은 이름(describe 포함)이 없는 것. 건너뛴 검사는 뺀다.
+ * 새 검사 파일이면 그 안의 검사 모두. 판정에서 「이 PR 이 더한 검사」를 그 PR 의 요구사항에 이을 때 쓴다 (0.26.0, 실제 PR 시험).
+ */
+export function addedTests(changed: { file: string; before: string | null; after: string | null }[]): AddedTest[] {
+  const out: AddedTest[] = [];
+  for (const c of changed) {
+    if (c.after === null) continue;
+    const had = new Set((c.before === null ? [] : safeBlocks(c.file, c.before)).map((b) => b.full));
+    const imports = [...c.after.matchAll(/(?:\bfrom|\bimport\s*\(|\brequire\s*\()\s*['"](\.{1,2}(?:\/[^'"]*)?)['"]/g)].map((m) => m[1]);
+    for (const b of safeBlocks(c.file, c.after)) if (!b.skipped && !had.has(b.full)) out.push({ file: c.file, full: b.full, title: b.title, imports });
   }
   return out;
 }
