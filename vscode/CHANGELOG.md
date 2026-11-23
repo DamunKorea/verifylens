@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.25.2
+
+A fix to 0.25.1's wording: it said "no test" where tests exist. Our JetBrains build found it, where the notes are seen most, after every save. No verdict changes.
+
+- **"Tests out of date" and "no test results" are not "no test".** 0.25.1 said "no test" whenever no test was linked. That also covered two other cases:
+  - test results older than the code, which are set aside;
+  - no test results at all, for example no JUnit report was produced.
+
+  In both cases the tests may well exist. The note under the code line, the hover, the Problems list, the report and the reasons now say:
+  - "tests out of date" when the results were older than the code;
+  - "no test results" when there are no results at all, as on the browser page with no tests typed;
+  - "no test" only when results exist but none is linked to the requirement;
+  - "test not run" when a test is linked but has no result.
+- The evidence chain and the pill next to the attempt numbers use the same words.
+- A smoke test had been checking an old word against an old build. It now checks the message itself and runs against a fresh build.
+
 ## 0.25.1
 
 The same words for tests everywhere. Our own promotion session found this while recording a GIF on the browser page. No verdict changes.

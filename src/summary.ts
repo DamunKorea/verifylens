@@ -19,7 +19,7 @@ export function counts(report: Report) {
  * tests = 미확인이지만 검사가 없거나 오래된 것뿐, ok = 확인됨.
  */
 export type Attention = 'fix' | 'look' | 'tests' | 'ok';
-const TEST_ONLY: UndecidedKind[] = ['no-test', 'not-run', 'stale'];
+const TEST_ONLY: UndecidedKind[] = ['no-test', 'not-run', 'no-results', 'stale'];
 export function attention(report: Report, s: ReqSummary): Attention {
   if (s.overall === '다름' || s.overall === '실패') return 'fix';
   if (s.overall === '확인됨') return 'ok';
@@ -45,7 +45,9 @@ export function undecidedReasons(report: Report, s: ReqSummary): UndecidedKind[]
   const untested = report.sets.some((x) => x.perReq[s.req.id].testStatus === '미실행');
   // 이어진 검사는 있는데 결과가 없으면(건너뜀 · 체험 페이지는 돌리지 않음) 「검사 없음」이 아니라 「돌리지 않음」이다
   const notRun = untested && report.sets.every((x) => x.perReq[s.req.id].testStatus !== '미실행' || x.perReq[s.req.id].tests.length > 0);
-  const testKind: UndecidedKind = notRun ? 'not-run' : 'no-test';
+  // 테스트 결과가 하나도 없으면 「검사 없음」이 아니라 「검사 결과 없음」 (검사 파일은 있어도 리포트를 안 만들었을 수 있다)
+  const noResults = report.sets.every((x) => x.tests.length === 0);
+  const testKind: UndecidedKind = notRun ? 'not-run' : noResults ? 'no-results' : 'no-test';
   if (!out.size) out.add(report.testsStale ? 'stale' : testKind);
   else if (untested) out.add(testKind);
   return [...out];
@@ -101,7 +103,7 @@ export function renderSummaryMd(report: Report): string {
       parts.push(
         rr.testStatus === '통과' && b?.ok === false
           ? L(`검사는 통과 (검사가 요구사항과 같은 ${checkWord(b, 'ko')}을 확인하는지 볼 것)`.replace('횟수을', '횟수를'), `but the test passes (check that the test exercises the same ${checkWord(b, 'en')} as the requirement)`)
-          : testPhraseFor(rr),
+          : testPhraseFor(rr, report.testsStale),
       );
       const fail = rr.tests.find((t) => t.status === 'fail');
       if (fail) parts.push(`${L('실패 이유', 'failure')}: ${fail.message || fail.name}`);
@@ -118,7 +120,7 @@ export function renderSummaryMd(report: Report): string {
     const missing = report.sets.filter((x) => x.perReq[s.req.id].testStatus === '미실행' || x.perReq[s.req.id].evidence.status === '미발견');
     if (missing.length) {
       any = true;
-      out.push(`- ${s.req.id}: ${missing.map((x) => `${x.label} (${x.perReq[s.req.id].evidence.status === '미발견' ? L('구현 근거 없음', 'no evidence found') : testPhraseFor(x.perReq[s.req.id])})`).join(', ')}`);
+      out.push(`- ${s.req.id}: ${missing.map((x) => `${x.label} (${x.perReq[s.req.id].evidence.status === '미발견' ? L('구현 근거 없음', 'no evidence found') : testPhraseFor(x.perReq[s.req.id], report.testsStale)})`).join(', ')}`);
     }
   }
   for (const set of report.sets) {

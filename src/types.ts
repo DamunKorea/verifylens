@@ -193,7 +193,15 @@ export type TestEdit = {
   /** 검사 자체가 아니라 그것이 가져오는 도우미 · 준비 파일이 바뀐 경우 그 파일 */
   via?: string;
 };
-export type ReqResult = { evidence: Evidence; tests: TestCase[]; testStatus: TestStatus; /** 이 요구사항의 검사 가운데 이번 변경에서 바뀐 것 */ edits?: TestEdit[] };
+export type ReqResult = {
+  evidence: Evidence;
+  tests: TestCase[];
+  testStatus: TestStatus;
+  /** 이 요구사항의 검사 가운데 이번 변경에서 바뀐 것 */
+  edits?: TestEdit[];
+  /** 이 결과에는 테스트 결과가 하나도 없다 (리포트 파일이 없거나, 오래되어 버렸거나, 체험 페이지에 적지 않음). 「검사 없음」과 다르다 */
+  noResults?: boolean;
+};
 
 export type ResultSet = {
   key: 'A' | 'B';

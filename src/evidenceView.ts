@@ -31,7 +31,9 @@ export function attemptComparison(required: number, at: number, label: string, t
   const actual = runStatus && { 통과: 'ok', 실패: 'diff', 미실행: 'miss' }[runStatus] as 'ok' | 'diff' | 'miss' | undefined;
   // 이어진 검사가 있지만 결과가 없으면(건너뜀 · 체험 페이지) 「검사 없음」이 아니라 「안 돌림」 (근거 사슬의 검사 칸과 같은 말)
   const notRun = !!test && /^(?:not run|돌리지 않음) · /.test(test.text);
-  const miss = notRun ? (ko ? '검사 안 돌림' : 'Test not run') : ko ? '연결된 검사 없음' : 'No linked test';
+  // 결과가 오래되었거나 하나도 없으면 그 말을 그대로 (근거 사슬 검사 칸과 같은 말)
+  const said = test && /^(?:tests out of date|검사 오래됨|no test results|검사 결과 없음)$/.test(test.text) ? test.text : null;
+  const miss = notRun ? (ko ? '검사 안 돌림' : 'Test not run') : said ? said.charAt(0).toUpperCase() + said.slice(1) : ko ? '연결된 검사 없음' : 'No linked test';
   const status = test && { ok: ko ? '검사 통과' : 'Test passed', diff: ko ? '검사 실패' : 'Test failed', miss, plain: '' }[actual ?? test.tone];
   const tone = test ? stepTone(test) : 'miss';
   return `<span class="vl-compare">${stat(ko ? '요구사항' : 'Required', required, 'plain')}<span class="vl-link" aria-hidden="true">→</span>${stat(label, at, at === required ? 'ok' : 'diff')}${status ? `<strong class="vl-test vl-${tone}">${symbols[tone]}${status}</strong>` : ''}</span>`;

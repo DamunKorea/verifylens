@@ -544,7 +544,7 @@ export function boundaryShort(b: Boundary | undefined, lang = getLang()): string
  * 「미확인」의 종류. 쓰는 사람이 왜 판단하지 못했는지와 무엇을 하면 되는지 바로 보이게 한다.
  * 숫자 조건에서 나오는 것(wording ~ conflict)과 요구사항 전체에서 나오는 것(no-evidence ~ stale)이 있다.
  */
-export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'state-unread' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'not-run' | 'stale';
+export type UndecidedKind = 'wording' | 'edge' | 'path' | 'unresolved' | 'missing' | 'conflict' | 'no-check' | 'state-unread' | 'no-evidence' | 'extra-condition' | 'unchecked-input' | 'no-window' | 'no-test' | 'not-run' | 'no-results' | 'stale';
 const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
   wording: {
     label: { ko: '문장에 방향 없음', en: 'wording has no direction' },
@@ -609,6 +609,13 @@ const UNDECIDED: Record<UndecidedKind, { label: Text; action: Text }> = {
     action: {
       ko: '이어진 테스트는 있지만 결과가 없다(건너뜀, 또는 체험 페이지라 돌리지 않음). 그 테스트를 돌려 결과를 넣는다. 체험 페이지에서는 돌려서 통과한 테스트를 3번 칸에서 「통과」로 바꾼다.',
       en: 'A linked test exists but has no result (skipped, or not run on the browser page). Run it and use the result. On the browser page, set the tests that passed for you to “passed” under 3.',
+    },
+  },
+  'no-results': {
+    label: { ko: '검사 결과 없음', en: 'no test results' },
+    action: {
+      ko: '테스트를 돌려 결과(JUnit XML)를 넣는다. 체험 페이지에서는 돌린 테스트의 이름과 결과를 3번 칸에 적는다.',
+      en: 'Run the tests and give VerifyLens the results (JUnit XML). On the browser page, type the tests you ran under 3.',
     },
   },
   stale: {

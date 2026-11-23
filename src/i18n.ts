@@ -45,11 +45,21 @@ export const testPhrase = (s: string): string => (cur === 'en' ? (s === '통과'
  * 검사 결과를 짧게, 이어진 검사가 있는지까지: 결과가 없으면 이어진 검사가 있을 때 「검사 안 돌림」, 없을 때 「검사 없음」.
  * 0.23.0 에서 미확인 이유를 둘로 나눴는데 코드 줄 표시 · 리포트는 「검사 미실행」 하나로 남아 있었다 (국내 홍보 세션이 체험 페이지에서 찾음, 11/23)
  */
-export const testPhraseFor = (rr: { testStatus: string; tests: readonly unknown[] }): string =>
-  rr.testStatus === '미실행' ? (rr.tests.length ? L('검사 안 돌림', 'test not run') : L('검사 없음', 'no test')) : testPhrase(rr.testStatus);
-/** 표 칸에 쓰는 한 낱말 (통과 · 실패 · 안 돌림 · 없음) */
-export const testCell = (rr: { testStatus: string; tests: readonly unknown[] }): string =>
-  rr.testStatus === '미실행' ? (rr.tests.length ? L('안 돌림', 'not run') : L('없음', 'none')) : wTest(rr.testStatus);
+type TestView = { testStatus: string; tests: readonly unknown[]; noResults?: boolean };
+/** 결과가 없는 까닭: 이어졌지만 안 돌림 · 결과가 오래되어 버림 · 결과가 하나도 없음 · 이어진 검사 없음 (0.25.2: 오래되거나 없는 결과를 「검사 없음」이라 하던 것 — JetBrains 세션이 찾음) */
+const missingTest = (rr: TestView, stale?: boolean): 'not-run' | 'stale' | 'no-results' | 'no-test' =>
+  rr.tests.length ? 'not-run' : stale ? 'stale' : rr.noResults ? 'no-results' : 'no-test';
+export const testPhraseFor = (rr: TestView, stale?: boolean): string => {
+  if (rr.testStatus !== '미실행') return testPhrase(rr.testStatus);
+  const k = missingTest(rr, stale);
+  return k === 'not-run' ? L('검사 안 돌림', 'test not run') : k === 'stale' ? L('검사 오래됨', 'tests out of date') : k === 'no-results' ? L('검사 결과 없음', 'no test results') : L('검사 없음', 'no test');
+};
+/** 표 칸에 쓰는 한 낱말 (통과 · 실패 · 안 돌림 · 오래됨 · 결과 없음 · 없음) */
+export const testCell = (rr: TestView, stale?: boolean): string => {
+  if (rr.testStatus !== '미실행') return wTest(rr.testStatus);
+  const k = missingTest(rr, stale);
+  return k === 'not-run' ? L('안 돌림', 'not run') : k === 'stale' ? L('오래됨', 'out of date') : k === 'no-results' ? L('결과 없음', 'no results') : L('없음', 'none');
+};
 
 /** 결과 이름: 결과 A / Result A */
 export const setLabel = (key: string): string => (cur === 'en' ? `Result ${key}` : `결과 ${key}`);

@@ -116,7 +116,7 @@ export function runRepo(p: RepoParams): Run {
     );
   }
   if (stale) notes.push(L('테스트 결과가 코드보다 오래되어 쓰지 않았습니다. 테스트를 다시 실행하면 반영됩니다.', 'The test results are older than the code and were not used. Run the tests again to include them.'));
-  else if (!junitA && !p.junitB) notes.push(L('테스트 결과가 없어 검사는 모두 「검사 없음」으로 표시됩니다. 테스트를 실행하면 채워집니다.', 'There are no test results, so every requirement shows "no test". Run the tests to fill them in.'));
+  else if (!junitA && !p.junitB) notes.push(L('테스트 결과가 없어 검사는 모두 「검사 결과 없음」으로 표시됩니다. 테스트를 실행하면 채워집니다.', 'There are no test results, so every requirement shows "no test results". Run the tests to fill them in.'));
   const report = evaluate(sets, reqs, p.repo, p.base);
   report.testsStale = stale;
   return { kind: 'repo', repo: p.repo, report, workingRef: p.workingRef, notes };
@@ -274,7 +274,7 @@ export function verifiedLine(report: Report, lang: 'ko' | 'en' = getLang()): str
  */
 export const passButOff = (rr: ReqResult): boolean => rr.testStatus === '통과' && rr.evidence.boundary?.ok === false;
 /** 검사 결과를 짧게. 위 경우는 「검사는 통과」라고 써서 어긋남이 드러나게 한다. */
-const testWord = (rr: ReqResult): string => (passButOff(rr) ? L('검사는 통과', 'but the test passes') : testPhraseFor(rr));
+const testWord = (rr: ReqResult, stale?: boolean): string => (passButOff(rr) ? L('검사는 통과', 'but the test passes') : testPhraseFor(rr, stale));
 /** 요구사항 하나에서 위 경우에 해당하는 결과들 */
 export function passButOffSets(report: Report, reqId: string): ResultSet[] {
   return report.sets.filter((x) => x.perReq[reqId] && passButOff(x.perReq[reqId]));
@@ -332,16 +332,20 @@ export function summaryLine(report: Report, s: ReqSummary): string {
     const reasons = undecidedReasons(report, s);
     // 이어진 검사는 있는데 결과가 없음(건너뜀 · 체험 페이지) — 「연결된 검사 없음」과 다르다
     const notRun = reasons.includes('not-run');
-    const why = reasons.filter((k) => k !== 'no-test' && k !== 'not-run' && k !== 'stale');
+    const noResults = reasons.includes('no-results');
+    const why = reasons.filter((k) => k !== 'no-test' && k !== 'not-run' && k !== 'no-results' && k !== 'stale');
     if (why.length) {
       const what = why.map((k) => undecidedLabel(k)).join(' · ');
       const passed = report.sets.every((x) => x.perReq[id].testStatus === '통과');
       const untested = report.sets.some((x) => x.perReq[id].testStatus === '미실행');
       if (passed) return L(`검사는 통과했지만 ${what}`, `the test passes, but ${what}`);
-      return untested ? L(`${what} · ${notRun ? '검사를 돌리지 않음' : '연결된 검사 없음'}`, `${what} · ${notRun ? 'test not run' : 'no linked test'}`) : what;
+      return untested
+        ? L(`${what} · ${notRun ? '검사를 돌리지 않음' : noResults ? '검사 결과 없음' : '연결된 검사 없음'}`, `${what} · ${notRun ? 'test not run' : noResults ? 'no test results' : 'no linked test'}`)
+        : what;
     }
     if (report.testsStale) return L('테스트 결과가 코드보다 오래되어 쓰지 않음 — 테스트를 다시 실행해야 함', 'test results are older than the code and were not used — run the tests again');
     if (notRun) return L('이어진 검사를 돌리지 않아 동작을 확인하지 못함', 'the linked test was not run, so the behavior is not confirmed');
+    if (noResults) return L('테스트 결과가 없어 동작을 확인하지 못함', 'no test results, so the behavior is not confirmed');
     return L('연결된 검사가 없어 동작을 확인하지 못함', 'no linked test, so the behavior is not confirmed');
   }
   return L('근거를 찾았고 검사가 통과', 'evidence found and the tests pass');
@@ -380,8 +384,8 @@ export function treeModel(report: Report): ReqRow[] {
         label: (report.sets.length > 1 ? `${set.key}  ` : '') + (u ? `${u.file.split('/').pop()}:${u.startLine}` : L('근거 없음', 'no evidence')),
         file: u?.file,
         line: u?.startLine,
-        detail: [when, testWord(rr)].filter(Boolean).join(' · '),
-        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote(rr)}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhraseFor(rr)}`,
+        detail: [when, testWord(rr, report.testsStale)].filter(Boolean).join(' · '),
+        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr, report.testsStale)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote(rr)}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhraseFor(rr, report.testsStale)}`,
       };
     }),
   }));
@@ -414,11 +418,11 @@ export function allLenses(report: Report): Lens[] {
       const u = rr.evidence.unit;
       if (!u) continue;
       const bt = boundaryText(set, s.req.id);
-      const notes = [bt, testWord(rr)].filter(Boolean);
+      const notes = [bt, testWord(rr, report.testsStale)].filter(Boolean);
       const other = report.sets.find((x) => x.key !== set.key);
       if (other && s.relation.kind === '불일치') notes.push(L(`${other.key}와 조건 다름`, `condition differs from ${other.key}`));
       const bad = rr.testStatus === '실패' || rr.evidence.boundary?.ok === false;
-      const long = [`VerifyLens ${s.req.id} · ${wOverall(s.overall)}`, bt, testWord(rr), other && s.relation.kind === '불일치' ? L('A·B 조건 다름', 'A and B use different conditions') : ''].filter(Boolean);
+      const long = [`VerifyLens ${s.req.id} · ${wOverall(s.overall)}`, bt, testWord(rr, report.testsStale), other && s.relation.kind === '불일치' ? L('A·B 조건 다름', 'A and B use different conditions') : ''].filter(Boolean);
       out.push({
         setKey: set.key,
         file: u.file,
@@ -470,7 +474,7 @@ export function hoverMarkdown(report: Report, reqId: string, links = true): stri
     const b = rr.evidence.boundary;
     const where = u ? `${mdCode(`${u.file.split('/').pop()}:${u.startLine}`)}${u.cond?.expr ? ' ' + mdCode(u.cond.expr) : u.kind === 'function' ? L(' 함수 전체', ' whole function') : ''}` : L('찾지 못함', 'not found');
     const when = !b ? '–' : b.attempts !== null ? L(`${b.attempts}번째${b.ok === false ? ` ⚠ (요구 ${b.required}회)` : ''}`, `attempt ${b.attempts}${b.ok === false ? ` ⚠ (required: ${b.required})` : ''}`) : `${b.ok === true ? '' : '⚠ '}${mdCell(boundaryLine(b))}`;
-    out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${testCell(rr)} |`);
+    out.push(`| ${two ? `${set.key} | ` : ''}${where} | ${when} | ${testCell(rr, report.testsStale)} |`);
     for (const t of rr.tests) {
       if (t.status !== 'fail') continue;
       const why = t.message.split('\n').map((x) => x.trim()).filter(Boolean).join(' ').slice(0, 140);

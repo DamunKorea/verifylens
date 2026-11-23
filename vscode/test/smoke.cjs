@@ -232,7 +232,8 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   const kid = reg.tree.getChildren(reqNodes()[1]).map((n) => reg.tree.getTreeItem(n))[0];
   await reg.commands['verifylens.openLocation'](...kid.command.arguments);
   assert.equal(log.opened.at(-1).scheme, 'file');
-  assert.ok(log.warnings.some((w) => /미실행/.test(w)), 'warns that tests were not given');
+  // 낱말(「미실행」 · 「검사 결과 없음」)이 아니라 안내 자체를 본다: 낱말은 판마다 바뀌었다 (0.25.1 · 0.25.2)
+  assert.ok(log.warnings.some((w) => /테스트 결과가 없어/.test(w)), 'warns that tests were not given');
 
   assert.equal(reg.view.message, '요구사항 2개 중 근거와 검사로 확인된 것이 아직 없음 · feature/lockout-b ← main · 판단 0/2');
   config.summaryLanguage = 'en';
@@ -254,7 +255,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-am', 'fix lockout']);
   let auto = '';
   for (let i = 0; i < 60 && !/^미확인/.test(auto); i++) { await sleep(150); auto = reg.tree.getTreeItem(reqNodes()[1]).description; }
-  assert.equal(auto, '미확인 · 검사 없음', 'after the fix R2 is no longer 다름 (no test report here, so 미확인)');
+  assert.equal(auto, '미확인 · 검사 결과 없음', 'after the fix R2 is no longer 다름 (no test report here, so 미확인)');
   assert.equal(reg.status.backgroundColor, undefined, 'warning color cleared');
   assert.deepEqual(log.errors, []);
 
@@ -269,7 +270,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   let n3 = 0;
   for (let i = 0; i < 60 && n3 !== 3; i++) { await sleep(150); n3 = reqNodes().length; }
   assert.equal(n3, 3, 'the list picked up R3 by itself');
-  assert.equal(reg.tree.getTreeItem(reqNodes()[2]).description, '미확인 · 검사 없음');
+  assert.equal(reg.tree.getTreeItem(reqNodes()[2]).description, '미확인 · 검사 결과 없음');
   answers = { warning: undefined, quickPick: ['$(clippy) 복사한 글 (클립보드)'], input: '', clipboard: '회의록: 다음 주에 다시 봅니다' };
   assert.equal(await reg.commands['verifylens.importRequirements'](), undefined);
   assert.match(log.warnings.at(-1), /요구사항으로 볼 문장을 찾지 못했습니다/);
@@ -283,7 +284,7 @@ Module._load = function (req, ...rest) { return req === 'vscode' ? vscode : load
   for (let i = 0; i < 60 && !/^다름/.test(live); i++) { await sleep(150); live = reg.tree.getTreeItem(reqNodes()[1]).description; }
   assert.equal(live, '다름', 'the saved, uncommitted edit (> 3 locks on the 4th attempt) is caught');
   assert.match(reg.view.message, /feature\/lockout-b \+ 커밋 전 변경 ← main/);
-  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren(reqNodes()[1])[0]).description, '4번째 동작 · 검사 미실행');
+  assert.equal(reg.tree.getTreeItem(reg.tree.getChildren(reqNodes()[1])[0]).description, '4번째 동작 · 검사 결과 없음');
 
   // 5-4) 테스트 실행: 명령을 알아내 실제로 돌리고(node:test), 결과를 읽어 다시 분석한다
   await reg.commands['verifylens.runTests']();

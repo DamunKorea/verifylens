@@ -92,7 +92,7 @@ function overview(report: Report): string {
   const unc: string[] = [];
   for (const s of report.summaries) {
     const miss = report.sets.filter((x) => x.perReq[s.req.id].testStatus === '미실행' || x.perReq[s.req.id].evidence.status === '미발견');
-    if (miss.length) unc.push(`<span><b>${s.req.id}</b> ${miss.map((x) => `${x.key} ${x.perReq[s.req.id].evidence.status === '미발견' ? L('근거 없음', 'no evidence') : testPhraseFor(x.perReq[s.req.id])}`).join(' · ')}</span>`);
+    if (miss.length) unc.push(`<span><b>${s.req.id}</b> ${miss.map((x) => `${x.key} ${x.perReq[s.req.id].evidence.status === '미발견' ? L('근거 없음', 'no evidence') : testPhraseFor(x.perReq[s.req.id], report.testsStale)}`).join(' · ')}</span>`);
   }
   for (const set of report.sets) for (const d of set.dyn) unc.push(`<span><b>${set.key}</b> ${L('해석하지 못한 호출', 'unresolved call')} <code>${esc(d.file.split('/').pop()!)}:${d.line}</code> <code>${esc(d.text)}</code></span>`);
   return `<section class="ov"><div class="ovh"><h2>${L('요구사항별 검증 상태', 'Verification status by requirement')}</h2><div class="cnt"><span class="ok">${wOverall('확인됨')} <b>${c.확인됨}</b></span><span class="diff">${wOverall('다름')} <b>${c.다름}</b></span><span class="fail">${wOverall('실패')} <b>${c.실패}</b></span><span class="unk">${wOverall('미확인')} <b>${c.미확인}</b></span></div><div class="hint">${L('요구사항을 선택해 근거 보기', 'Select a requirement to see its evidence')}</div></div>
@@ -171,7 +171,7 @@ function timeline(report: Report, id: string): string {
         ` By the computed condition, ${joinNames(offSets.map((r) => r.set.label))} acts on attempt ${offSets.map((r) => r.b!.attempts).join(' / ')}, yet its test passes. Check which attempt the test actually looks at.`,
       )
     : '';
-  const marks = report.sets.map((s) => `${s.key} ${testCell(s.perReq[id])}`).join(' · ');
+  const marks = report.sets.map((s) => `${s.key} ${testCell(s.perReq[id], report.testsStale)}`).join(' · ');
   const cap =
     chk !== null
       ? L(`「${esc(chkName)}」 검사는 이름으로 보면 ${chk}번째 시도 뒤의 잠금을 확인합니다 — ${marks}.${offNote}`, `Going by its name, the test "${esc(chkName)}" checks the lock after attempt ${chk} — ${marks}.${offNote}`)

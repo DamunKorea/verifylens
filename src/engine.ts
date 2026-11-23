@@ -843,7 +843,7 @@ export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, b
     for (const r of reqs) {
       const evidence = findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
       const mapped = mapTests(r, s.tests, evidence);
-      const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped) };
+      const rr: ReqResult = { evidence, tests: mapped, testStatus: testStatus(mapped), ...(s.tests.length ? {} : { noResults: true }) };
       // 이번 변경에서 바뀐 검사 가운데 이 요구사항의 것: 실행 결과와 같은 이름 규칙으로 잇는다 (지운 검사는 실행 결과에 없다)
       const edits = (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
       if (edits.length) rr.edits = edits;

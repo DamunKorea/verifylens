@@ -84,10 +84,12 @@ test('an unverified requirement says which kind of reason stopped it', () => {
     const r = evaluate([set], parseRequirements(`- R1: ${req}`), '.', 'main');
     return undecidedReasons(r, r.summaries[0]);
   };
-  assert.deepEqual(kinds('Coupons expire after 7 days', 'export const expired = (daysSinceIssued: number) => daysSinceIssued >= 7;\n'), ['edge', 'no-test']);
+  assert.deepEqual(kinds('Coupons expire after 7 days', 'export const expired = (daysSinceIssued: number) => daysSinceIssued >= 7;\n'), ['edge', 'no-results']);
   assert.deepEqual(kinds('The upload size limit is about 8mb', 'export const tooBig = (fileSize: number) => fileSize >= 8 * 1024 * 1024;\n', ['upload size 8 rule']), ['wording', 'no-test']);
   assert.deepEqual(kinds('Quantity must be between 1 and 10', 'export const ok = (quantity: number) => quantity > 1 && quantity < 10;\n', ['quantity 1 10']), ['edge']);
-  assert.deepEqual(kinds('Admins can refund orders', 'export function refund(order: unknown) { return order; }\n'), ['no-test']);
+  // 테스트 결과가 하나도 없으면 「검사 결과 없음」, 결과는 있는데 이어진 것이 없으면 「검사 없음」 (0.25.2)
+  assert.deepEqual(kinds('Admins can refund orders', 'export function refund(order: unknown) { return order; }\n'), ['no-results']);
+  assert.deepEqual(kinds('Admins can refund orders', 'export function refund(order: unknown) { return order; }\n', ['exports a csv']), ['no-test']);
   assert.equal(undecidedLabel('conflict', 'ko'), '다른 값이 함께 있음');
   assert.match(undecidedAction('wording', 'en'), /at least/);
 });

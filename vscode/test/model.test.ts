@@ -86,7 +86,7 @@ test('single-branch check in a real repo marks the working branch', () => {
   assert.equal(r.report.sets.length, 1);
   assert.equal(r.workingRef, 'feature/lockout-b');
   assert.equal(r.report.summaries.find((s) => s.req.id === 'R2')!.overall, '다름');
-  assert.ok(r.notes.some((n) => /「검사 없음」/.test(n)));
+  assert.ok(r.notes.some((n) => /「검사 결과 없음」/.test(n)));
   assert.equal(M.currentBranch(repo), 'feature/lockout-b');
   assert.deepEqual(M.orderBases(M.localBranches(repo), 'feature/lockout-b')[0], 'main');
   assert.throws(() => M.runRepo({ repo, base: 'nope', a: 'feature/lockout-b', reqFile }), /기준 브랜치 「nope」/);
@@ -439,6 +439,9 @@ test('test results older than the code are not used', () => {
   assert.equal(run.report.testsStale, true);
   assert.deepEqual(status(run), { R1: '미확인', R2: '미확인', R3: '미확인' }, 'a pass or fail from before the edit proves nothing about this code');
   assert.deepEqual(M.treeModel(run.report).map((x) => x.reason), ['검사 오래됨', '검사 오래됨', '검사 오래됨']);
+  // 줄 끝 설명도 「검사 없음」이 아니라 「검사 오래됨」 (0.25.1 은 「검사 없음」이라 했다 — JetBrains 세션이 찾음)
+  for (const l of M.allLenses(run.report)) assert.doesNotMatch(l.note, /검사 없음|검사 결과 없음/, l.note);
+  assert.ok(M.allLenses(run.report).some((l) => /검사 오래됨/.test(l.note)), JSON.stringify(M.allLenses(run.report).map((l) => l.note)));
   assert.match(run.notes.join(' '), /테스트 결과가 코드보다 오래되어 쓰지 않았습니다/);
   assert.match(M.prSummary(run), /- 테스트 결과가 코드보다 오래되어 쓰지 않음 — 다시 실행 필요/);
   assert.equal(run.report.sets[0].perReq.R2.evidence.boundary!.attempts, 5, 'the code itself is still analysed');
@@ -452,7 +455,7 @@ test('test results older than the code are not used', () => {
 
   rmSync(w.junit);
   run = w.check();
-  assert.match(run.notes.join(' '), /테스트 결과가 없어 검사는 모두 「검사 없음」/);
+  assert.match(run.notes.join(' '), /테스트 결과가 없어 검사는 모두 「검사 결과 없음」/);
 });
 
 test('test reports from Vitest (JUnit) and Jest (JSON) are read', () => {
