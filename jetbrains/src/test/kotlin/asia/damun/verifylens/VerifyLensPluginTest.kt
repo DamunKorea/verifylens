@@ -560,6 +560,10 @@ class VerifyLensPluginTest : HeavyPlatformTestCase() {
         assertTrue(rows.toString(), rows.contains("R2  Not verified · linked only by this change’s new tests   Expired coupons are rejected."))
         assertTrue(rows.toString(), rows.contains("R3  Not verified · not a code behavior (a process step)   Add tests for the coupon limit."))
         assertTrue(rows.toString(), rows.contains("R4  Not verified · type-level requirement, not readable   A type error when the amount is a string."))
+        // 판정하지 않는 줄의 아래 줄: 「근거 없음 · 검사 없음」이 아니라 찾지 않았다는 것과 그 까닭 (0.27.1 엔진)
+        assertTrue(rows.toString(), rows.contains("not looked for   not a code behavior (a process step)"))
+        assertTrue(rows.toString(), rows.contains("not looked for   type-level requirement, not readable"))
+        assertFalse(rows.toString(), rows.any { it.startsWith("no evidence") })
 
         // R2 의 근거 사슬: 코드 줄과 새 검사는 이어졌지만 판정은 미확인
         panel.selectRequirement("R2")
