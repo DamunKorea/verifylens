@@ -2,6 +2,8 @@
 
 **AI가 만든 코드를 믿기 전에, 요구사항마다 실제로 어떻게 동작하는지 보여 줍니다.**
 
+AI 리뷰는 모델이 변경을 어떻게 보는지 알려 줍니다. **VerifyLens 는 내가 쓴 요구사항 하나하나를 규칙으로(LLM 없이) 확인하고, 그 줄을 짚어 줍니다.** 같은 입력이면 늘 같은 판정입니다. Claude Code 의 새 `/ship` 같은 AI 리뷰 · 고침 도구와 함께 쓸 수 있습니다: [함께 쓰는 법](#ai-리뷰--고침-도구와-함께).
+
 [English README](README.md)
 
 **[브라우저에서 바로 해 보기 →](https://damunkorea.github.io/verifylens/?lang=ko)** 설치하지 않아도 됩니다. 요구사항과 코드를 넣어 보세요. 넣은 내용은 페이지 밖으로 나가지 않습니다. 공개 GitHub PR 주소를 붙여 넣어도 됩니다. 브라우저가 GitHub 에서 PR 설명 · PR 이 닫는 이슈 · 바뀐 파일을 읽어 확인합니다(테스트는 거기서 돌리지 않습니다).
@@ -31,11 +33,45 @@ VerifyLens는 요구사항마다 **확인됨 · 다름 · 미확인**을 보여 
 
 ## 무엇이 다른가
 
+- **「버그 전반」이 아니라 내가 쓴 요구사항 하나하나.** 「5번 실패하면 잠근다」를 그것을 정하는 코드 줄과 맞대어 봅니다. 이 예에서는 코드가 6번째에 잠급니다.
+- **같은 입력이면 같은 판정.** 모델이 매번 새로 읽는 것이 아니라 규칙이라, 다시 돌려도 같은 답이고 비용이 들지 않습니다.
 - **AI 의견을 하나 더 얹지 않고 근거를 묶습니다.** v0는 **LLM을 쓰지 않습니다.** 정적 분석(TypeScript 컴파일러 API), git 변경 내용, 실제로 돌린 테스트 결과(JUnit XML)만 씁니다. 모든 표시는 코드나 검사 기록으로 이어집니다.
 - **모르는 것은 「미확인」으로 남깁니다.** 검사가 없거나 해석할 수 없는 호출이 있으면 「문제없음」이라고 하지 않습니다.
 - **PR을 올리기 전에, 에디터에서.** 커밋하지 않은 변경까지 작업 폴더를 그대로 보고, 파일을 저장하면 다시 확인합니다. AI 리뷰 봇은 PR이 올라온 뒤에 판정하지만, 이 도구는 AI가 방금 고친 코드가 눈앞에 있을 때 알려 줍니다.
 - **코드는 내 PC 밖으로 나가지 않습니다.** 분석은 네트워크를 쓰지 않고, 계정이나 API 키도 필요 없습니다. 리포트는 외부 자원을 불러오지 않는 HTML 파일 하나입니다. (에디터 확장에서 요구사항을 채울 때 원하면 내 `gh`로 PR · 이슈의 *글*만 읽어 올 수 있습니다. 코드는 보내지 않습니다.)
 - **판단은 사람이 합니다.** 사용 · 수정 · 추가 검증 판단을 근거 옆에 기록합니다.
+
+## AI 리뷰 · 고침 도구와 함께
+
+AI 리뷰 · 고침 도구가 PR 마무리를 잘하게 됐습니다. 예를 들어 Claude Code 의 새 `/ship` 이 하는 일은 이렇습니다.
+- AI 코드 리뷰로 버그로 보이는 것을 고칩니다.
+- 그 뒤 실패한 검사 · 리뷰 댓글 · 충돌을 지켜보며 고칩니다.
+
+VerifyLens 는 다른 일을 하고, 둘은 함께 쓸 수 있습니다.
+
+![서로 다른 두 검사. AI 리뷰 · 고침(예: Claude Code 의 새 /ship): 모델이 버그라고 보는 것을 찾고, 모델이 변경을 읽고 판단하며, 매번 새로 읽고, 고친 커밋 · 답글 · 초록 PR 을 보여 주고, 모를 때는 모델의 최선의 판단을 냅니다. VerifyLens: 내가 쓴 요구사항 하나하나를 보고, LLM 없이 읽을 수 있는 규칙으로 판단하며, 늘 같은 판정이고, 요구 5 → 코드 6 과 그 줄 · 그 검사를 보여 주고, 모를 때는 「미확인」이라고 말합니다.](docs/vs-ai-review.ko.png)
+
+**함께 쓰는 법.** VerifyLens 를 PR 검사([GitHub Action](#ci-에서-쓰기-github-actions))로 둡니다. 「다름」인 요구사항이 있으면 검사가 실패합니다. 그때 검사 로그와 작업 요약에 **고칠 것(What to fix)** 이 나옵니다.
+
+```text
+VerifyLens: the code does not match 1 requirement(s) in .verifylens/requirements.md.
+- R1 · Different: Lock the account after 5 consecutive failed logins
+  acts on attempt 6 (requirement: 5) — examples/pr-demo/src/login.ts:7
+  code: examples/pr-demo/src/login.ts:7 account.failures > 5 ✓ → tests: no test results ? → acts: attempt 6 (required 5) ✗ 1 late
+  Values to test at the boundary: 4th time → does not act yet · 5th time → acts
+Fix the code so it does what each requirement says. If a requirement itself looks wrong, ask the user instead of changing the requirements file or the check.
+```
+
+<sub>우리 [데모 PR](https://github.com/DamunKorea/verifylens/pull/1)에 실제로 돌린 출력입니다(영어 판). 에이전트 훅이 돌려주는 글과 같습니다.</sub>
+
+실패한 검사를 고치는 쪽이 사람이든, 에이전트든, `/ship` 같은 도구든 같은 것을 받습니다.
+- 그 줄
+- 경계에서 시험할 값
+- 「요구사항이나 검사를 바꿔서 통과시키지 말라」는 규칙
+
+![함께 쓰는 흐름: 1 AI 에이전트가 코드를 고치고 「다 했어요」라고 함, 2 VerifyLens PR 검사 실패 — R1 다름, 요구 5번 → 코드는 6번째, login.ts:7, 3 「고칠 것」을 읽고 고침, 4 VerifyLens: 확인됨 — 같은 번째, 그 줄, 돌린 검사.](docs/with-ai-fixer.ko.png)
+
+`/ship` 과 함께 쓰는 것은 아직 우리가 직접 해 보지 않았습니다. 우리가 만들고 시험한 것은 검사와 그 「고칠 것」 글까지입니다.
 
 ## 빠르게 해 보기
 

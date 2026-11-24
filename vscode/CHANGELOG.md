@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.27.1
+
+A failing check now says what to fix. This is for using VerifyLens next to AI review and fix tools, such as Claude Code's new `/ship`, which work on failing pull request checks. No verdict changes.
+
+- **"What to fix" in the check.** When the GitHub Action (or `ci`) fails, it writes a "What to fix" block to the log and to the job summary:
+  - each requirement that is Different or Failed, and its line;
+  - the evidence chain with the condition itself (`account.failures > 5`);
+  - the values to test at the boundary;
+  - a rule not to change the requirements file or the check to make it pass.
+
+  It is the same text the agent hooks already returned. The error mark on the code line now carries the chain too.
+- **Lines that are not judged** (process steps, type-level requirements) say "not looked for" in the row under each requirement, instead of "no evidence" and "no test". Found by our JetBrains build.
+- **README and store page:** how VerifyLens differs from AI review, and how to use the two together. We have not tried it with `/ship` ourselves yet.
+
 ## 0.27.0
 
 Fewer wrong Verified verdicts when you check a pull request on the browser page. In 0.26.0, about half of the Verified verdicts on real pull requests stood on the wrong line. Looking at them, almost all of the wrong ones had an evidence line far from anything the pull request changed. Verdicts on all our earlier cases did not change.

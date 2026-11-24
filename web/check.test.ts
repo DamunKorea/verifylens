@@ -180,6 +180,9 @@ test('lines that are not judged say so, and a passing test that stays Not verifi
   assert.equal(proc.summary, 'not a code behavior (a process step)');
   assert.deepEqual(proc.chain[0].pieces, ['process step — not judged']);
   assert.equal(proc.chain.find((s) => s.kind === 'code')?.text, 'not looked for (a line that is not judged)');
+  // 행 아래 줄도 (JetBrains 세션이 0.27.0 에서 찾음)
+  assert.equal(proc.where, 'not looked for');
+  assert.equal(proc.detail, 'not a code behavior (a process step)');
   const spec = "import { addCoupon } from './coupon';\nit('throws for a code of spaces', () => { expect(() => addCoupon('  ')).toThrow(); });\n";
   const own = runCheck({ requirements: '- R1: Blank coupon codes are refused', fileName: '', code: '', tests: [{ name: 'throws for a code of spaces', status: 'pass' }], lang: 'en', files: { 'src/coupon.ts': add, 'src/coupon.test.ts': spec }, baseFiles: {} });
   assert.match(own.notes.find((n) => n.reqId === 'R1')!.note, /tests pass · linked only by this change’s new tests/);

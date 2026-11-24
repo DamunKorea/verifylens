@@ -5396,12 +5396,23 @@ function check(opts, hook, input, io) {
     const lens = lenses.find((l) => l.reqId === s.req.id);
     const where3 = lens ? `file=${escProp(slash(relative2(workspace, join4(repo, lens.file))))},line=${lens.line},` : "";
     const title = `VerifyLens ${s.req.id} \xB7 ${wOverall(s.overall)}`;
-    const message2 = [s.req.text, why(s), reasons.join(", ")].filter(Boolean).join(" \u2014 ");
+    const chain = level === "error" ? chainText(chainSteps(report, s.req.id)) : "";
+    const message2 = [s.req.text, why(s), reasons.join(", "), chain].filter(Boolean).join(" \u2014 ");
     io.out(`::${level} ${where3}title=${escProp(title)}::${escData(message2)}`);
   }
-  const summaryFile = process.env.GITHUB_STEP_SUMMARY;
-  if (summaryFile && !hook) appendFileSync(summaryFile, prSummary({ kind: "repo", repo, report, notes: [] }) + "\n");
   const blocking = report.summaries.filter((s) => failOn.has(s.overall));
+  const fixGuide = blocking.length && !hook ? agentMessage(blocking, why, lenses, slash(relative2(dir, reqFile)), report) : "";
+  const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+  if (summaryFile && !hook) {
+    const guide = fixGuide ? `
+### ${L("\uACE0\uCE60 \uAC83", "What to fix")}
+
+\`\`\`text
+${fixGuide.replace(/```/g, "'''")}
+\`\`\`
+` : "";
+    appendFileSync(summaryFile, prSummary({ kind: "repo", repo, report, notes: [] }) + "\n" + guide);
+  }
   const names = [...failOn].map((o) => wOverall(o)).join(L(" \xB7 ", " or "));
   if (!hook) {
     say(
@@ -5411,6 +5422,8 @@ ${blocking.length} requirement(s) are ${names}, so this check fails: ${blocking.
 ${names} \uC778 \uC694\uAD6C\uC0AC\uD56D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.`, `
 No requirement is ${names}.`)
     );
+    if (fixGuide) say(`
+${fixGuide}`);
     return blocking.length ? 1 : 0;
   }
   const edited = report.summaries.filter((s) => !blocking.includes(s)).flatMap((s) => changedTests(report, s.req.id).map(({ e }) => ({ s, e })));

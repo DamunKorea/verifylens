@@ -35,9 +35,15 @@ test('ci: a Different requirement marks its line and fails; the right branch pas
     assert.match(b.out, /::error file=src\/auth\.ts,line=\d+,title=VerifyLens R2 · Different::/);
     assert.match(b.out, /acts on attempt 6 \(requirement: 5\)/);
     assert.match(readFileSync(summary, 'utf8'), /## VerifyLens verification summary/);
+    // 실패한 검사를 읽고 고치는 사람 · AI 도구(/ship 처럼)를 위한 안내: 표시에 코드 줄 사슬, 로그 · 작업 요약에 「고칠 것」 (0.27.0 다음)
+    assert.match(b.out, /::error [^\n]*code: src\/auth\.ts:\d+ [^\n]*→ acts: attempt 6 \(required 5\) ✗/);
+    assert.match(b.out, /Values to test at the boundary: 4th time → does not act yet · 5th time → acts/);
+    assert.match(b.out, /ask the user instead of changing the requirements file or the check/);
+    assert.match(readFileSync(summary, 'utf8'), /### What to fix\n\n```text\nVerifyLens: the code does not match 1 requirement/);
     const a = capture(() => runCi({ repo: env.repo, base: 'main', head: 'feature/lockout-a', requirements: env.reqFile, junit: env.junitA }));
     assert.equal(a.code, 0);
     assert.doesNotMatch(a.out, /::error/);
+    assert.doesNotMatch(a.out, /Fix the code so it does what each requirement says/);
   } finally {
     process.env = keep;
     rmSync(dir, { recursive: true, force: true });

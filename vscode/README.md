@@ -18,6 +18,11 @@ VerifyLens checks each requirement against your git diff and the tests that actu
 - **No LLM, and your code never leaves your machine.** Static analysis (TypeScript compiler API) + git + your JUnit test results, all local. The only optional network use is *Import requirements*, which reads a PR's or issue's text through your own `gh`.
 - **Unknown stays unknown.** No test or an unresolved call means "not verified", never "looks fine".
 - **You decide.** Every mark links back to the code line or test that produced it.
+- **Same input, same verdict.** Rules, not a model reading your change afresh each time.
+
+**Next to AI review tools.** AI review and fix tools, such as Claude Code's new `/ship`, tell you what a model thinks of a change and fix what they find. VerifyLens checks each requirement you wrote, by rules, and points at the exact line. Run it as a pull request check with the [GitHub Action](https://github.com/DamunKorea/verifylens#use-it-in-ci-github-actions): when it fails, the log says what to fix, for you, your agent or a fixer tool. ([More](https://github.com/DamunKorea/verifylens#next-to-ai-review-and-fix-tools). We have not tried it with `/ship` ourselves yet.)
+
+![Two different checks: AI review and fix next to VerifyLens](https://raw.githubusercontent.com/DamunKorea/verifylens/main/docs/vs-ai-review.png)
 
 ![VerifyLens in VS Code](https://raw.githubusercontent.com/DamunKorea/verifylens/main/docs/demo.gif)
 
@@ -93,7 +98,9 @@ Source, issues and feedback: https://github.com/DamunKorea/verifylens
 
 ## 한국어 요약
 
-AI가 「완료」라고 한 변경이 요구사항마다 **확인됨 · 다름 · 미확인**인지 에디터 옆에서 보여 줍니다. LLM과 네트워크를 쓰지 않고, 코드는 PC 밖으로 나가지 않습니다.
+AI가 「완료」라고 한 변경이 요구사항마다 **확인됨 · 다름 · 미확인**인지 에디터 옆에서 보여 줍니다. LLM과 네트워크를 쓰지 않고, 코드는 PC 밖으로 나가지 않습니다. 같은 입력이면 늘 같은 판정입니다.
+
+**AI 리뷰 도구와 함께:** Claude Code 의 새 `/ship` 같은 AI 리뷰 · 고침 도구는 모델이 변경을 어떻게 보는지 알려 주고 찾은 것을 고칩니다. VerifyLens 는 내가 쓴 요구사항 하나하나를 규칙으로 확인하고 그 줄을 짚습니다. GitHub Action 으로 PR 검사에 두면, 실패할 때 로그에 「고칠 것」이 나옵니다(사람 · 에이전트 · 고침 도구 누구에게나). `/ship` 과 함께 쓰는 것은 아직 우리가 직접 해 보지 않았습니다.
 
 - **화면 언어:** VS Code 화면 언어를 따릅니다(한국어면 한국어, 아니면 영어). 영어 VS Code에서 한국어로 보려면 설정 `verifylens.language`를 `ko`로 바꾸세요.
 - **처음 써 보기:** 왼쪽 VerifyLens 아이콘을 누르고 **샘플로 해 보기**를 누르세요.

@@ -313,13 +313,21 @@ function check(opts: Record<string, string>, hook: Hook | undefined, input: Reco
     const lens = lenses.find((l) => l.reqId === s.req.id);
     const where = lens ? `file=${escProp(slash(relative(workspace, join(repo, lens.file))))},line=${lens.line},` : '';
     const title = `VerifyLens ${s.req.id} · ${wOverall(s.overall)}`;
-    const message = [s.req.text, why(s), reasons.join(', ')].filter(Boolean).join(' — ');
+    // 어긋난 요구사항은 근거 사슬(코드 줄 글 · 어느 칸이 어긋났는지)도 남긴다: 실패한 검사를 읽고 고치는 사람 · 도구가 그 줄에서 바로 볼 수 있게
+    const chain = level === 'error' ? chainText(chainSteps(report, s.req.id)) : '';
+    const message = [s.req.text, why(s), reasons.join(', '), chain].filter(Boolean).join(' — ');
     io.out(`::${level} ${where}title=${escProp(title)}::${escData(message)}`);
   }
-  const summaryFile = process.env.GITHUB_STEP_SUMMARY;
-  if (summaryFile && !hook) appendFileSync(summaryFile, prSummary({ kind: 'repo', repo, report, notes: [] }) + '\n');
-
   const blocking = report.summaries.filter((s) => failOn.has(s.overall));
+  // 검사가 실패하면, 에이전트 훅이 돌려주는 것과 같은 「고칠 것」을 로그와 작업 요약에도 남긴다.
+  // 실패한 PR 검사를 읽고 고치는 사람 · AI 도구(Claude Code 의 /ship 처럼)가 같은 안내를 받게 (0.27.0 다음)
+  const fixGuide = blocking.length && !hook ? agentMessage(blocking, why, lenses, slash(relative(dir, reqFile)), report) : '';
+  const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+  if (summaryFile && !hook) {
+    const guide = fixGuide ? `\n### ${L('고칠 것', 'What to fix')}\n\n\`\`\`text\n${fixGuide.replace(/```/g, "'''")}\n\`\`\`\n` : '';
+    appendFileSync(summaryFile, prSummary({ kind: 'repo', repo, report, notes: [] }) + '\n' + guide);
+  }
+
   const names = [...failOn].map((o) => wOverall(o)).join(L(' · ', ' or '));
   if (!hook) {
     say(
@@ -327,6 +335,7 @@ function check(opts: Record<string, string>, hook: Hook | undefined, input: Reco
         ? L(`\n${names} 인 요구사항이 ${blocking.length}개 있어 실패로 끝냅니다: ${blocking.map((s) => s.req.id).join(', ')}`, `\n${blocking.length} requirement(s) are ${names}, so this check fails: ${blocking.map((s) => s.req.id).join(', ')}`)
         : L(`\n${names} 인 요구사항이 없습니다.`, `\nNo requirement is ${names}.`),
     );
+    if (fixGuide) say(`\n${fixGuide}`);
     return blocking.length ? 1 : 0;
   }
   // 이번 변경에서 요구사항의 검사를 바꾸거나 지운 것 (막는 요구사항에 든 것은 그 사슬 줄에 이미 나온다)

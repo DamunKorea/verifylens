@@ -380,14 +380,16 @@ export function treeModel(report: Report): ReqRow[] {
       const bt = boundaryText(set, s.req.id);
       const when = boundaryShort(rr.evidence.boundary);
       const who = `${set.label} (${set.ref})`;
+      // 판정하지 않는 줄(절차 · 타입)은 찾지 않은 것이다: 「근거 없음 · 검사 없음」 대신 그 까닭 (JetBrains 세션이 찾음, 0.27.0 다음)
+      const skipped = s.req.unreadable ? undecidedLabel(s.req.unreadable === 'process' ? 'not-behavior' : 'type-level') : '';
       return {
         setKey: set.key,
         // 결과가 하나뿐이면 「A」를 붙이지 않는다 (브랜치 하나만 확인할 때)
-        label: (report.sets.length > 1 ? `${set.key}  ` : '') + (u ? `${u.file.split('/').pop()}:${u.startLine}` : L('근거 없음', 'no evidence')),
+        label: (report.sets.length > 1 ? `${set.key}  ` : '') + (u ? `${u.file.split('/').pop()}:${u.startLine}` : skipped ? L('찾지 않음', 'not looked for') : L('근거 없음', 'no evidence')),
         file: u?.file,
         line: u?.startLine,
-        detail: [when, testWord(rr, report.testsStale)].filter(Boolean).join(' · '),
-        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr, report.testsStale)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote(rr)}` : ''}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhraseFor(rr, report.testsStale)}`,
+        detail: skipped || [when, testWord(rr, report.testsStale)].filter(Boolean).join(' · '),
+        tooltip: u ? `${who} · ${u.file}:${u.startLine} · ${testWord(rr, report.testsStale)}${bt ? ` · ${bt}` : ''}${passButOff(rr) ? ` — ${passButOffNote(rr)}` : ''}` : skipped ? `${who} · ${skipped}` : `${who} · ${L('구현 근거를 찾지 못함', 'no implementation evidence found')} · ${testPhraseFor(rr, report.testsStale)}`,
       };
     }),
   }));

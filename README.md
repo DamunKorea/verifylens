@@ -2,6 +2,8 @@
 
 **See what an AI-generated change actually does to each requirement — before you trust it.**
 
+AI review tells you what a model thinks of your change. **VerifyLens checks each requirement you wrote, by rules (no LLM), and shows the exact line.** Same input, same verdict. It works next to AI review and fix tools such as Claude Code's new `/ship`: [see how](#next-to-ai-review-and-fix-tools).
+
 [한국어 README](README.ko.md)
 
 **[Try it in your browser →](https://damunkorea.github.io/verifylens/)** No install. Paste a requirement and some code; nothing leaves the page. Or paste the address of a public GitHub pull request: your browser reads its description, the issues it closes and the changed files from GitHub, and the page checks them (tests are not run there).
@@ -31,11 +33,38 @@ VerifyLens shows, per requirement, what is **verified**, what is **different**, 
 
 ## Why it's different
 
+- **Each requirement you wrote, not "bugs in general".** "Lock the account after 5 failures" is checked against the line that decides it: here, the code acts on the 6th.
 - **Evidence, not another AI opinion.** v0 uses **no LLM**. It combines static analysis (TypeScript compiler API), your git diff, and the test results you actually ran (JUnit XML). Every mark links back to code or a test run.
+- **Same input, same verdict.** Rules, not a fresh model reading each time: run it again and you get the same answer, at no cost.
 - **Unknown stays unknown.** If there's no test or a call can't be resolved, it says "not verified" instead of "looks fine."
 - **Before the PR, in the editor.** It checks the working tree, including changes you have not committed, and re-checks when a file is saved. AI review bots judge a pull request after the fact; this tells you while the AI's change is still in front of you.
 - **Your code stays on your machine.** The analysis makes no network calls and needs no account or API key. The report is a single local HTML file with no external resources. (The editor extension can optionally read a PR's or issue's *text* through your own `gh` to fill in requirements; code is never sent.)
 - **You make the call.** The report records your decision (use / fix / verify more) next to the evidence.
+
+## Next to AI review and fix tools
+
+AI review and fix tools are getting good at finishing pull requests. Claude Code's new `/ship`, for example, runs an AI code review, fixes the bugs it thinks are real, and then works on failing checks, review comments and merge conflicts. VerifyLens does a different job, and the two fit together.
+
+![Two different checks. AI review and fix (for example Claude Code's new /ship): looks for bugs a model thinks are real, decided by a model reading the change, a fresh reading each time, shows fixes, replies and a green PR, and gives its best judgment when unsure. VerifyLens: looks at each requirement you wrote, decided by rules you can read with no LLM, the same verdict every time, shows required 5 → code 6 with the line and the test, and says Not verified when unsure.](docs/vs-ai-review.png)
+
+**Use them together.** Run VerifyLens as a pull request check ([GitHub Action](#use-it-in-ci-github-actions)). A requirement that is Different fails the check, and the check log and job summary say **what to fix**:
+
+```text
+VerifyLens: the code does not match 1 requirement(s) in .verifylens/requirements.md.
+- R1 · Different: Lock the account after 5 consecutive failed logins
+  acts on attempt 6 (requirement: 5) — examples/pr-demo/src/login.ts:7
+  code: examples/pr-demo/src/login.ts:7 account.failures > 5 ✓ → tests: no test results ? → acts: attempt 6 (required 5) ✗ 1 late
+  Values to test at the boundary: 4th time → does not act yet · 5th time → acts
+Fix the code so it does what each requirement says. If a requirement itself looks wrong, ask the user instead of changing the requirements file or the check.
+```
+
+<sub>Real output on our [demo pull request](https://github.com/DamunKorea/verifylens/pull/1). It is the same text the agent hooks return.</sub>
+
+Whoever fixes failing checks, you, your agent, or a tool like `/ship`, starts from the exact line, the boundary values to test, and a rule not to edit the requirement or the test to make it pass.
+
+![Use them together: 1 your AI agent writes the change and says done; 2 the VerifyLens PR check fails, R1 Different, required 5, code acts on 6, login.ts:7; 3 the fixer reads What to fix; 4 VerifyLens: Verified, same attempt, the exact line and the test that ran.](docs/with-ai-fixer.png)
+
+We have not tried VerifyLens together with `/ship` ourselves yet. The check and its "What to fix" text are what we built and tested.
 
 ## Quick start
 
