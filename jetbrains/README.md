@@ -2,6 +2,8 @@
 
 **See per requirement whether an AI-generated change is verified, different, or not yet verified, before you commit, in IntelliJ IDEA, WebStorm and other IntelliJ-based IDEs.**
 
+AI review tells you what a model thinks of your change. VerifyLens checks each requirement you wrote, by rules (no LLM), and shows the exact line. Same input, same verdict.
+
 This is the JetBrains counterpart of the [VS Code extension](../vscode/README.md). It runs the **same analysis engine** (the TypeScript code in `../src`, through `../vscode/src/model.ts`), so both editors give the same verdict.
 
 - **No LLM, and your code never leaves your machine.** Static analysis (TypeScript compiler API) + local git + your JUnit test results. No network use, no telemetry.
@@ -134,6 +136,8 @@ Source, issues and feedback: https://github.com/DamunKorea/verifylens
 ## 한국어 요약
 
 VS Code 확장과 **같은 분석 엔진**을 IntelliJ IDEA · WebStorm 같은 JetBrains IDE 안에서 돌리는 첫 미리 보기입니다. AI 판정 없이 코드 분석 · git · 실제로 돌린 테스트 결과만 쓰고, 코드는 PC 밖으로 나가지 않습니다.
+
+AI 리뷰는 모델이 변경을 어떻게 보는지 알려 줍니다. VerifyLens 는 내가 쓴 요구사항 하나하나를 규칙으로(LLM 없이) 확인하고, 그 줄을 짚어 줍니다. 같은 입력이면 늘 같은 판정입니다.
 
 - **필요한 것:** 2026.1 이상의 JetBrains IDE, 이 PC 의 **Node.js 18 이상**, git. Node 를 찾지 못하면 무엇을 설치해야 하는지 알림으로 알려 줍니다.
 - **화면 언어:** IDE 화면 언어를 따릅니다(한국어 IDE 면 한국어, 아니면 영어). **Tools | VerifyLens | Language…**(한국어 IDE 에서는 「화면 언어…」)에서 고정할 수 있습니다.

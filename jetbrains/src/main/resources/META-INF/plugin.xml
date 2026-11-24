@@ -5,6 +5,7 @@
 
     <description><![CDATA[
 <p><b>See per requirement whether an AI-generated change is verified, different, or not yet verified, before you commit.</b></p>
+<p>AI review tells you what a model thinks of your change. VerifyLens checks each requirement you wrote, by rules (no LLM), and shows the exact line. Same input, same verdict.</p>
 <p>AI tools say "Done, all requirements implemented." VerifyLens checks that claim against your working tree and the tests that actually ran,
 and shows the result in a tool window and next to the code line that decides each requirement,
 for example <code>← R2 · Different · acts on attempt 6 (requirement: 5) · but the test passes</code>.</p>
