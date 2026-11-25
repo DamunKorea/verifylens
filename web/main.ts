@@ -102,6 +102,10 @@ const T: Record<string, { en: string; ko: string }> = {
   codecap: { en: 'each verdict is shown under the line it is based on', ko: '판정은 근거가 된 줄 바로 아래에 있습니다' },
   linked: { en: 'Linked tests: ', ko: '이어진 테스트: ' },
   noLinked: { en: 'No linked test', ko: '이어진 테스트 없음' },
+  lookHead: { en: 'Where to look yourself (not a verdict)', ko: '직접 볼 곳 (판정 아님)' },
+  lookLine: { en: 'Line this PR changed', ko: '이 PR 이 바꾼 줄' },
+  lookTests: { en: 'Tests this PR added', ko: '이 PR 이 더한 검사' },
+  lookMore: { en: 'more', ko: '개 더' },
   nextTitle: { en: 'Use it on your own repository', ko: '내 저장소에서 쓰기' },
   nextBody: {
     en: `The extension checks your whole working tree against the base branch and reads your real test reports: <a href="${LINKS.vscode}">VS Code</a> · <a href="${LINKS.openvsx}">Cursor (Open VSX)</a> · <a href="${LINKS.jetbrains}">JetBrains (preview)</a> · <a href="${LINKS.github}">GitHub</a>`,
@@ -477,6 +481,31 @@ function run(compare = false) {
           todo.append(li);
         }
         card.append(todo);
+      }
+      // 「미확인」이어도 사람이 몇 초 안에 닫을 수 있게: 이 PR 이 바꾼 근거 줄과 이 PR 이 더한 검사 (판정에는 쓰지 않음)
+      if (r.look) {
+        const box = el('div', 'look');
+        box.append(el('p', 'look-head', T.lookHead[lang]));
+        const list = el('ol');
+        if (r.look.inChange && r.line) {
+          const li = el('li');
+          const go = el('button', 'view-line', r.where);
+          go.type = 'button';
+          go.addEventListener('click', () => jump(r.line!, r.file));
+          li.append(el('b', undefined, T.lookLine[lang]), document.createTextNode(' — '), go);
+          list.append(li);
+        }
+        if (r.look.tests.length) {
+          const li = el('li');
+          li.append(el('b', undefined, T.lookTests[lang]));
+          const names = el('ul');
+          for (const t of r.look.tests) names.append(el('li', 'look-test', t));
+          if (r.look.more) names.append(el('li', 'look-more', lang === 'ko' ? `… ${r.look.more}${T.lookMore.ko}` : `… ${r.look.more} ${T.lookMore.en}`));
+          li.append(names);
+          list.append(li);
+        }
+        box.append(list);
+        card.append(box);
       }
       card.append(reportRow(r));
       card.addEventListener('click', event => {

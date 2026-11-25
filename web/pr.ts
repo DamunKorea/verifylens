@@ -63,10 +63,26 @@ export const MAX_CODE_FILES = 80;
 const MAX_BYTES = 400_000;
 const MAX_ISSUES = 3;
 
-/** GitHub 의 patch(맥락 줄이 있는 diff)에서 새 쪽의 바뀐 줄 번호 */
+/**
+ * 줄의 뜻만 남긴다: 띄어쓰기 · 중괄호 · 끝의 ; , · 주석을 뗀다. 주석뿐인 줄 · 괄호뿐인 줄은 빈 글이 된다.
+ * (「// @ts-ignore」 → 「// @ts-expect-error」, 「case 'x':」 → 「case 'x': {」, import 줄 차례 바꾸기는 동작이 바뀐 것이 아니다)
+ */
+const lineMeaning = (l: string) =>
+  l
+    .replace(/\/\*.*?\*\//g, '')
+    .replace(/(^|[^:'"`\\])\/\/.*$/, '$1')
+    .replace(/[\s{}]/g, '')
+    .replace(/[;,]+$/, '');
+
+/**
+ * GitHub 의 patch(맥락 줄이 있는 diff)에서 새 쪽의 바뀐 줄 번호.
+ * 서식만 바뀌었거나 자리만 옮긴 줄(지운 줄 가운데 뜻이 같은 줄이 있음), 주석 · 괄호뿐인 줄은 뺀다.
+ * (실제 PR 시험 Elysia: 고친 PR 이 파일 서식도 바꿔서, 서식만 바뀐 함수가 「이번 변경의 근거 줄」로 잡혔다 — 0.28.0)
+ */
 export function patchLines(patch: string | undefined): number[] | null {
   if (!patch) return null;
-  const out: number[] = [];
+  const added: { n: number; m: string }[] = [];
+  const removed = new Map<string, number>();
   let n = 0;
   for (const l of patch.split('\n')) {
     const h = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
@@ -74,9 +90,22 @@ export function patchLines(patch: string | undefined): number[] | null {
       n = Number(h[1]);
       continue;
     }
-    if (l.startsWith('+')) out.push(n++);
-    else if (l.startsWith('-') || l.startsWith('\\')) continue;
+    if (l.startsWith('+')) added.push({ n: n++, m: lineMeaning(l.slice(1)) });
+    else if (l.startsWith('-')) {
+      const m = lineMeaning(l.slice(1));
+      if (m) removed.set(m, (removed.get(m) ?? 0) + 1);
+    } else if (l.startsWith('\\')) continue;
     else n++;
+  }
+  const out: number[] = [];
+  for (const a of added) {
+    if (!a.m) continue;
+    const left = removed.get(a.m) ?? 0;
+    if (left > 0) {
+      removed.set(a.m, left - 1);
+      continue;
+    }
+    out.push(a.n);
   }
   return out;
 }

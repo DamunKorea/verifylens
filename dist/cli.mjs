@@ -2535,16 +2535,29 @@ function judgeConstraints(req, units2) {
   }
   return req.constraints.map((c) => out.get(c));
 }
-function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Set()) {
+function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Set(), changedFirst = false) {
   const dead = new Set(allUnits.filter((u) => u.kind === "function" && u.uncalled).map((u) => `${u.file}#${u.fn}`));
   const units2 = dead.size ? allUnits.filter((u) => !dead.has(`${u.file}#${u.fn}`)) : allUnits;
   let best = null;
   const settingOnly = (u) => u.kind === "condition" && !!u.cond?.parts?.length && u.cond.parts.every((p) => p.source === "config");
   const loopHead = (u) => u.kind === "condition" && /^\s*(?:for|while|do)\b/.test(u.text);
   const pickable = req.numbers.length || req.constraints.length ? units2 : units2.filter((u) => !settingOnly(u) && !loopHead(u));
-  for (const u of pickable) {
-    const { score, why, num: num2 } = scoreUnit(req, u);
-    if (!best || score > best.score || score === best.score && moreSpecific(u, num2, best)) best = { u, score, why, num: num2 };
+  const bestOf = (pool) => {
+    let top = null;
+    for (const u of pool) {
+      const { score, why, num: num2 } = scoreUnit(req, u);
+      if (!top || score > top.score || score === top.score && moreSpecific(u, num2, top)) top = { u, score, why, num: num2 };
+    }
+    return top;
+  };
+  best = bestOf(pickable);
+  let inChangeOnly = false;
+  if (changedFirst && best && !best.u.changed) {
+    const inChange = bestOf(pickable.filter((u) => u.changed));
+    if (inChange && inChange.score >= 2) {
+      best = inChange;
+      inChangeOnly = true;
+    }
   }
   const judged = judgeConstraints(req, units2);
   if (!judged.length && FIXED_REQ.test(req.text) && FIXED_MONEY.test(req.text)) {
@@ -2670,6 +2683,7 @@ function findEvidence(req, allUnits, fields = [], names = /* @__PURE__ */ new Se
   );
   const status = found && !unchecked && !noWindow ? "\uBC1C\uACAC" : "\uC77C\uBD80 \uBC1C\uACAC";
   const ev = { unit, score: s.score, status, why: s.why };
+  if (inChangeOnly && unit.changed) ev.inChangeOnly = true;
   if (noWindow) ev.noWindow = true;
   if (stateUnread && stateWord) ev.stateUnread = stateWord.word;
   if (unchecked) {
@@ -2782,6 +2796,20 @@ function ownTests(req, s, ev) {
   });
   return s.tests.filter((t) => picked.some((a) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title)));
 }
+function lookTests(req, s, ev, linked) {
+  if (!s.prScope || !s.addedTests?.length) return void 0;
+  const real = (x) => !BROAD.has(x) && !FILLER.has(x);
+  const words2 = new Set([...req.tokens, ...req.concepts.flat()].filter(real));
+  const overlap = (a) => new Set([...tokenize(normalizePhrases(plainNumbers(a.full))), ...conceptsFor(a.full).flat()].filter((x) => words2.has(x))).size;
+  const fresh = s.addedTests.filter((a) => !linked.some((t) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title)));
+  const evFile = ev.unit?.file;
+  const named = fresh.filter((a) => overlap(a) > 0);
+  const paired = evFile ? named.filter((a) => pairsWith(a, evFile)) : [];
+  const pool = paired.length ? paired : named;
+  if (!pool.length) return void 0;
+  const ranked = pool.map((a, i) => ({ a, i, o: overlap(a) })).sort((x, y) => y.o - x.o || x.i - y.i);
+  return { names: ranked.slice(0, 3).map((x) => x.a.full), total: pool.length };
+}
 function editLinked(req, e, mapped, ev) {
   if (mapped.some((t) => sameTestName(t.name, e.full) || sameTestName(t.name, e.title))) return true;
   const names = [e.full, e.title, ...e.was ? [e.was] : []];
@@ -2797,14 +2825,17 @@ function evaluate(sets, reqs, repo, base2) {
     const names = new Set(s.analyses.flatMap((a) => a.names ?? []));
     const changedCode = !!s.prScope && s.units.some((u) => u.changed) && s.units.some((u) => !u.changed);
     for (const r of reqs) {
-      const evidence = r.unreadable ? { unit: null, score: 0, status: "\uBBF8\uBC1C\uACAC", why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
-      const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence);
+      const evidence = r.unreadable ? { unit: null, score: 0, status: "\uBBF8\uBC1C\uACAC", why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names, changedCode);
+      const added = (t) => !!s.addedTests?.some((a) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title));
+      const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence).filter((t) => !evidence.inChangeOnly || added(t));
       const own = byName.length || r.unreadable ? [] : ownTests(r, s, evidence);
       const mapped = byName.length ? byName : own;
       const outside = !!evidence.unit && !evidence.unit.changed && changedCode;
       const rr = { evidence, tests: mapped, testStatus: testStatus(mapped), ...s.tests.length ? {} : { noResults: true }, ...own.length ? { ownTests: true } : {}, ...outside ? { outsideChange: true } : {} };
       const edits = r.unreadable ? [] : (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
       if (edits.length) rr.edits = edits;
+      const look = r.unreadable ? void 0 : lookTests(r, s, evidence, mapped);
+      if (look) rr.lookTests = look;
       s.perReq[r.id] = rr;
     }
   }
@@ -2970,7 +3001,7 @@ function oldBehavior(t) {
   return lead(ALREADY.exec(t)) || lead(PAST.exec(t));
 }
 function notRequirement(t) {
-  return PROCESS_LINE.test(t) || CITE.test(t) || TEST_REPORT.test(t) || OBSERVED.test(t) || LOCATION.test(t) || oldBehavior(t);
+  return PROCESS_LINE.test(t) || CITE.test(t) || TEST_REPORT.test(t) || OBSERVED.test(t) || LOCATION.test(t) || oldBehavior(t) || QUESTION.test(t) || OFFER.test(t) || OPINION.test(t) || FRAGMENT.test(t) || CLOSING_LINE.test(t) || TEST_FILE_NOTE.test(t);
 }
 function parseRequirements(md) {
   const reqs = [];
@@ -2994,7 +3025,12 @@ function parseRequirements(md) {
   }
   return reqs;
 }
-function extractRequirements(md, max = 12) {
+function extractRequirements(md, max = 12, opts = {}) {
+  const issue = !!opts.issue;
+  const bugIssue = issue && !!opts.bug;
+  const botParts = (t) => t.replace(/:$/, "").split(/\s*[/&]\s*|\s+and\s+/i);
+  const isBotLabel = (t) => botParts(t).every((p) => BOT_LABEL.test(p));
+  const isBotSkip = (t) => botParts(t).every((p) => BOT_SKIP.test(p));
   const clean = (t) => t.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/(\*\*|__|~~)/g, "").replace(/\s+/g, " ").trim().replace(/[.。]+$/, "");
   const text = md.replace(/\r/g, "").replace(/<!--[\s\S]*?-->/g, "").replace(/```[\s\S]*?```/g, "");
   const inSection = [];
@@ -3005,7 +3041,7 @@ function extractRequirements(md, max = 12) {
   let bot = null;
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    if (!line || line.startsWith(">") || /^notes?\s*:/i.test(line)) continue;
+    if (!line || line.startsWith(">") || line.startsWith("|") || /^notes?\s*:/i.test(line)) continue;
     const head = line.match(/^(#{1,6})\s+(.*)$/) ?? line.match(/^\*\*(.+?)\*\*:?$/) ?? line.match(/^([^-*\d].{0,40}):$/);
     if (head) {
       const title = (head[2] ?? head[1]).trim();
@@ -3020,19 +3056,20 @@ function extractRequirements(md, max = 12) {
     if (item) {
       const t = clean(item[1]);
       const indent = raw.length - raw.trimStart().length;
-      if (BOT_LABEL.test(t.replace(/:$/, ""))) {
-        bot = { indent, skip: BOT_SKIP.test(t.replace(/:$/, "")) };
+      if (isBotLabel(t)) {
+        bot = { indent, skip: isBotSkip(t) };
         continue;
       }
       if (bot && indent <= bot.indent) bot = null;
       if (bot?.skip) continue;
       if (AUTHOR_ITEM.test(t) || notRequirement(t) || /[:：]$/.test(t) && t.split(/\s+/).length <= 8) continue;
+      if (bugIssue && !section && BUG_SAY.test(t) && !ISSUE_MODAL.test(t) && !DIRECTIVE.test(t) && !IMPERATIVE.test(t)) continue;
       (section ? inSection : bullets).push(t);
-    } else if (section || MODAL.test(line)) {
+    } else if (section || (issue ? ISSUE_MODAL : MODAL).test(line)) {
       for (const part of line.split(/(?<=[.。!?])\s+/)) {
         if (/[:：]$/.test(part.trim()) || AUTHOR_ITEM.test(part.trim()) || notRequirement(clean(part))) continue;
         if (section) inSection.push(clean(part));
-        else if (MODAL.test(part)) sentences.push(clean(part));
+        else if ((issue ? ISSUE_MODAL : MODAL).test(part)) sentences.push(clean(part));
       }
     }
   }
@@ -3057,7 +3094,7 @@ function draftRequirements(cands, source = "", start = 1) {
 function extractFromPrBody(md) {
   return draftRequirements(extractRequirements(md));
 }
-var ONLY_CUE, GUARD_CUE, MISSING_CUE, HTTP_STATUS, CHECK_CUE, PROCESS_LINE, TYPE_LEVEL, CITE, DIRECTIVE, PAST, ALREADY, BEFORE_PAST, BEFORE_GET, TEST_REPORT, OBSERVED, LOCATION, BOT_LABEL, BOT_SKIP, SECTION, MODAL, PROCESS_SECTION, BACKGROUND_SECTION, AUTHOR_ITEM;
+var ONLY_CUE, GUARD_CUE, MISSING_CUE, HTTP_STATUS, CHECK_CUE, PROCESS_LINE, TYPE_LEVEL, CITE, DIRECTIVE, PAST, ALREADY, BEFORE_PAST, BEFORE_GET, TEST_REPORT, QUESTION, OFFER, OPINION, FRAGMENT, CLOSING_LINE, TEST_FILE_NOTE, ISSUE_MODAL, IMPERATIVE, BUG_SAY, OBSERVED, LOCATION, BOT_LABEL, BOT_SKIP, SECTION, MODAL, PROCESS_SECTION, BACKGROUND_SECTION, AUTHOR_ITEM;
 var init_requirements = __esm({
   "src/requirements.ts"() {
     init_tokens();
@@ -3069,7 +3106,7 @@ var init_requirements = __esm({
     MISSING_CUE = /\b(?:does not|doesn't|do not|don't)\s+exist|\bnot found\b|\bis missing\b|\bno such\b|없으면|존재하지\s*않|찾을\s*수\s*없/i;
     HTTP_STATUS = /\b(?:return|returns|respond|responds|response|status|http|with)\s+(?:an?\s+|the\s+|http\s+)?([1-5]\d\d)\b|\b([1-5]\d\d)\s+(?:error|status|response|not found|forbidden|unauthori[sz]ed|conflict)\b/gi;
     CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해야|여야|필요|만\s+\S+\s*수\s*있|\bonce\s+(?:per|a|each|for)\b|\bonly once\b|\bonly one\b|한\s*번(?:씩)?만|하나만|중복/i;
-    PROCESS_LINE = /^(?:(?:add|write|update|run|fix|ran|added|wrote|updated|include|included)\s+(?:(?:the|a|an|new|more|unit|e2e|integration|regression|missing|some)\s+){0,3}tests?\b|(?:the\s+)?(?:new|added|updated|existing)\s+tests?\b|`?(?:npm|pnpm|yarn|bun|npx|deno)\s|(?:add|update|write)\s+(?:the\s+)?(?:ts|js)?doc|(?:update|add)\s+(?:the\s+)?(?:docs?|documentation|readme|changelog|changeset)\b|(?:apply|do)\s+(?:it|this|that|the\s+same(?:\s+\w+)?)\s+(?:to|in|for)\b|테스트\s*(?:를|을)?\s*(?:추가|작성|실행|돌|보강)|문서\s*(?:를|을)?\s*(?:추가|갱신|업데이트))|\bto\s+(?:format|lint)\b/i;
+    PROCESS_LINE = /^(?:(?:add|write|update|run|fix|ran|added|wrote|updated|include|included)\s+(?:(?:the|a|an|new|more|unit|e2e|integration|regression|missing|some)\s+){0,3}tests?\b|(?:the\s+)?(?:new|added|updated|existing)\s+tests?\b|`?(?:npm|pnpm|yarn|bun|npx|deno)\s|(?:add|update|write)\s+(?:the\s+)?(?:ts|js)?doc|(?:update|add|updated|added)\s+(?:the\s+)?`?(?:docs?|documentation|readme|changelog|changeset)(?:\.md)?\b|(?:apply|do)\s+(?:it|this|that|the\s+same(?:\s+\w+)?)\s+(?:to|in|for)\b|테스트\s*(?:를|을)?\s*(?:추가|작성|실행|돌|보강)|문서\s*(?:를|을)?\s*(?:추가|갱신|업데이트))|\bto\s+(?:format|lint)\b/i;
     TYPE_LEVEL = /\btype\s+errors?\b|\btype[-\s]?checks?\b|\bcompile[-\s]?time\b|\b(?:typescript|ts)\s+(?:errors?|types?)\b|타입\s*(?:오류|에러|검사)|컴파일\s*(?:오류|에러)/i;
     CITE = /^(?:according\s+to|per\s+(?:rfc|the\s+spec)|rfc[\s-]?\d|this\s+(?:matters|is\s+(?:important|needed|why|because)|happens|breaks|causes)\b|#\d+\s|(?:actual|current)\s+(?:behaviou?r|result|output)?\s*(?:vs\.?|:))|\b(?:documents?|states?|specifies)\s+that\b|.{0,30}에\s*따르면/i;
     DIRECTIVE = /\b(?:should|must|shall|will|now|no\s+longer|needs?\s+to|has\s+to|have\s+to)\b|해야|여야|되어야|하도록|않게|않아야/i;
@@ -3077,14 +3114,23 @@ var init_requirements = __esm({
     ALREADY = /\balready\s+(?:does|do|did|is|are|has|have|returns?|handles?|works?|exists?|supports?)\b/i;
     BEFORE_PAST = /\b(?:is|are|be|been|being|does|do|can|cannot|that|which|who|when|if|unless|so|after|before|once|until|while)\b/i;
     BEFORE_GET = /\bgets?\b/;
-    TEST_REPORT = /\b\d[\d,]*\s+(?:\w+\s+){0,2}(?:passed|passing|skipped)\b|\b\d[\d,]*\s+failures?\s+on\s+(?:main|master)\b|:\s*(?:all\s+)?pass(?:ed|es)?\.?$|^(?:add(?:ed|s)?|improve[sd]?|increase[sd]?|expand(?:ed|s)?)\s+(?:\w+\s+)?(?:test\s+)?coverage\b/i;
+    TEST_REPORT = /\b\d[\d,]*\s+(?:\w+\s+){0,2}(?:passed|passing|skipped)\b|\b\d[\d,]*\s+failures?\s+on\s+(?:main|master)\b|:\s*(?:all\s+)?pass(?:ed|es)?\.?$|^(?:add(?:ed|s)?|improve[sd]?|increase[sd]?|expand(?:ed|s)?)\s+(?:\w+\s+)?(?:test\s+)?coverage\b|^all\s+(?:(?:\d+|the|of\s+the)\s+)?(?:[\w-]+\s+){0,4}tests?\s+(?:\w+\s+)?(?:pass(?:ed|es)?|passing|verified|green)\b/i;
+    QUESTION = /\?\s*$|^(?:is\s+it\s+possible|is\s+there\s+(?:a|any)\s+way|does\s+anyone|would\s+you|could\s+you|can\s+you|why\s+not)\b/i;
+    OFFER = /\b(?:open|send|file|submit|make|create|raise)\s+(?:a\s+|the\s+)?(?:pr|pull\s+request)\b|\bwork\s+on\s+this\b|\bwilling\s+to\s+help\b|\bhappy\s+to\s+help\b/i;
+    OPINION = /^(?:i|we)\s+(?:think|believe|guess|suppose|feel|came|come|tried|found|noticed|use|used|am|was|were|could|cannot|can't|can|don't|do\s+not|just|also|really|personally|might|may)\b|^in\s+my\s+(?:opinion|case)\b/i;
+    FRAGMENT = /[,;]$|^[`'"]*[)\]}]|^(?:and|or|but|so|then)\s/i;
+    CLOSING_LINE = /^(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?|refs?|related|see)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d+\b/i;
+    TEST_FILE_NOTE = /^`?[\w./-]+\.(?:test|spec)\.[cm]?[jt]sx?`?\s*[:—–-]/i;
+    ISSUE_MODAL = /해야|하도록|되어야|않게|않아야|\bmust\b|\bshould\b|\bshall\b|\bneeds?\s+to\b|\bexpect(?:ed|s|ing)?\b|\bwants?\s+to\b|\bwould\s+like\b|\bable\s+to\b/i;
+    IMPERATIVE = /^(?:accept|add|allow|avoid|block|cache|call|check|clear|close|convert|decode|deny|detect|document|emit|encode|enforce|ensure|exclude|expose|fix|forward|handle|hide|honou?r|include|keep|let|limit|lock|log|make|match|merge|move|normalize|parse|pass|prevent|preserve|provide|record|reject|remove|replace|require|reset|respect|retry|return|reuse|send|serialize|set|show|skip|stop|strip|support|throw|treat|unlock|use|validate|write)\b/i;
+    BUG_SAY = /\bnever\b|\bleaks?\b|\bcrash(?:es|ed)?\b|\bthrows\b|\bfails\b|\bbreaks\b|\bignores\b|\bloses\b|\bisn't\b|\baren't\b|\bdoesn't\b|\bdoes\s+not\b|\binstead\s+of\b|\bcurrently\b|\bwrongly\b|\bincorrectly\b|\bno\s+longer\s+works?\b/i;
     OBSERVED = /[✓✗✔✘❌]\s*$/;
     LOCATION = /^(?:\S+\s+){0,6}\(?`?[\w./-]+\.(?:[cm]?[jt]sx?):\d+(?:[-–]\d+)?`?\)?$/;
     BOT_LABEL = /^(?:bug\s*fix(?:es)?|fixes|new\s+features?|features?|enhancements?|improvements?|documentation|docs|tests?|testing|chores?|refactor(?:ing|s)?|performance|perf|style|ci|build|dependencies|deps|breaking\s+changes?|other\s+changes|miscellaneous|misc)$/i;
     BOT_SKIP = /^(?:documentation|docs|tests?|testing|chores?|refactor(?:ing|s)?|style|ci|build|dependencies|deps|miscellaneous|misc)$/i;
     SECTION = /(acceptance\s*criteria|requirements?|definition\s*of\s*done|expected\s*behaviou?r|요구\s*사항|인수\s*조건|완료\s*조건|수용\s*기준|기대\s*동작|해야\s*할\s*일|체크\s*리스트)/i;
     MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|된다|must|should|shall|when |if |needs? to|able to|cannot|can't)/i;
-    PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review|\bauthor\s+should\b|should\s+do\s+the\s+following|\bif\s+applicable\b/i;
+    PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review|\bauthor\s+should\b|should\s+do\s+the\s+following|\bif\s+applicable\b|alternatives?\b|out\s+of\s+scope|non-?goals?|future\s+(?:work|plans?)|^follow-?ups?$|^links?$|^references?$|\bai\s+(?:model|tools?|usage|assistance|disclosure)\b/i;
     BACKGROUND_SECTION = /actual\s+(?:behaviou?r|result)|current\s+behaviou?r|what\s+do\s+you\s+see|what\s+happens|steps?\s+(?:to\s+)?reproduc|reproduc|use\s+case|motivation|^background$|^context$|environment|versions?\b|platform|runtime|root\s+cause|investigation|^logs?$|재현|현재\s*동작|^배경$|환경/i;
     AUTHOR_ITEM = /^(?:I(?:'ve|'m|'d)\b|I\s+(?:have|has|am|did|added|ran|tested|updated|created|confirm(?:ed)?|agree|read|followed|checked|made|wrote|signed|performed|reviewed|verified|included|linked)\b|we(?:'ve|\s+have)\s|저는\s|제가\s)/i;
   }

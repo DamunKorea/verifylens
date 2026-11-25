@@ -171,6 +171,8 @@ export type Evidence = {
   noWindow?: boolean;
   /** 「A banned user cannot …」의 banned 처럼 코드가 이름으로 가진 상태를 아무 조건도 읽지 않음 (그 낱말) */
   stateUnread?: string;
+  /** PR 주소로 볼 때, 점수가 더 높은 바뀌지 않은 줄 대신 이번 변경 안의 줄을 근거로 골랐다 (검사도 이번 변경이 더한 것만 잇는다) */
+  inChangeOnly?: boolean;
 };
 
 export type TestStatus = '통과' | '실패' | '미실행';
@@ -209,6 +211,11 @@ export type ReqResult = {
   ownTests?: boolean;
   /** 바뀐 코드가 있는데 근거 줄은 이번 변경이 손대지 않은 곳이다. 「확인됨」이라 하지 않는다 */
   outsideChange?: boolean;
+  /**
+   * 「미확인」일 때 사람이 직접 볼 검사: 이번 변경이 새로 더한 검사 가운데 근거 파일과 짝인 것(없으면 요구사항 낱말을 이름에 담은 것).
+   * 판정에는 쓰지 않는다. 이름은 많아야 셋, total 은 그런 검사의 수 (PR 주소로 볼 때만)
+   */
+  lookTests?: { names: string[]; total: number };
 };
 
 export type ResultSet = {

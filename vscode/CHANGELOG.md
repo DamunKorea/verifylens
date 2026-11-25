@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.28.0
+
+Better results on pull requests checked on the browser page: fewer lines that are not requirements, evidence on the lines the pull request changed, and, for requirements that stay Not verified, where to look yourself. Verdicts on all our earlier cases did not change.
+
+- **Fewer lines that are not requirements.** These are now left out when requirements are taken from a pull request or an issue:
+  - questions ("Should `0` be treated as OK …?"), offers to help ("Happy to open a PR"), and first-person remarks ("I think …", "I came across this when …"); "I expect …" in an issue is kept;
+  - sentence fragments (ending in a comma, or starting with a closing bracket or "and"), table rows, "Fixes #857" lines, notes on test files, "All tests pass", "Updated CHANGELOG.md";
+  - the "Alternatives considered", "Out of scope" and "AI model" sections;
+  - in an issue, sentences that describe the bug as it is now ("… never fires", "It throws …"). Only sentences that say what should happen are taken. In a bug report, list items that describe the bug are left out too;
+  - the title of an issue that names a bug ("… ignore abortOnUnmount") or asks a question, even without a bug template.
+- **With a pull request, evidence is looked for in the change first.** If a line the pull request changed matches the requirement well enough, it is the evidence, even when an unchanged line matches a little better. A requirement is then linked only to tests this pull request added: old tests whose names share words with the sentence are not enough.
+- **Lines that were only reformatted or moved do not count as changed.** A comment change (`// @ts-ignore` to `// @ts-expect-error`), a brace, or a reordered import is not a change in behavior. One pull request reformatted a whole file, and the evidence landed on a function that only had its formatting changed.
+- **Where to look yourself.** When a requirement stays Not verified on a pull request, its card shows the line this pull request changed and the tests this pull request added whose names share a word with the requirement. It is not a verdict; it is the shortest way to check it yourself.
+- **Measured** (our own reading of each line; a regression check, not a benchmark):
+  - Two repositories we had not looked at, 20 merged pull requests, first run: lines taken as requirements 85 → 72, of which real requirements 36 → 41 (one real one was lost: "I think the query parameters should be untouched" is now read as a first-person remark). Verified 0 → 1 (right), wrong Verified 0 → 0. Of the 40 real requirements still Not verified, 34 now point to the right changed line and 21 show a test that checks them.
+  - Six repositories seen while fixing (80 pull requests): right Verified 19 → 29, wrong Verified 12 → 12.
+
 ## 0.27.2
 
 From the first check of the agent hook the way Claude Code runs it. No verdict changes.

@@ -482,7 +482,7 @@ const conflictSay = (b: Boundary, file: string, p: NumPart) => {
 
 const severity = (b: Boundary) => (b.ok === false ? 0 : b.ok === null ? 1 : 2);
 
-function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] = [], names: Set<string> = new Set()): Evidence {
+function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] = [], names: Set<string> = new Set(), changedFirst = false): Evidence {
   // 아무도 부르지 않는 함수(내보내지 않았고 파일 안에서 이름이 다시 나오지 않음)의 검사는 돌지 않으므로 근거가 아니다
   // (「잠긴 계정은 로그인할 수 없다」 ↔ 부르지 않는 assertNotLocked 안의 if (account.locked) throw — 근거 줄 고친 뒤 새 묶음에서 찾음, 11/22)
   const dead = new Set(allUnits.filter((u) => u.kind === 'function' && u.uncalled).map((u) => `${u.file}#${u.fn}`));
@@ -494,9 +494,25 @@ function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] 
   // 반복문의 조건(for … i < hooks.transform.length)도 숫자 없는 요구사항을 판단하는 줄이 아니다: 그 단위는 반복문 몸통 전체의 낱말을 가진다 (실제 PR 시험 Elysia)
   const loopHead = (u: Unit) => u.kind === 'condition' && /^\s*(?:for|while|do)\b/.test(u.text);
   const pickable = req.numbers.length || req.constraints.length ? units : units.filter((u) => !settingOnly(u) && !loopHead(u));
-  for (const u of pickable) {
-    const { score, why, num } = scoreUnit(req, u);
-    if (!best || score > best.score || (score === best.score && moreSpecific(u, num, best))) best = { u, score, why, num };
+  const bestOf = (pool: Unit[]) => {
+    let top: typeof best = null;
+    for (const u of pool) {
+      const { score, why, num } = scoreUnit(req, u);
+      if (!top || score > top.score || (score === top.score && moreSpecific(u, num, top))) top = { u, score, why, num };
+    }
+    return top;
+  };
+  best = bestOf(pickable);
+  // PR 주소로 볼 때(PR 글이 요구사항): 이번 변경이 바꾼 단위 가운데 요구사항과 이어지는 것(점수 2 이상)이 있으면 그것이 근거다.
+  // PR 글은 그 PR 이 바꾼 것을 말한다. 실제 PR 여섯 저장소에서 「근거 줄이 이번 변경 밖」이 미확인 이유의 큰 몫이었고,
+  // 바뀌지 않은 줄의 「확인됨」은 대부분 틀렸다 (0.27.0). 숫자 조건 판정은 그대로 모든 줄에서 찾는다
+  let inChangeOnly = false;
+  if (changedFirst && best && !best.u.changed) {
+    const inChange = bestOf(pickable.filter((u) => u.changed));
+    if (inChange && inChange.score >= 2) {
+      best = inChange;
+      inChangeOnly = true;
+    }
   }
   const judged = judgeConstraints(req, units);
   // 정액 할인 · 쿠폰: 「정액이면」 갈래가 비율(÷100)로 계산하면 다름, 금액을 빼면 그 줄이 근거다 (X 에서 받은 버그: 정액 쿠폰을 비율로 계산)
@@ -689,6 +705,7 @@ function findEvidence(req: Requirement, allUnits: Unit[], fields: SchemaField[] 
     found && perPeriod && judged.length > 0 && unit.kind === 'condition' && !unit.cond?.parts?.some((p) => p.timed) && !PERIOD_NAME.test(unit.text.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, "''")) && !units.some((u) => u.file === unit.file && u.fn === unit.fn && u.kind === 'condition' && TIME_CMP.test(u.text));
   const status = found && !unchecked && !noWindow ? '발견' : '일부 발견';
   const ev: Evidence = { unit, score: s.score, status, why: s.why };
+  if (inChangeOnly && unit.changed) ev.inChangeOnly = true;
   if (noWindow) ev.noWindow = true;
   if (stateUnread && stateWord) ev.stateUnread = stateWord.word;
   if (unchecked) {
@@ -883,6 +900,27 @@ function ownTests(req: Requirement, s: ResultSet, ev: Evidence): TestCase[] {
   return s.tests.filter((t) => picked.some((a) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title)));
 }
 
+/**
+ * 「미확인」 줄에서 사람이 직접 볼 검사 (판정에는 쓰지 않는다, PR 주소로 볼 때만).
+ * 이번 변경이 새로 더한 검사 가운데 근거 파일과 짝인 것, 짝이 없으면 요구사항 낱말을 이름에 담은 것. 이미 이어진 검사는 뺀다.
+ * (실제 PR 여섯 저장소에서 진짜 요구사항 대부분이 「미확인」으로 남았다. 규칙으로 잇지 못해도 볼 곳은 알려 준다, 0.28.0)
+ */
+function lookTests(req: Requirement, s: ResultSet, ev: Evidence, linked: TestCase[]): { names: string[]; total: number } | undefined {
+  if (!s.prScope || !s.addedTests?.length) return undefined;
+  const real = (x: string) => !BROAD.has(x) && !FILLER.has(x);
+  const words = new Set([...req.tokens, ...req.concepts.flat()].filter(real));
+  const overlap = (a: AddedTest) => new Set([...tokenize(normalizePhrases(plainNumbers(a.full))), ...conceptsFor(a.full).flat()].filter((x) => words.has(x))).size;
+  const fresh = s.addedTests.filter((a) => !linked.some((t) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title)));
+  // 요구사항 낱말을 이름에 하나라도 담은 것만 보인다 (짝인 검사 파일이어도 낱말이 하나도 겹치지 않으면 다른 요구사항의 검사다)
+  const evFile = ev.unit?.file;
+  const named = fresh.filter((a) => overlap(a) > 0);
+  const paired = evFile ? named.filter((a) => pairsWith(a, evFile)) : [];
+  const pool = paired.length ? paired : named;
+  if (!pool.length) return undefined;
+  const ranked = pool.map((a, i) => ({ a, i, o: overlap(a) })).sort((x, y) => y.o - x.o || x.i - y.i);
+  return { names: ranked.slice(0, 3).map((x) => x.a.full), total: pool.length };
+}
+
 /** 바뀐 검사가 이 요구사항의 검사인가: 이어진 실행 결과와 이름이 같거나, 그 이름(지금 · 전 이름 · describe 포함)이 이 요구사항에 이어지면 */
 function editLinked(req: Requirement, e: TestEdit, mapped: TestCase[], ev: Evidence): boolean {
   if (mapped.some((t) => sameTestName(t.name, e.full) || sameTestName(t.name, e.title))) return true;
@@ -904,8 +942,12 @@ export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, b
     const changedCode = !!s.prScope && s.units.some((u) => u.changed) && s.units.some((u) => !u.changed);
     for (const r of reqs) {
       // 절차 줄 · 타입 요구사항은 코드 줄과 검사를 잇지 않는다 (이어 두면 「확인됨」이 될 수 있다 — 실제 PR 시험에서 「Add tests …」가 그랬다)
-      const evidence: Evidence = r.unreadable ? { unit: null, score: 0, status: '미발견', why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names);
-      const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence);
+      const evidence: Evidence = r.unreadable ? { unit: null, score: 0, status: '미발견', why: [] } : findEvidence(r, s.units, s.analyses.flatMap((a) => a.fields ?? []), names, changedCode);
+      // 근거를 이번 변경 안에서만 골랐으면(점수가 더 높은 줄은 바뀌지 않은 곳) 검사도 이번 변경이 새로 더한 것만 잇는다.
+      // 예전 검사의 이름이 문장과 겹쳐 「확인됨」이 되던 것(「Hooking into network errors」 ↔ 「HTTPError#data is available in beforeError hooks」)이
+      // 처음 시도에서 고치며 본 여섯 저장소에 새로 생긴 「확인됨」 17개 가운데 7개가 그랬다 (0.28.0)
+      const added = (t: TestCase) => !!s.addedTests?.some((a) => sameTestName(t.name, a.full) || sameTestName(t.name, a.title));
+      const byName = r.unreadable ? [] : mapTests(r, s.tests, evidence).filter((t) => !evidence.inChangeOnly || added(t));
       const own = byName.length || r.unreadable ? [] : ownTests(r, s, evidence);
       const mapped = byName.length ? byName : own;
       // 바뀐 코드가 있으면(바뀐 단위와 그대로인 단위가 함께 있음) 근거는 이번 변경 안에 있어야 「확인됨」이다.
@@ -915,6 +957,8 @@ export function evaluate(sets: ResultSet[], reqs: Requirement[], repo: string, b
       // 이번 변경에서 바뀐 검사 가운데 이 요구사항의 것: 실행 결과와 같은 이름 규칙으로 잇는다 (지운 검사는 실행 결과에 없다)
       const edits = r.unreadable ? [] : (s.testEdits ?? []).filter((e) => editLinked(r, e, mapped, evidence));
       if (edits.length) rr.edits = edits;
+      const look = r.unreadable ? undefined : lookTests(r, s, evidence, mapped);
+      if (look) rr.lookTests = look;
       s.perReq[r.id] = rr;
     }
   }

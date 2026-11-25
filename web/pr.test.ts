@@ -18,6 +18,22 @@ test('PR addresses: full URL with a tab, short form, and things that are not a P
 test('changed lines come from the patch, closing issues from the PR text', () => {
   assert.deepEqual(patchLines('@@ -1,3 +1,4 @@\n a\n-b\n+B\n+C\n c\n@@ -10,2 +11,2 @@\n x\n-y\n+Y\n\\ No newline at end of file'), [2, 3, 12]);
   assert.equal(patchLines(undefined), null);
+  // 서식만 바뀐 줄 · 자리만 옮긴 import · 주석과 괄호뿐인 줄은 바뀐 줄이 아니다 (실제 PR 시험 Elysia, 0.28.0)
+  const reformat = [
+    '@@ -1,8 +1,9 @@',
+    "-import { b } from './b'",
+    "-import { a } from './a'",
+    "+import { a } from './a'",
+    "+import { b } from './b'",
+    '-// @ts-ignore',
+    '+// @ts-expect-error',
+    "-  case 'x':",
+    "+  case 'x': {",
+    '+  }',
+    '-  return new Response(msg, { headers })',
+    '+  return mapResponse(msg, set)',
+  ].join('\n');
+  assert.deepEqual(patchLines(reformat), [6]);
   const ref = { owner: 'o', repo: 'r', number: 9 };
   assert.deepEqual(closingIssues('Closes #3, fixes other/lib#4 and resolves https://github.com/o/r/issues/5. Also closes #3. See #6.', ref), [
     { owner: 'o', repo: 'r', number: 3 },
@@ -230,4 +246,60 @@ test('observed results and code locations are not requirements', () => {
     '- ✅ Setting a different value sends set-cookie',
   ].join('\n');
   assert.deepEqual(extractRequirements(issue), ['The Set-Cookie header should be sent even when the handler throws', '✅ Setting a different value sends set-cookie']);
+});
+
+// 이슈 · PR 글의 질문 · 제안 · 의견 · 조각 · 표는 요구사항이 아니다 (고치며 본 실제 PR 80개의 글에서 찾음, 0.28.0)
+test('questions, offers, opinions, fragments and tables are not requirements', () => {
+  const issue = [
+    'Is it possible to retry only on network errors: https://example.com/x',
+    'Should `0` be treated as OK for `no-cors` requests?',
+    'Happy to open a PR if you would like.',
+    'I think the headers object should be normalized.',
+    'I came across this when I tried to refresh a token with `retry`.',
+    'I expect the routes to be registered even behind a guard.',
+    '',
+    '- the `onError` handler is never called,',
+    '- }`, and the middleware responds with 200',
+    '- Headers should be merged without duplication',
+    '',
+    '| Server | Result |',
+    '|--------|--------|',
+    '| Node | 87 MB |',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(issue), ['Headers should be merged without duplication']);
+  const prose = issue.split('\n').slice(0, 6).join('\n');
+  // 「I expect …」는 이슈의 기대 동작이다 (이슈 글에서만 읽는다)
+  assert.deepEqual(extractRequirements(prose, 12, { issue: true }), ['I expect the routes to be registered even behind a guard']);
+  // 고르지 않은 방법 · 쓴 AI 도구 · 이슈를 닫는 줄 · 검사 파일 메모 · 테스트 통과 보고 · 바뀐 기록 파일
+  const pr = [
+    '## Changes',
+    '- Write an empty `data:` line for `undefined`',
+    '- `test/sse.test.ts`: Added a regression test',
+    '- All 4 new tests pass',
+    '- Updated CHANGELOG.md',
+    '- Fixes #857 (it does not fully fix this)',
+    '## Alternatives considered',
+    '- Skipping `undefined` yields: drops values the subscriber expects',
+    '## AI model',
+    '- Some Model 1.0',
+  ].join('\n');
+  assert.deepEqual(extractRequirements(pr), ['Write an empty `data:` line for `undefined`']);
+});
+
+// 이슈 글은 고치기 전 동작을 지금 시제로 적는다: 줄글은 바라는 동작(should · expect …)만, 버그 신고의 목록 줄은 버그 설명을 뺀다 (0.28.0)
+test('an issue describes the bug in the present tense; only the wanted behavior is a requirement', () => {
+  const body = [
+    'When a response has an empty body, `onDownloadProgress` never fires.',
+    'It throws `headers.get is not a function` if custom headers are set.',
+    'Expected: the progress callback should fire once with 100%.',
+    '',
+    '- a raw `TypeError` leaks to the caller instead of a `TRPCError`',
+    '- Check for duck-typed responses instead of `instanceof`',
+  ].join('\n');
+  // PR 글이면 「When …」 문장도 고친 뒤의 동작이다
+  assert.deepEqual(extractRequirements(body), ['a raw `TypeError` leaks to the caller instead of a `TRPCError`', 'Check for duck-typed responses instead of `instanceof`']);
+  assert.deepEqual(extractRequirements(body.split('\n').slice(0, 3).join('\n'), 12, { issue: true }), ['Expected: the progress callback should fire once with 100%']);
+  assert.deepEqual(extractRequirements(body, 12, { issue: true, bug: true }), ['Check for duck-typed responses instead of `instanceof`', 'Expected: the progress callback should fire once with 100%']);
+  // 기능 제안 이슈의 목록 줄은 제안한 동작이다
+  assert.deepEqual(extractRequirements(body, 12, { issue: true }), ['a raw `TypeError` leaks to the caller instead of a `TRPCError`', 'Check for duck-typed responses instead of `instanceof`']);
 });

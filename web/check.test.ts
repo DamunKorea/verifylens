@@ -187,3 +187,40 @@ test('lines that are not judged say so, and a passing test that stays Not verifi
   const own = runCheck({ requirements: '- R1: Blank coupon codes are refused', fileName: '', code: '', tests: [{ name: 'throws for a code of spaces', status: 'pass' }], lang: 'en', files: { 'src/coupon.ts': add, 'src/coupon.test.ts': spec }, baseFiles: {} });
   assert.match(own.notes.find((n) => n.reqId === 'R1')!.note, /tests pass · linked only by this change’s new tests/);
 });
+
+// PR 주소로 볼 때: 점수가 더 높은 줄이 이번 변경 밖이면 변경 안의 줄을 근거로 고르고, 그때는 이번 변경이 더한 검사만 잇는다.
+// 「미확인」이면 이 PR 이 바꾼 줄과 이 PR 이 더한 검사를 「직접 볼 곳」으로 보인다 (실제 PR 여섯 저장소, 0.28.0)
+test('with a pull request, evidence found only inside the change links only the change’s new tests', () => {
+  const code = "export function lockoutText(account: { locked: boolean }) {\n  if (account.locked) return 'a locked account cannot log in';\n  return '';\n}\n\nexport function login(account: { locked: boolean }) {\n  if (account.locked) throw new Error('LOCKED');\n  return true;\n}\n";
+  const spec = "import { login } from './auth';\nit('refuses to log in a locked account', () => {});\n";
+  const old = { name: 'a locked account cannot log in', status: 'pass' as const };
+  const run = (tests: { name: string; status: 'pass' }[], extra: Record<string, string> = {}, baseFiles?: Record<string, string>, changed?: Record<string, number[] | null>) =>
+    runCheck({ requirements: '- R1: A locked account cannot log in', fileName: '', code: '', tests, lang: 'en', files: { 'src/auth.ts': code, ...extra }, baseFiles, changed }).rows[0];
+  // 붙여 넣은 코드: 이름이 맞는 예전 검사로 확인됨
+  assert.equal(run([old]).overall, '확인됨');
+  // PR: 근거는 바뀐 줄 7, 예전 검사는 잇지 않음 → 미확인 · 검사 없음, 볼 곳은 바뀐 줄
+  const pr = run([old], {}, undefined, { 'src/auth.ts': [7] });
+  assert.equal(pr.overall, '미확인');
+  assert.equal(pr.line, 7);
+  assert.deepEqual(pr.tests, []);
+  assert.deepEqual(pr.look, { inChange: true, tests: [], more: 0 });
+  // PR 이 이 검사를 새로 더했으면 그 검사로 확인됨
+  const added = run([old, { name: 'refuses to log in a locked account', status: 'pass' }], { 'src/auth.test.ts': spec }, { 'src/auth.test.ts': "import { login } from './auth';\n" }, { 'src/auth.ts': [7] });
+  assert.equal(added.overall, '확인됨');
+  assert.deepEqual(added.tests, ['✓ refuses to log in a locked account']);
+  assert.equal(added.look, null);
+});
+
+// 「직접 볼 곳」의 검사는 이 PR 이 더한 검사 가운데 요구사항 낱말을 이름에 담은 것이다
+test('where to look lists the change’s new tests that name the requirement', () => {
+  const code = "export function readCookie(raw: string): string | undefined {\n  const value = raw.trim();\n  if (value.length >= 2 && value.startsWith('\"')) return value.slice(1, -1);\n  return value;\n}\n";
+  const spec = "import { readCookie } from './cookie';\nit('does not accept a lone double quote as a cookie value', () => {});\nit('parses an empty quoted value', () => {});\nit('keeps the expiry date', () => {});\n";
+  const r = runCheck({
+    requirements: '- R1: A standalone double quote should be rejected as an invalid cookie value',
+    fileName: '', code: '', tests: [], lang: 'en',
+    files: { 'src/cookie.ts': code, 'src/cookie.test.ts': spec }, baseFiles: { 'src/cookie.test.ts': "import { readCookie } from './cookie';\n" }, changed: { 'src/cookie.ts': [3] },
+  }).rows[0];
+  assert.equal(r.overall, '미확인');
+  assert.equal(r.look?.inChange, true);
+  assert.deepEqual(r.look?.tests, ['does not accept a lone double quote as a cookie value', 'parses an empty quoted value']);
+});

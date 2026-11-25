@@ -19,7 +19,7 @@ const CHECK_CUE = /\bmust\b|\brequired?\b|\bneeds?\b|\bhave to\b|\bhas to\b|해�
 // 뽑은 82줄 가운데 절반이 요구사항이 아니었고, 그 가운데 셋이 「확인됨」이 됐다(「Add tests …」 · 고치기 전 버그를 설명한 문장).
 /** PR 을 올린 사람이 할 일: 테스트 추가 · 실행, 서식 · 린트 명령, 문서 주석, 「같은 것을 다른 곳에도」 */
 export const PROCESS_LINE =
-  /^(?:(?:add|write|update|run|fix|ran|added|wrote|updated|include|included)\s+(?:(?:the|a|an|new|more|unit|e2e|integration|regression|missing|some)\s+){0,3}tests?\b|(?:the\s+)?(?:new|added|updated|existing)\s+tests?\b|`?(?:npm|pnpm|yarn|bun|npx|deno)\s|(?:add|update|write)\s+(?:the\s+)?(?:ts|js)?doc|(?:update|add)\s+(?:the\s+)?(?:docs?|documentation|readme|changelog|changeset)\b|(?:apply|do)\s+(?:it|this|that|the\s+same(?:\s+\w+)?)\s+(?:to|in|for)\b|테스트\s*(?:를|을)?\s*(?:추가|작성|실행|돌|보강)|문서\s*(?:를|을)?\s*(?:추가|갱신|업데이트))|\bto\s+(?:format|lint)\b/i;
+  /^(?:(?:add|write|update|run|fix|ran|added|wrote|updated|include|included)\s+(?:(?:the|a|an|new|more|unit|e2e|integration|regression|missing|some)\s+){0,3}tests?\b|(?:the\s+)?(?:new|added|updated|existing)\s+tests?\b|`?(?:npm|pnpm|yarn|bun|npx|deno)\s|(?:add|update|write)\s+(?:the\s+)?(?:ts|js)?doc|(?:update|add|updated|added)\s+(?:the\s+)?`?(?:docs?|documentation|readme|changelog|changeset)(?:\.md)?\b|(?:apply|do)\s+(?:it|this|that|the\s+same(?:\s+\w+)?)\s+(?:to|in|for)\b|테스트\s*(?:를|을)?\s*(?:추가|작성|실행|돌|보강)|문서\s*(?:를|을)?\s*(?:추가|갱신|업데이트))|\bto\s+(?:format|lint)\b/i;
 /** 타입 수준 요구사항: VerifyLens 는 실행되는 조건만 읽고 TypeScript 타입은 읽지 못한다 */
 export const TYPE_LEVEL = /\btype\s+errors?\b|\btype[-\s]?checks?\b|\bcompile[-\s]?time\b|\b(?:typescript|ts)\s+(?:errors?|types?)\b|타입\s*(?:오류|에러|검사)|컴파일\s*(?:오류|에러)/i;
 /** 까닭 · 인용: 「According to RFC …」 · 「AWS documents that …」 · 「This matters for …」 · 「#12 covers …」 */
@@ -47,11 +47,34 @@ function oldBehavior(t: string): boolean {
   return lead(ALREADY.exec(t)) || lead(PAST.exec(t));
 }
 /** 테스트를 돌린 결과 · 테스트를 더했다는 말: 「75 passed」 · 「`pnpm build`: passed」 · 「36 failures on main」 · 「Added coverage for …」 */
-const TEST_REPORT = /\b\d[\d,]*\s+(?:\w+\s+){0,2}(?:passed|passing|skipped)\b|\b\d[\d,]*\s+failures?\s+on\s+(?:main|master)\b|:\s*(?:all\s+)?pass(?:ed|es)?\.?$|^(?:add(?:ed|s)?|improve[sd]?|increase[sd]?|expand(?:ed|s)?)\s+(?:\w+\s+)?(?:test\s+)?coverage\b/i;
-/** 요구사항이 아닌 줄인가 (절차 · 까닭 · 인용 · 고치기 전 버그 설명 · 테스트 결과). 요구사항 뽑기에서 뺀다 */
+const TEST_REPORT = /\b\d[\d,]*\s+(?:\w+\s+){0,2}(?:passed|passing|skipped)\b|\b\d[\d,]*\s+failures?\s+on\s+(?:main|master)\b|:\s*(?:all\s+)?pass(?:ed|es)?\.?$|^(?:add(?:ed|s)?|improve[sd]?|increase[sd]?|expand(?:ed|s)?)\s+(?:\w+\s+)?(?:test\s+)?coverage\b|^all\s+(?:(?:\d+|the|of\s+the)\s+)?(?:[\w-]+\s+){0,4}tests?\s+(?:\w+\s+)?(?:pass(?:ed|es)?|passing|verified|green)\b/i;
+// ── 이슈 · PR 글의 질문 · 제안 · 의견 · 조각 (고치며 본 실제 PR 80개의 글에서 찾음, 0.28.0) ──
+/** 질문: 「should `ky` not throw in such cases?」 · 「Is it possible to retry only …」 */
+const QUESTION = /\?\s*$|^(?:is\s+it\s+possible|is\s+there\s+(?:a|any)\s+way|does\s+anyone|would\s+you|could\s+you|can\s+you|why\s+not)\b/i;
+/** PR 을 열겠다 · 도와주겠다는 말: 「Happy to open a PR」 · 「I'd be down to file a PR」 · 「I could work on this」 */
+const OFFER = /\b(?:open|send|file|submit|make|create|raise)\s+(?:a\s+|the\s+)?(?:pr|pull\s+request)\b|\bwork\s+on\s+this\b|\bwilling\s+to\s+help\b|\bhappy\s+to\s+help\b/i;
+/** 1인칭 의견 · 겪은 일: 「I think …」 · 「I came across this issue when …」 (「I expect …」는 기대 동작이라 둔다) */
+const OPINION = /^(?:i|we)\s+(?:think|believe|guess|suppose|feel|came|come|tried|found|noticed|use|used|am|was|were|could|cannot|can't|can|don't|do\s+not|just|also|really|personally|might|may)\b|^in\s+my\s+(?:opinion|case)\b/i;
+/** 문장 조각: 쉼표 · 쌍반점으로 끝나거나, 닫는 괄호 · 접속사로 시작한다 (「the `onError` handler is never called,」 · 「}`, and the middleware …」) */
+const FRAGMENT = /[,;]$|^[`'"]*[)\]}]|^(?:and|or|but|so|then)\s/i;
+/** 이슈를 닫는다는 줄 · 이 PR 이 대신하는 것: 「Fixes #857 (…)」 */
+const CLOSING_LINE = /^(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?|refs?|related|see)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d+\b/i;
+/** 검사 파일 메모: 「`test/response/custom-response.test.ts`: Added test for …」 */
+const TEST_FILE_NOTE = /^`?[\w./-]+\.(?:test|spec)\.[cm]?[jt]sx?`?\s*[:—–-]/i;
+/** 요구사항이 아닌 줄인가 (절차 · 까닭 · 인용 · 고치기 전 버그 설명 · 테스트 결과 · 질문 · 제안 · 의견 · 조각). 요구사항 뽑기에서 뺀다 */
 export function notRequirement(t: string): boolean {
-  return PROCESS_LINE.test(t) || CITE.test(t) || TEST_REPORT.test(t) || OBSERVED.test(t) || LOCATION.test(t) || oldBehavior(t);
+  return (
+    PROCESS_LINE.test(t) || CITE.test(t) || TEST_REPORT.test(t) || OBSERVED.test(t) || LOCATION.test(t) || oldBehavior(t) ||
+    QUESTION.test(t) || OFFER.test(t) || OPINION.test(t) || FRAGMENT.test(t) || CLOSING_LINE.test(t) || TEST_FILE_NOTE.test(t)
+  );
 }
+// 이슈 글은 고치기 전의 동작을 지금 시제로 적는다(「`$fetch` is transforming the headers …」 · 「… never fires」).
+// 이슈의 줄글은 바라는 동작을 말할 때(should · must · expect …)만 후보로 쓰고, 이슈의 목록 줄도 버그를 말하면(never · leaks · throws …) 뺀다.
+// PR 글의 「When it is set, …」는 고친 뒤의 동작이므로 그대로 둔다.
+const ISSUE_MODAL = /해야|하도록|되어야|않게|않아야|\bmust\b|\bshould\b|\bshall\b|\bneeds?\s+to\b|\bexpect(?:ed|s|ing)?\b|\bwants?\s+to\b|\bwould\s+like\b|\bable\s+to\b/i;
+/** 시키는 말로 시작하는 줄 (제안 · 할 일): 「Check …」 · 「Write `data: null`」 · 「Provide an option …」 · 「Lock the account after …」 */
+export const IMPERATIVE = /^(?:accept|add|allow|avoid|block|cache|call|check|clear|close|convert|decode|deny|detect|document|emit|encode|enforce|ensure|exclude|expose|fix|forward|handle|hide|honou?r|include|keep|let|limit|lock|log|make|match|merge|move|normalize|parse|pass|prevent|preserve|provide|record|reject|remove|replace|require|reset|respect|retry|return|reuse|send|serialize|set|show|skip|stop|strip|support|throw|treat|unlock|use|validate|write)\b/i;
+const BUG_SAY = /\bnever\b|\bleaks?\b|\bcrash(?:es|ed)?\b|\bthrows\b|\bfails\b|\bbreaks\b|\bignores\b|\bloses\b|\bisn't\b|\baren't\b|\bdoesn't\b|\bdoes\s+not\b|\binstead\s+of\b|\bcurrently\b|\bwrongly\b|\bincorrectly\b|\bno\s+longer\s+works?\b/i;
 /** 관찰한 결과 줄: 「Response status: 500 ✓」 · 「Set-Cookie header: missing ✗」 (끝에 표시가 붙음. 앞에 붙은 「✅ …」는 검사 목록이라 둔다) */
 const OBSERVED = /[✓✗✔✘❌]\s*$/;
 /** 코드 위치 메모: 「Dynamic error handler (`src/dynamic-handle.ts:728-734`)」 — 짧은 이름 + 파일:줄 */
@@ -91,7 +114,8 @@ const SECTION = /(acceptance\s*criteria|requirements?|definition\s*of\s*done|exp
 const MODAL = /(해야|한다|하도록|할 수|않는다|않게|되어야|된다|must|should|shall|when |if |needs? to|able to|cannot|can't)/i;
 // PR 양식의 절차 칸: 무엇을 만들지가 아니라 PR 을 올린 사람이 한 일이다 (공개 PR 「Task Checklist」에서 찾음, 11/22)
 // 「The author should do the following, if applicable」(Hono 의 PR 양식, 실제 PR 시험에서 찾음 0.26.0)
-const PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review|\bauthor\s+should\b|should\s+do\s+the\s+following|\bif\s+applicable\b/i;
+// 고르지 않은 다른 방법 · 범위 밖 · 나중 일 · 링크 · 쓴 AI 도구 칸도 이 PR 이 하는 일이 아니다 (「Alternatives considered」 아래의 「Skipping `undefined` yields」, 0.28.0)
+const PROCESS_SECTION = /check\s*-?\s*list|before\s+(?:you\s+)?(?:submit|merg|open)|type\s+of\s+change|related\s+(?:issues?|tasks?|prs?)|how\s+(?:has\s+this\s+been|to)\s+test|^testing$|test\s+plan|screenshots?|notes?\s+(?:for|to)\s+review|\bauthor\s+should\b|should\s+do\s+the\s+following|\bif\s+applicable\b|alternatives?\b|out\s+of\s+scope|non-?goals?|future\s+(?:work|plans?)|^follow-?ups?$|^links?$|^references?$|\bai\s+(?:model|tools?|usage|assistance|disclosure)\b/i;
 // 이슈 양식에서 지금(고치기 전)의 동작 · 재현 · 환경을 적는 칸: 요구사항이 아니다
 const BACKGROUND_SECTION = /actual\s+(?:behaviou?r|result)|current\s+behaviou?r|what\s+do\s+you\s+see|what\s+happens|steps?\s+(?:to\s+)?reproduc|reproduc|use\s+case|motivation|^background$|^context$|environment|versions?\b|platform|runtime|root\s+cause|investigation|^logs?$|재현|현재\s*동작|^배경$|환경/i;
 // 「I have created a task」 · 「I've added tests」: 올린 사람의 확인 문장
@@ -101,7 +125,15 @@ const AUTHOR_ITEM = /^(?:I(?:'ve|'m|'d)\b|I\s+(?:have|has|am|did|added|ran|teste
  * 이슈 · PR · 메신저에서 복사한 글에서 요구사항 후보 문장을 뽑는다 (규칙 기반, AI 없음).
  * 「요구사항 / Acceptance criteria」 같은 제목 아래의 목록 > 글 전체의 목록 > 「~해야 한다」 꼴 문장 순으로 고른다.
  */
-export function extractRequirements(md: string, max = 12): string[] {
+export function extractRequirements(md: string, max = 12, opts: { issue?: boolean; bug?: boolean } = {}): string[] {
+  const issue = !!opts.issue;
+  // 버그 신고 이슈의 목록 줄만 버그 설명으로 본다. 기능 제안 이슈의 목록 줄은 제안한 동작이다.
+  // 「Check for duck-typed Response conformance … instead of relying on `instanceof`」처럼 시키는 말로 시작하면 제안이다
+  const bugIssue = issue && !!opts.bug;
+  // 리뷰 봇 갈래 이름이 둘 붙은 줄도 갈래 이름이다 (「Bug Fixes / Improvements」)
+  const botParts = (t: string) => t.replace(/:$/, '').split(/\s*[/&]\s*|\s+and\s+/i);
+  const isBotLabel = (t: string) => botParts(t).every((p) => BOT_LABEL.test(p));
+  const isBotSkip = (t: string) => botParts(t).every((p) => BOT_SKIP.test(p));
   const clean = (t: string) =>
     t
       .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
@@ -120,7 +152,8 @@ export function extractRequirements(md: string, max = 12): string[] {
   let bot: { indent: number; skip: boolean } | null = null;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
-    if (!line || line.startsWith('>') || /^notes?\s*:/i.test(line)) continue;
+    // 표의 줄(「| Server | Result |」)은 재현 결과 · 비교이지 요구사항이 아니다
+    if (!line || line.startsWith('>') || line.startsWith('|') || /^notes?\s*:/i.test(line)) continue;
     const head = line.match(/^(#{1,6})\s+(.*)$/) ?? line.match(/^\*\*(.+?)\*\*:?$/) ?? line.match(/^([^-*\d].{0,40}):$/);
     if (head) {
       const title = (head[2] ?? head[1]).trim();
@@ -138,21 +171,23 @@ export function extractRequirements(md: string, max = 12): string[] {
       const t = clean(item[1]);
       // 리뷰 봇 요약: 「* **Bug Fixes**」 아래에 들여 쓴 줄이 온다. 문서 · 테스트 갈래 아래 줄은 건너뛴다
       const indent = raw.length - raw.trimStart().length;
-      if (BOT_LABEL.test(t.replace(/:$/, ''))) {
-        bot = { indent, skip: BOT_SKIP.test(t.replace(/:$/, '')) };
+      if (isBotLabel(t)) {
+        bot = { indent, skip: isBotSkip(t) };
         continue;
       }
       if (bot && indent <= bot.indent) bot = null;
       if (bot?.skip) continue;
       // 「Enhanced feature detection in `constants.ts`:」처럼 쌍점으로 끝나는 짧은 목록 줄은 아래 목록의 작은 제목이다 (긴 줄은 요구사항일 수 있다)
       if (AUTHOR_ITEM.test(t) || notRequirement(t) || (/[:：]$/.test(t) && t.split(/\s+/).length <= 8)) continue;
+      // 이슈의 목록 줄이 버그를 말하면(「a raw internal `TypeError` leaks to the caller instead of a `TRPCError`」) 바라는 동작이 아니다
+      if (bugIssue && !section && BUG_SAY.test(t) && !ISSUE_MODAL.test(t) && !DIRECTIVE.test(t) && !IMPERATIVE.test(t)) continue;
       (section ? inSection : bullets).push(t);
-    } else if (section || MODAL.test(line)) {
+    } else if (section || (issue ? ISSUE_MODAL : MODAL).test(line)) {
       // 「Expected behavior」 같은 요구사항 칸 안의 줄글은 「must」 같은 말이 없어도 한 문장씩 후보로 쓴다
       for (const part of line.split(/(?<=[.。!?])\s+/)) {
         if (/[:：]$/.test(part.trim()) || AUTHOR_ITEM.test(part.trim()) || notRequirement(clean(part))) continue;
         if (section) inSection.push(clean(part));
-        else if (MODAL.test(part)) sentences.push(clean(part));
+        else if ((issue ? ISSUE_MODAL : MODAL).test(part)) sentences.push(clean(part));
       }
     }
   }

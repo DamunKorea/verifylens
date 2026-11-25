@@ -362,6 +362,13 @@ test('import from GitHub: linked issues first, then the PR, with readable errors
     { label: 'PR #11', url: '', title: 'fix(coupon): reject blank codes', body: 'Background only.' },
   ]);
   assert.deepEqual(bug, { requirements: ['reject blank codes'], sources: ['PR #11 제목'] });
+  // 양식 칸이 없어도 제목이 버그를 말하면 같다. 질문 제목도 쓰지 않는다 (실제 PR 시험 trpc · ky, 0.28.0)
+  const plain = M.requirementsFrom([
+    { label: '이슈 #12', url: '', title: 'useQueries and useSuspenseQueries ignore abortOnUnmount', body: 'Background only.' },
+    { label: '이슈 #13', url: '', title: 'Should `status = 0` be considered `ok` for no-cors requests?', body: 'Background only.' },
+    { label: 'PR #14', url: '', title: 'fix(react-query): honour abortOnUnmount in useQueries', body: 'Background only.' },
+  ]);
+  assert.deepEqual(plain, { requirements: ['honour abortOnUnmount in useQueries'], sources: ['PR #14 제목'] });
 
   assert.match(M.ghError(Object.assign(new Error('x'), { code: 'ENOENT' })), /gh\)를 찾지 못했습니다/);
   assert.match(M.ghError({ stderr: 'no pull requests found for branch "feature/x"' }), /PR을 찾지 못했습니다/);

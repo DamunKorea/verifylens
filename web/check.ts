@@ -42,6 +42,11 @@ export type TryRow = {
   chain: ChainStep[];
   /** 시도 횟수 점 그림 (요구사항과 코드가 몇 번째에 동작하는가) */
   dots: { max: number; required: number; at: number } | null;
+  /**
+   * PR 주소로 볼 때 「미확인」 줄에서 사람이 직접 볼 곳 (판정이 아니다).
+   * inChange: 근거 줄이 이 PR 이 바꾼 줄인가. tests: 이 PR 이 새로 더한 검사 가운데 이 요구사항 쪽 것 (많아야 셋), more: 나머지 수
+   */
+  look: { inChange: boolean; tests: string[]; more: number } | null;
 };
 export type TryNote = { file: string; line: number; endLine: number; reqId: string; overall: Overall; severity: 'ok' | 'warn' | 'info'; head: string; note: string };
 export type TryResult = { headline: string; rows: TryRow[]; notes: TryNote[]; requirementLines: string[] };
@@ -104,6 +109,13 @@ export function runCheck(input: TryInput): TryResult {
       dots: (() => {
         const d = attemptDots(report, r.id);
         return d ? { max: d.max, required: d.required, at: d.rows[0].at } : null;
+      })(),
+      look: (() => {
+        if (!input.changed || r.overall !== '미확인' || s.req.unreadable) return null;
+        const inChange = !!rr.evidence.unit?.changed && !rr.outsideChange;
+        const tests = rr.lookTests?.names ?? [];
+        if (!inChange && !tests.length) return null;
+        return { inChange, tests, more: Math.max(0, (rr.lookTests?.total ?? 0) - tests.length) };
       })(),
     };
   });

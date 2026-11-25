@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { analyzeResult, evaluate } from '../../src/engine.ts';
-import { draftRequirements, extractRequirements, parseRequirements } from '../../src/requirements.ts';
+import { IMPERATIVE, draftRequirements, extractRequirements, parseRequirements } from '../../src/requirements.ts';
 import { buildSampleRepo } from '../../src/demo.ts';
 import { renderHtml } from '../../src/output.ts';
 import { attention, counts, renderSummaryMd, undecidedReasons, type Attention } from '../../src/summary.ts';
@@ -1023,26 +1023,36 @@ export const treeCount = (md: string) => parseRequirements(md).length;
 /** 여러 글에서 요구사항 후보를 모은다. 같은 문장은 한 번만. */
 /** 버그 신고 양식의 칸 이름 (재현 · 기대 동작 · 실제 동작) */
 const BUG_REPORT = /steps?\s+to\s+reproduce|what\s+steps\s+can\s+reproduce|\breproduction\b|\bactual\s+behaviou?r|what\s+do\s+you\s+see\s+instead|describe\s+the\s+bug|bug\s+report|재현\s*(?:방법|절차)|실제\s*동작/i;
+/** 버그를 말하는 제목: 「… ignore abortOnUnmount」 · 「… is never called」 · 「… throws TypeError」 */
+const BUG_TITLE = /\b(?:never|ignores?|ignored|doesn'?t|does\s+not|don'?t|isn'?t|is\s+not|aren'?t|not\s+(?:working|respected|applied|called|sent|forwarded|preserved|kept)|fails?|failing|failed|broken|breaks?|throws?|thrown|crash(?:es|ed)?|leaks?|wrong|incorrect(?:ly)?|missing|regression|bug|unable|can'?t|cannot|errors?|loses?|lost|drops?|dropped)\b/i;
+/** 기능 요청 제목: 「Add …」 · 「Support …」 · 「[Feature] …」 · 「… should …」 */
+const FEATURE_TITLE = /^\s*(?:\[?(?:feat(?:ure)?|proposal|rfc|request)\]?:?|add|support|allow|provide|expose|make|enable|introduce|implement|let)\b|\bfeature\s+request\b|\bshould\b/i;
 export function requirementsFrom(texts: SourceText[]): { requirements: string[]; sources: string[] } {
   const seen = new Set<string>();
   const requirements: string[] = [];
   const sources: string[] = [];
   for (const t of texts) {
-    let found = extractRequirements(t.body).filter((x) => !seen.has(x.toLowerCase()));
-    let label = t.label;
+    const isIssue = !/^PR\b/.test(t.label);
     // 버그 신고 이슈의 제목은 버그를 말한다(「ValidationError.all throws TypeError with Zod validators」). 요구사항으로 쓰지 않는다
-    // (실제 PR 시험: 버그 제목이 그대로 「확인됨」이 됐다). PR 제목은 고친 내용이므로 그대로 쓴다
-    const bugReport = !/^PR\b/.test(t.label) && BUG_REPORT.test(t.body);
+    // (실제 PR 시험: 버그 제목이 그대로 「확인됨」이 됐다). PR 제목은 고친 내용이므로 그대로 쓴다.
+    // 양식 칸이 없는 이슈도 제목이 버그를 말하면 같다(「useQueries and useSuspenseQueries ignore abortOnUnmount」, 0.28.0)
+    // 제목은 「fix:」 같은 머리말과 「(#123)」 꼬리를 뗀다. 「BACK-801 - 」 · 「[SCRUM-5]」 같은 작업 번호 머리말도 뗀다 (공개 PR 에서 찾음, 11/22)
+    const title = t.title
+      .replace(/^\s*\[?[A-Z][A-Z0-9]*-\d+\]?\s*[-:–]?\s*/, '')
+      .replace(/^\s*(feat|fix|chore|refactor|docs|test|perf)(\([^)]*\))?!?:\s*/i, '')
+      .replace(/\s*\((?:fix(?:es)?|close[sd]?|resolve[sd]?)?\s*#\d+\)\s*$/i, '')
+      .trim();
+    // 시키는 말로 시작하는 제목(「Lock the account after 5 failed logins」)은 할 일이지 버그 설명이 아니다
+    const bugTitle = BUG_TITLE.test(title) && !FEATURE_TITLE.test(title) && !IMPERATIVE.test(title);
+    const bugReport = isIssue && (BUG_REPORT.test(t.body) || bugTitle);
+    // 이슈 글은 고치기 전 동작을 지금 시제로 적으므로 더 좁게 뽑는다 (바라는 동작을 말하는 문장만, 버그 신고면 버그를 말하는 목록 줄도 뺀다)
+    let found = extractRequirements(t.body, 12, { issue: isIssue, bug: bugReport }).filter((x) => !seen.has(x.toLowerCase()));
+    let label = t.label;
     if (!found.length && bugReport) continue;
     if (!found.length) {
-      // 본문이 줄글뿐이면 제목 한 줄이라도 요구사항 후보로 쓴다 ("fix:" 같은 머리말과 "(#123)" 꼬리는 뗀다).
-      // 「BACK-801 - 」 · 「[SCRUM-5]」 같은 작업 번호 머리말도 뗀다 (공개 PR 에서 찾음, 11/22)
-      const title = t.title
-        .replace(/^\s*\[?[A-Z][A-Z0-9]*-\d+\]?\s*[-:–]?\s*/, '')
-        .replace(/^\s*(feat|fix|chore|refactor|docs|test|perf)(\([^)]*\))?!?:\s*/i, '')
-        .replace(/\s*\((?:fix(?:es)?|close[sd]?|resolve[sd]?)?\s*#\d+\)\s*$/i, '')
-        .trim();
-      if (title.length < 6 || seen.has(title.toLowerCase())) continue;
+      // 본문이 줄글뿐이면 제목 한 줄이라도 요구사항 후보로 쓴다.
+      // 질문 제목(「Should `status = 0` be considered `ok` …?」)은 정해진 동작이 아니다
+      if (title.length < 6 || seen.has(title.toLowerCase()) || /\?\s*$/.test(title)) continue;
       found = [title];
       label = L(`${t.label} 제목`, `${t.label} title`);
     }
