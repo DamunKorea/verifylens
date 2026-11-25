@@ -92,13 +92,13 @@ Outputs are written to `out/`:
 
 ## Release status
 
-Last checked: 2026-11-24
+Last checked: 2026-11-25
 
 | Channel | Version | Status |
 |---|---|---|
-| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.27.1) | 0.27.1 | Available |
-| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.27.1 | Available |
-| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.27.1 | Available |
+| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.27.2) | 0.27.2 | Available |
+| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.27.2 | Available |
+| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.27.2 | Available |
 | Cursor extension search | 0.21.0 | Update pending (copies from Open VSX) |
 | [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.21.1) | 0.21.1 | Available as a zip |
 | JetBrains Marketplace | 0.4.1 | In review |
@@ -173,7 +173,7 @@ jobs:
           fetch-depth: 0          # the base branch is needed for the comparison
       # Optional: run your tests with a JUnit report, for example
       # - run: npx vitest run --reporter=junit --outputFile=junit.xml
-      - uses: DamunKorea/verifylens@v0.27.1
+      - uses: DamunKorea/verifylens@v0.27.2
         with:
           requirements: .verifylens/requirements.md
           junit: junit.xml        # leave out if you have no report
