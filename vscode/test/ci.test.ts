@@ -128,10 +128,14 @@ test('ci --hook claude: asks once to fix a Different requirement, then only tell
   // 근거 사슬 한 줄: 어느 칸이 어긋났는지
   assert.match(json.reason, /code: src\/auth\.ts:21 user\.failures > 5 ✓ → tests: [^→]+→ acts: attempt 6 \(required 5\) ✗ 1 late/);
   assert.equal(first.err, ''); // 훅에서는 요구사항별 줄을 쓰지 않는다
+  // 한 번 돌려보낸 뒤에는 막지 않고, 오류(종료 코드 1 → 「hook error」)가 아니라 사람에게 보이는 경고(systemMessage)로 알린다
   const again = run({ hook: 'claude', requirements: wt.reqFile }, { stop_hook_active: true, cwd: wt.repo });
-  assert.equal(again.code, 1);
-  assert.equal(again.out, '');
-  assert.match(again.err, /R2 · Different/);
+  assert.equal(again.code, 0);
+  const warn = JSON.parse(again.out);
+  assert.equal(warn.decision, undefined);
+  assert.match(warn.systemMessage, /still not matching after one fix/);
+  assert.match(warn.systemMessage, /R2 · Different/);
+  assert.equal(again.err, '');
   uncommitted('a');
   const fixed = run({ hook: 'claude', requirements: wt.reqFile }, { stop_hook_active: true, cwd: wt.repo });
   assert.equal(fixed.code, 0);

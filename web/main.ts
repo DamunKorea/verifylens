@@ -16,6 +16,7 @@ const LINKS = {
   jetbrains: 'https://github.com/DamunKorea/verifylens/tree/main/jetbrains#readme',
   github: 'https://github.com/DamunKorea/verifylens',
   issue: 'https://github.com/DamunKorea/verifylens/issues/new',
+  x: 'https://x.com/the_100_9',
 };
 /** 빌드할 때 vscode/package.json 의 판 번호가 들어간다 (web/build.mjs) */
 declare const __VL_VERSION__: string;
@@ -118,6 +119,10 @@ const T: Record<string, { en: string; ko: string }> = {
   limit3: {
     en: `TypeScript and JavaScript only. MIT licensed, <a href="${LINKS.github}">source on GitHub</a>.`,
     ko: `TypeScript · JavaScript만 분석합니다. MIT 라이선스이고 <a href="${LINKS.github}">소스는 GitHub</a>에 있습니다.`,
+  },
+  follow: {
+    en: `Updates and the wrong verdicts we find: on X, <a href="${LINKS.x}" rel="noopener">@the_100_9</a>.`,
+    ko: `새 소식 · 우리가 찾은 틀린 판정 이야기: X <a href="${LINKS.x}" rel="noopener">@the_100_9</a>.`,
   },
 };
 

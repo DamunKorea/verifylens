@@ -187,7 +187,7 @@ The code is analyzed on the runner and is not sent anywhere. The same check runs
 `ci --hook` checks the code the agent just changed, before anything is committed. It compares the working folder (committed, uncommitted and new files) with `origin/main`, or `main`, `origin/master` or `master` when that is missing; set `--base` to choose. It runs only when code files have uncommitted changes, so a turn where the agent only answered a question is not checked.
 
 - When a requirement is **Different** or **Failed**, the agent is asked once to fix it. The message names the requirement, the reason and the line, gives the values to test at the boundary (taken from the numbers in the requirement, such as the 4th and the 5th failure), and tells the agent to ask you rather than edit the requirements file.
-- If the code is still wrong after that one try, the agent is not stopped again. You get a notice instead.
+- If the code is still wrong after that one try, the agent is not stopped again. You get a notice instead (in Claude Code, a warning message through `systemMessage`, not a hook error).
 - **Not verified** does not stop the agent unless you add `--fail-on different,failed,unverified`.
 - The requirements file is `.verifylens/requirements.md` in the project (`--requirements` to change). A project without one is skipped, so the hook can also go in your user settings.
 - `--junit report.xml` adds test results. A report older than the code is ignored.
@@ -232,7 +232,7 @@ The commands below need Node.js 22.18+ and git, and nothing else: `npx` download
 npx -y github:DamunKorea/verifylens ci --worktree --lang en
 ```
 
-These were tested by piping each tool's hook input into the command on Windows (`vscode/test/ci.test.ts`). They have not yet been tried inside a real Claude Code or Cursor session.
+These were tested by piping each tool's hook input into the command on Windows (`vscode/test/ci.test.ts`), and by running the published `npx` command the way Claude Code runs a Stop hook: the first run, with an empty npm cache, took 30 seconds (the limit above is 120), and later runs about 8 to 9 seconds. A full agent session, where the agent writes the code, is stopped and fixes it, has not been recorded yet.
 
 ## Reading the report
 
@@ -280,6 +280,8 @@ This release exists to learn how developers actually verify AI-generated code. T
 - Did it get a requirement wrong? Tell us what it linked and what it should have linked.
 
 Please open an issue using the **Feedback** template. Don't paste private code; a description or a minimal example is enough.
+
+Updates and the wrong verdicts we find are posted on X: [@the_100_9](https://x.com/the_100_9).
 
 ## License
 

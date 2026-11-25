@@ -96,10 +96,12 @@ test('changed tests: the hook asks once when a linked test was changed, even if 
     assert.match(reason, /tests linked to requirements were changed or removed in this change/);
     assert.match(reason, /- R1 · Lock the account after 5 consecutive failures: "locks the account after 5 consecutive failures" \(test\/auth\.test\.ts:5\) — test changed in this change: 5 → 6/);
     assert.match(reason, /ask the user before changing the test/);
-    // 두 번째에는 사람에게만 알린다
+    // 두 번째에는 사람에게만 알린다 (막지 않는 경고 systemMessage, 종료 코드 0 — 0.27.2)
     const again = run({ hook: 'claude', requirements: reqFile, junit }, { stop_hook_active: true, cwd: repo });
-    assert.equal(again.code, 1);
-    assert.equal(again.out, '');
+    assert.equal(again.code, 0);
+    const warn = JSON.parse(again.out);
+    assert.equal(warn.decision, undefined);
+    assert.match(warn.systemMessage, /tests linked to requirements were changed or removed in this change/);
     // 검사를 되돌리면 조용하다
     writeFileSync(join(repo, 'test/auth.test.ts'), TEST(5));
     writeFileSync(junit, '<?xml version="1.0"?>\n<testsuites><testsuite name="t"><testcase name="locks the account after 5 consecutive failures" classname="t"/></testsuite></testsuites>\n');

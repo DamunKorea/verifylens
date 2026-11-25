@@ -2,7 +2,7 @@
   "name": "verifylens",
   "displayName": "VerifyLens",
   "description": "A rule check for each requirement, next to your AI reviewer: verified, different or not yet verified, with the exact code line and the tests that ran. No LLM, same input same verdict, local.",
-  "version": "0.27.1",
+  "version": "0.27.2",
   "publisher": "damun",
   "license": "MIT",
   "icon": "media/icon.png",

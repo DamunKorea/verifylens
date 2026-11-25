@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.27.2
+
+From the first check of the agent hook the way Claude Code runs it. No verdict changes.
+
+- **Claude Code hook: the "not stopping again" notice is a warning, not a hook error.** When the code is still wrong after the one fix the hook asks for, the agent is not stopped again. That notice used to exit with code 1, which Claude Code shows as a hook error, so it read as if VerifyLens had failed. It is now a warning message to you (`systemMessage`), as the Claude Code hooks documentation describes.
+- **Measured:** the published `npx` command, run the way Claude Code runs a Stop hook, took 30 seconds on the first run with an empty npm cache (the hook limit in the README is 120 seconds) and about 8 to 9 seconds after that. A full agent session (the agent writes, is stopped, fixes) has not been recorded yet.
+- **Where we post updates:** the README and the browser page link to our X account, [@the_100_9](https://x.com/the_100_9).
+
 ## 0.27.1
 
 A failing check now says what to fix. This is for using VerifyLens next to AI review and fix tools, such as Claude Code's new `/ship`, which work on failing pull request checks. No verdict changes.

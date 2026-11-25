@@ -5435,8 +5435,14 @@ ${fixGuide}`);
   ].filter(Boolean).join("\n\n");
   const retried = hook === "claude" ? input.stop_hook_active === true : Number(input.loop_count ?? 0) >= 1;
   if (retried) {
+    if (hook === "claude") {
+      io.out(JSON.stringify({ systemMessage: `${L("VerifyLens: \uD55C \uBC88 \uACE0\uCE5C \uB4A4\uC5D0\uB3C4 \uC694\uAD6C\uC0AC\uD56D\uACFC \uB9DE\uC9C0 \uC54A\uC544 \uB354 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC9C1\uC811 \uD655\uC778\uD574 \uC8FC\uC138\uC694.", "VerifyLens: still not matching after one fix, so the agent is not stopped again. Please check it yourself.")}
+
+${message}` }));
+      return 0;
+    }
     io.err(message);
-    if (hook === "cursor") io.out("{}");
+    io.out("{}");
     return 1;
   }
   io.out(JSON.stringify(hook === "claude" ? { decision: "block", reason: message } : { followup_message: message }));

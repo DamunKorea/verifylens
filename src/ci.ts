@@ -352,8 +352,14 @@ function check(opts: Record<string, string>, hook: Hook | undefined, input: Reco
   // 이미 한 번 돌려보낸 뒤라면 더 막지 않고 사람에게만 알린다
   const retried = hook === 'claude' ? input.stop_hook_active === true : Number(input.loop_count ?? 0) >= 1;
   if (retried) {
+    // Claude Code: 종료 코드 1 은 대화 기록에 「hook error」로 보여 VerifyLens 가 고장 난 것처럼 읽힌다.
+    // 막지 않고 사람에게만 보이는 경고는 종료 코드 0 + systemMessage 다 (공식 hooks 문서, 실제 훅 시험에서 찾음 11/25)
+    if (hook === 'claude') {
+      io.out(JSON.stringify({ systemMessage: `${L('VerifyLens: 한 번 고친 뒤에도 요구사항과 맞지 않아 더 막지 않습니다. 직접 확인해 주세요.', 'VerifyLens: still not matching after one fix, so the agent is not stopped again. Please check it yourself.')}\n\n${message}` }));
+      return 0;
+    }
     io.err(message);
-    if (hook === 'cursor') io.out('{}');
+    io.out('{}');
     return 1;
   }
   io.out(JSON.stringify(hook === 'claude' ? { decision: 'block', reason: message } : { followup_message: message }));
