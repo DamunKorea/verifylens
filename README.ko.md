@@ -6,7 +6,7 @@ AI 리뷰는 모델이 변경을 어떻게 보는지 알려 줍니다. **VerifyL
 
 [English README](README.md)
 
-**[브라우저에서 바로 해 보기 →](https://damunkorea.github.io/verifylens/?lang=ko)** 설치하지 않아도 됩니다. 요구사항과 코드를 넣어 보세요. 넣은 내용은 페이지 밖으로 나가지 않습니다. 공개 GitHub PR 주소를 붙여 넣어도 됩니다. 브라우저가 GitHub 에서 PR 설명 · PR 이 닫는 이슈 · 바뀐 파일을 읽어 확인합니다(테스트는 거기서 돌리지 않습니다).
+**[브라우저에서 바로 해 보기 →](https://damunkorea.github.io/verifylens/?lang=ko)** 설치하지 않아도 됩니다. 요구사항과 코드를 넣어 보세요. 넣은 내용은 페이지 밖으로 나가지 않습니다. 공개 GitHub PR 주소를 붙여 넣어도 됩니다. 브라우저가 GitHub 에서 PR 설명 · PR 이 닫는 이슈 · 바뀐 파일을 읽어 확인합니다(테스트는 거기서 돌리지 않습니다). 「미확인」으로 남는 요구사항에는 그 PR 이 바꾼 줄과 더한 검사를 보여 주어 직접 확인할 수 있습니다.
 
 AI가 「요구사항 전부 반영, 완료」라고 답하고, **테스트도 전부 통과했습니다.** 그래도 요구사항대로가 아닐 수 있습니다.
 
@@ -102,9 +102,9 @@ Windows에서는 `demo-windows.cmd`를 더블클릭해도 됩니다. PowerShell�
 
 | 채널 | 버전 | 상태 |
 |---|---|---|
-| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.27.2) | 0.27.2 | 공개 |
-| [VS Code 장터](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.27.2 | 공개 |
-| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.27.2 | 공개 |
+| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.28.0) | 0.28.0 | 공개 |
+| [VS Code 장터](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.28.0 | 공개 |
+| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.28.0 | 공개 |
 | Cursor 확장 검색 | 0.21.0 | Open VSX에서 복사 대기 |
 | [JetBrains 미리 보기 (GitHub)](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.21.1) | 0.21.1 | zip으로 설치 가능 |
 | JetBrains 장터 | 0.4.1 | 심사 중 |
@@ -188,7 +188,7 @@ jobs:
           fetch-depth: 0          # 기준 브랜치와 비교하려면 필요합니다
       # 선택: 테스트를 JUnit 결과로 남기면 검사까지 함께 봅니다. 예:
       # - run: npx vitest run --reporter=junit --outputFile=junit.xml
-      - uses: DamunKorea/verifylens@v0.27.2
+      - uses: DamunKorea/verifylens@v0.28.0
         with:
           requirements: .verifylens/requirements.md
           junit: junit.xml        # 결과 파일이 없으면 지웁니다

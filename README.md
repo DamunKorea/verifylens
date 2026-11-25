@@ -6,7 +6,7 @@ AI review tells you what a model thinks of your change. **VerifyLens checks each
 
 [한국어 README](README.ko.md)
 
-**[Try it in your browser →](https://damunkorea.github.io/verifylens/)** No install. Paste a requirement and some code; nothing leaves the page. Or paste the address of a public GitHub pull request: your browser reads its description, the issues it closes and the changed files from GitHub, and the page checks them (tests are not run there).
+**[Try it in your browser →](https://damunkorea.github.io/verifylens/)** No install. Paste a requirement and some code; nothing leaves the page. Or paste the address of a public GitHub pull request: your browser reads its description, the issues it closes and the changed files from GitHub, and the page checks them (tests are not run there). When a requirement stays Not verified, its card shows the line the pull request changed and the tests it added, so you can check it yourself.
 
 The AI says "Done, all requirements implemented", and **every test passes.** The requirement can still be unmet.
 
@@ -96,9 +96,9 @@ Last checked: 2026-11-25
 
 | Channel | Version | Status |
 |---|---|---|
-| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.27.2) | 0.27.2 | Available |
-| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.27.2 | Available |
-| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.27.2 | Available |
+| [GitHub Release](https://github.com/DamunKorea/verifylens/releases/tag/v0.28.0) | 0.28.0 | Available |
+| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=damun.verifylens) | 0.28.0 | Available |
+| [Open VSX](https://open-vsx.org/extension/damun/verifylens) | 0.28.0 | Available |
 | Cursor extension search | 0.21.0 | Update pending (copies from Open VSX) |
 | [JetBrains preview on GitHub](https://github.com/DamunKorea/verifylens/releases/tag/jetbrains-v0.21.1) | 0.21.1 | Available as a zip |
 | JetBrains Marketplace | 0.4.1 | In review |
@@ -173,7 +173,7 @@ jobs:
           fetch-depth: 0          # the base branch is needed for the comparison
       # Optional: run your tests with a JUnit report, for example
       # - run: npx vitest run --reporter=junit --outputFile=junit.xml
-      - uses: DamunKorea/verifylens@v0.27.2
+      - uses: DamunKorea/verifylens@v0.28.0
         with:
           requirements: .verifylens/requirements.md
           junit: junit.xml        # leave out if you have no report
