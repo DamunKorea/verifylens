@@ -4,7 +4,7 @@
 
 AI review tells you what a model thinks of your change. **VerifyLens checks each requirement you wrote, by rules (no LLM), and shows the exact line.** Same input, same verdict. It works next to AI review and fix tools such as Claude Code's new `/ship`: [see how](#next-to-ai-review-and-fix-tools).
 
-[한국어 README](README.ko.md)
+[한국어 README](README.ko.md) · Updates and misses on X: [@the_100_9](https://x.com/the_100_9)
 
 **[Try it in your browser →](https://damunkorea.github.io/verifylens/)** No install. Paste a requirement and some code; nothing leaves the page. Or paste the address of a public GitHub pull request: your browser reads its description, the issues it closes and the changed files from GitHub, and the page checks them (tests are not run there). When a requirement stays Not verified, its card shows the line the pull request changed and the tests it added, so you can check it yourself.
 
