@@ -20,8 +20,10 @@ VerifyLens computes when a numeric condition fires, so it catches that case too.
 </ul>
 <p>Preview. Analyzes <b>TypeScript and JavaScript</b>. Needs <b>Node.js 18+</b> and git on this machine.
 The UI is in <b>English or Korean</b> and follows the IDE language (Tools | VerifyLens | Language… changes it).</p>
+<p>Updates and the wrong verdicts we find are posted on X: <a href="https://x.com/the_100_9">@the_100_9</a>.</p>
 <p>AI가 「완료」라고 한 변경이 요구사항마다 확인됨 · 다름 · 미확인인지, 커밋하기 전에 에디터에서 보여 줍니다.
-AI 판정 없이 코드 분석과 실제로 돌린 테스트 결과만 쓰고, 코드는 PC 밖으로 나가지 않습니다.</p>
+AI 판정 없이 코드 분석과 실제로 돌린 테스트 결과만 쓰고, 코드는 PC 밖으로 나가지 않습니다.
+새 소식과 우리가 찾은 틀린 판정 이야기는 X 에 올립니다: <a href="https://x.com/the_100_9">@the_100_9</a>.</p>
 ]]></description>
 
     <change-notes><![CDATA[
